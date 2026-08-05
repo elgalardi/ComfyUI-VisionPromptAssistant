@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0 - 2026-08-05
+
+- Simplified Vision Prompt Assistant to three image reference inputs.
+- Removed experimental video, paired-video-audio, and standalone audio inputs
+  because the local vision encoder could not interpret them reliably.
+- Updated the default system prompt and MiniMax reference mapping for pictures.
+
 ## 1.0.1 - 2026-08-05
 
 - Added guidance to request an approximate token count at the end of the user

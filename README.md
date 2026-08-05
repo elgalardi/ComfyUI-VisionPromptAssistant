@@ -12,14 +12,14 @@ Recommended local setup:
   [`qwen3-vl-4b-heretic_int8.safetensors`](https://huggingface.co/DreamFast/Qwen3-VL-4b-Heretic-ComfyUI)
   into `ComfyUI/models/text_encoders`, then select it directly in the node.
 - Start with loader type `ltxv`, or compare it with `stable_diffusion`.
-- Connect up to three images, three reference videos, three paired video
-  soundtracks, and three standalone audio references.
-- Socket names map to MiniMax tags in connection order: `image_0` becomes
-  `<Picture 1>`, `video_0` becomes `<Video 1>`, and `audio_0` becomes
-  `<Audio 1>` when they are the first connected reference of each type.
-- Videos are represented to the vision model by up to eight frames sampled
-  across their duration. Audio contributes duration/channel information and
-  the correct H3 tag; the Qwen vision encoder does not listen to the waveform.
+- Connect up to three reference images. Socket names map to MiniMax picture
+  tags in connection order: the first connected image becomes `<Picture 1>`,
+  the second becomes `<Picture 2>`, and the third becomes `<Picture 3>`.
+
+Video and audio sockets are intentionally not included. The recommended
+Qwen3-VL encoder can inspect images, but it does not reliably understand a
+complete video or listen to an audio waveform through ComfyUI's text-generation
+interface. Keeping image inputs only makes the node's behavior predictable.
 
 The loaded encoder is cached and reused while the model, type, and device remain
 unchanged, so editing prompts does not reread the checkpoint from disk.
