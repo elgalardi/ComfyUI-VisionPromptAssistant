@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 - 2026-08-05
+
+- Added guidance to request an approximate token count at the end of the user
+  prompt, slightly below `max_length`, for fuller generated prompts.
+
 ## 1.0.0 - 2026-08-05
 
 - Added Vision Prompt Assistant with local multimodal text generation.
