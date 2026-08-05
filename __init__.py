@@ -50,39 +50,13 @@ DEFAULT_ENCODER = (
 _CLIP_CACHE = {"key": None, "clip": None}
 
 
-def _audio_description(audio) -> str:
-    """Return useful audio facts without pretending the vision encoder hears it."""
-    if not audio or "waveform" not in audio:
-        return "audio connected"
-    waveform = audio["waveform"]
-    sample_rate = int(audio.get("sample_rate", 0) or 0)
-    samples = int(waveform.shape[-1])
-    channels = int(waveform.shape[-2]) if waveform.ndim >= 2 else 1
-    duration = samples / sample_rate if sample_rate else 0.0
-    return f"{duration:.2f}s, {channels} channel(s), {sample_rate} Hz"
-
-
-def _video_frames(video, max_frames: int = 8):
-    """Sample representative frames across a ComfyUI IMAGE video at 24 fps."""
-    if video is None or video.shape[0] == 0:
-        return []
-    frame_count = int(video.shape[0])
-    sample_count = min(max_frames, frame_count)
-    indices = torch.linspace(0, frame_count - 1, sample_count).round().long().tolist()
-    indices = list(dict.fromkeys(int(index) for index in indices))
-    return [(index, video[index:index + 1]) for index in indices]
-
-
 def _qwen_chat_prompt(
     system_prompt: str,
     user_prompt: str,
     pictures,
-    videos,
-    video_audios,
-    audios,
     max_length: int,
 ):
-    """Build a Qwen3-VL chat prompt aligned with MiniMax H3 reference tags."""
+    """Build a Qwen3-VL chat prompt aligned with MiniMax H3 picture tags."""
     system_prompt = (system_prompt or "").strip()
     user_prompt = (user_prompt or "").strip()
 
@@ -95,7 +69,7 @@ def _qwen_chat_prompt(
             f"<|im_start|>system\n{system_prompt}\n\n"
             f"HARD OUTPUT BUDGET: Finish the complete answer within approximately "
             f"{target_tokens} tokens. The generation limit is {max_length} tokens. "
-            "Prioritize the essential reference assignments, motion, camera, and audio; "
+            "Prioritize the essential picture assignments, subject, motion, and camera; "
             "be concise, do not start details you cannot finish, and end with a complete "
             "sentence before the limit.<|im_end|>\n"
         )
@@ -113,37 +87,6 @@ def _qwen_chat_prompt(
             f"image_{socket_index} maps to <Picture {picture_number}>: {VISION_BLOCK}\n"
         )
         vision_inputs.append(picture[:1])
-
-    audio_number = 0
-    video_number = 0
-    paired_audio_by_index = dict(video_audios)
-    for socket_index, video in videos:
-        paired_audio = paired_audio_by_index.get(socket_index)
-        if paired_audio is not None:
-            audio_number += 1
-            parts.append(
-                f"video_audio_{socket_index} maps to <Audio {audio_number}> "
-                f"and is paired with video_{socket_index} "
-                f"({_audio_description(paired_audio)}).\n"
-            )
-
-        video_number += 1
-        sampled_frames = _video_frames(video)
-        parts.append(
-            f"video_{socket_index} maps to <Video {video_number}> "
-            f"({video.shape[0]} frames at 24 fps). Representative frames follow:\n"
-        )
-        for frame_index, frame in sampled_frames:
-            parts.append(f"  {frame_index / 24.0:.2f}s: {VISION_BLOCK}\n")
-            vision_inputs.append(frame)
-
-    for socket_index, audio in audios:
-        audio_number += 1
-        parts.append(
-            f"audio_{socket_index} maps to <Audio {audio_number}> "
-            f"({_audio_description(audio)}). Its waveform is not audible to the vision "
-            "encoder, so infer its intended role only from the user's instruction.\n"
-        )
 
     parts.append("\nUser request:\n")
     parts.append(f"{user_prompt}<|im_end|>\n<|im_start|>assistant\n")
@@ -198,23 +141,14 @@ class LocalVisionPromptGenerator(io.ComfyNode):
                     multiline=True,
                     default=(
                         "You write production-ready prompts for MiniMax H3 Reference to Video. "
-                        "Use the exact supplied <Picture n>, <Video n>, and <Audio n> tags, "
-                        "clearly assigning identity, style, motion, camera, voice, sound effects, "
-                        "and music. Return only the final generation prompt."
+                        "Use the exact supplied <Picture n> tags, clearly assigning identity, "
+                        "appearance, style, motion, and camera. Return only the final "
+                        "generation prompt."
                     ),
                 ),
                 io.Image.Input("image_0", optional=True),
                 io.Image.Input("image_1", optional=True),
                 io.Image.Input("image_2", optional=True),
-                io.Image.Input("video_0", optional=True),
-                io.Image.Input("video_1", optional=True),
-                io.Image.Input("video_2", optional=True),
-                io.Audio.Input("video_audio_0", optional=True),
-                io.Audio.Input("video_audio_1", optional=True),
-                io.Audio.Input("video_audio_2", optional=True),
-                io.Audio.Input("audio_0", optional=True),
-                io.Audio.Input("audio_1", optional=True),
-                io.Audio.Input("audio_2", optional=True),
                 io.Int.Input(
                     "max_length",
                     default=256,
@@ -262,15 +196,6 @@ class LocalVisionPromptGenerator(io.ComfyNode):
         image_0=None,
         image_1=None,
         image_2=None,
-        video_0=None,
-        video_1=None,
-        video_2=None,
-        video_audio_0=None,
-        video_audio_1=None,
-        video_audio_2=None,
-        audio_0=None,
-        audio_1=None,
-        audio_2=None,
     ) -> io.NodeOutput:
         clip = cls._load_clip(clip_name, clip_type, load_device)
         pictures = [
@@ -278,28 +203,10 @@ class LocalVisionPromptGenerator(io.ComfyNode):
             for index, image in enumerate((image_0, image_1, image_2))
             if image is not None
         ]
-        videos = [
-            (index, video)
-            for index, video in enumerate((video_0, video_1, video_2))
-            if video is not None
-        ]
-        video_audios = [
-            (index, audio)
-            for index, audio in enumerate((video_audio_0, video_audio_1, video_audio_2))
-            if audio is not None
-        ]
-        audios = [
-            (index, audio)
-            for index, audio in enumerate((audio_0, audio_1, audio_2))
-            if audio is not None
-        ]
         prompt, images = _qwen_chat_prompt(
             system_prompt,
             user_prompt,
             pictures,
-            videos,
-            video_audios,
-            audios,
             int(max_length),
         )
 
