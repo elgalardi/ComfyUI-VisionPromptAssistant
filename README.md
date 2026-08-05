@@ -28,6 +28,12 @@ unchanged, so editing prompts does not reread the checkpoint from disk.
 automatically gives the model a slightly smaller target budget so it has room
 to finish its final sentence instead of being cut off at the hard limit.
 
+For fuller results, specify the desired approximate length at the end of the
+`user_prompt`, choosing a value slightly below `max_length`. For example, with
+`max_length` set to `256`, finish the request with: `Write about 220 tokens.`
+This gives the vision model an explicit length target and helps prevent an
+otherwise useful final prompt from ending too early.
+
 The `user_prompt` and `system_prompt` boxes accept text directly or a STRING
 cable using ComfyUI's normal widget-to-input conversion. `user_prompt` is listed
 first so it is the preferred STRING route when the assistant is bypassed; the

@@ -169,7 +169,10 @@ class LocalVisionPromptGenerator(io.ComfyNode):
             description=(
                 "Generates text locally with a compatible multimodal CLIP such "
                 "as Qwen3-VL. Supports separate system/user prompts and up to "
-                "three reference images."
+                "three reference images. For fuller results, end the user prompt "
+                "with the desired approximate token count, keeping it slightly "
+                "below max_length (for example: 'Write about 220 tokens' with "
+                "max_length set to 256)."
             ),
             inputs=[
                 io.Combo.Input(
@@ -212,7 +215,17 @@ class LocalVisionPromptGenerator(io.ComfyNode):
                 io.Audio.Input("audio_0", optional=True),
                 io.Audio.Input("audio_1", optional=True),
                 io.Audio.Input("audio_2", optional=True),
-                io.Int.Input("max_length", default=256, min=1, max=4096),
+                io.Int.Input(
+                    "max_length",
+                    default=256,
+                    min=1,
+                    max=4096,
+                    tooltip=(
+                        "Hard generation limit. For a fuller prompt, also request an "
+                        "approximate token count near the end of user_prompt, slightly "
+                        "below this value."
+                    ),
+                ),
                 io.Boolean.Input("sampling", default=True),
                 io.Float.Input("temperature", default=0.7, min=0.01, max=2.0, step=0.01),
                 io.Int.Input("top_k", default=40, min=0, max=1000),

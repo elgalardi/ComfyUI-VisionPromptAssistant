@@ -1,6 +1,6 @@
 [project]
 name = "vision-prompt-assistant"
-version = "1.0.0"
+version = "1.0.1"
 description = "Generate reference-aware prompts locally with a multimodal ComfyUI text encoder and preview them in the graph."
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
