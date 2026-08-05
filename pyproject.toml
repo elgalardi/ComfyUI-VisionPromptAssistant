@@ -1,0 +1,23 @@
+[project]
+name = "vision-prompt-assistant"
+version = "1.0.0"
+description = "Generate reference-aware prompts locally with a multimodal ComfyUI text encoder and preview them in the graph."
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = []
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Environment :: GPU :: NVIDIA CUDA",
+]
+
+[project.urls]
+Repository = "https://github.com/elgalardi/ComfyUI-VisionPromptAssistant"
+Documentation = "https://github.com/elgalardi/ComfyUI-VisionPromptAssistant#readme"
+"Bug Tracker" = "https://github.com/elgalardi/ComfyUI-VisionPromptAssistant/issues"
+
+[tool.comfy]
+PublisherId = "elgalardi"
+DisplayName = "Vision Prompt Assistant"
+Icon = "https://raw.githubusercontent.com/elgalardi/ComfyUI-VisionPromptAssistant/main/icon.svg"
+requires-comfyui = ">=0.30.0"
