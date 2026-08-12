@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import base64
+import io as binary_io
+import json
 import math
+import urllib.error
+import urllib.request
+
+import numpy as np
 import torch
 import comfy.sd
 import folder_paths
 from comfy_api.latest import ComfyExtension, io, ui
+from PIL import Image, ImageDraw, ImageFont
 from typing_extensions import override
+
+from .story_director import H3StoryDirector
 
 
 VISION_BLOCK = "<|vision_start|><|image_pad|><|vision_end|>"
@@ -48,6 +58,8 @@ DEFAULT_ENCODER = (
     else (TEXT_ENCODERS[0] if TEXT_ENCODERS else "")
 )
 _CLIP_CACHE = {"key": None, "clip": None}
+ABLITERATION_API_URL = "https://api.abliteration.ai/v1/chat/completions"
+ABLITERATION_MODEL = "abliterated-model"
 
 
 def _qwen_chat_prompt(
@@ -91,6 +103,97 @@ def _qwen_chat_prompt(
     parts.append("\nUser request:\n")
     parts.append(f"{user_prompt}<|im_end|>\n<|im_start|>assistant\n")
     return "".join(parts), vision_inputs
+
+
+def _image_to_pil(image, max_dimension: int) -> Image.Image:
+    """Convert the first IMAGE batch item to a bounded RGB PIL image."""
+    pixels = image[0].detach().cpu().clamp(0.0, 1.0).numpy()
+    pixels = (pixels * 255.0).round().astype(np.uint8)
+    pil_image = Image.fromarray(pixels)
+    if pil_image.mode not in ("RGB", "L"):
+        pil_image = pil_image.convert("RGB")
+    elif pil_image.mode == "L":
+        pil_image = pil_image.convert("RGB")
+
+    longest = max(pil_image.size)
+    if longest > max_dimension:
+        scale = max_dimension / longest
+        size = (
+            max(1, round(pil_image.width * scale)),
+            max(1, round(pil_image.height * scale)),
+        )
+        pil_image = pil_image.resize(size, Image.Resampling.LANCZOS)
+    return pil_image
+
+
+def _pil_to_data_url(pil_image: Image.Image) -> str:
+    """Encode a PIL image as a JPEG data URL."""
+    if pil_image.mode != "RGB":
+        pil_image = pil_image.convert("RGB")
+
+    buffer = binary_io.BytesIO()
+    pil_image.save(buffer, format="JPEG", quality=90, optimize=True)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def _image_to_data_url(image, max_dimension: int) -> str:
+    return _pil_to_data_url(_image_to_pil(image, max_dimension))
+
+
+def _contact_sheet_data_url(images, max_dimension: int) -> str:
+    """Combine 2-3 references into one labeled image for single-image APIs."""
+    converted = [_image_to_pil(image, max_dimension) for image in images]
+    if len(converted) == 1:
+        return _pil_to_data_url(converted[0])
+
+    columns = 2
+    rows = math.ceil(len(converted) / columns)
+    label_height = 44
+    gap = 12
+    cell_size = max(256, min(int(max_dimension), 1024))
+    sheet_width = columns * cell_size + (columns + 1) * gap
+    sheet_height = rows * (cell_size + label_height) + (rows + 1) * gap
+    sheet = Image.new("RGB", (sheet_width, sheet_height), (24, 24, 24))
+
+    draw = ImageDraw.Draw(sheet)
+    try:
+        label_font = ImageFont.load_default(size=24)
+    except TypeError:
+        label_font = ImageFont.load_default()
+    for index, image in enumerate(converted):
+        row, column = divmod(index, columns)
+        x = gap + column * (cell_size + gap)
+        y = gap + row * (cell_size + label_height + gap)
+        label = f"<Picture {index + 1}>"
+        draw.text(
+            (x + 8, y + 8), label, fill=(255, 255, 255), font=label_font
+        )
+
+        available_height = cell_size
+        scale = min(cell_size / image.width, available_height / image.height)
+        size = (
+            max(1, round(image.width * scale)),
+            max(1, round(image.height * scale)),
+        )
+        resized = image.resize(size, Image.Resampling.LANCZOS)
+        paste_x = x + (cell_size - resized.width) // 2
+        paste_y = y + label_height + (available_height - resized.height) // 2
+        sheet.paste(resized, (paste_x, paste_y))
+
+    return _pil_to_data_url(sheet)
+
+
+def _response_text(message_content) -> str:
+    if isinstance(message_content, str):
+        return message_content.strip()
+    if isinstance(message_content, list):
+        parts = []
+        for item in message_content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "\n".join(parts).strip()
+    return str(message_content or "").strip()
 
 
 class LocalVisionPromptGenerator(io.ComfyNode):
@@ -259,6 +362,231 @@ class LocalVisionPromptGenerator(io.ComfyNode):
         return loaded_clip
 
 
+class AbliterationVisionPrompt(io.ComfyNode):
+    """Generate a vision-aware prompt through Abliteration.ai."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="AbliterationVisionPrompt",
+            display_name="Abliteration Vision Prompt",
+            category="text",
+            search_aliases=[
+                "abliteration ai",
+                "uncensored vision prompt",
+                "api vision prompt",
+            ],
+            description=(
+                "Generates a prompt through Abliteration.ai's OpenAI-compatible "
+                "vision API. Supports separate system/user prompts and up to "
+                "three images. Images are resized and compressed before upload."
+            ),
+            inputs=[
+                io.String.Input(
+                    "api_key",
+                    default="",
+                    placeholder="ak_...",
+                    tooltip=(
+                        "Abliteration.ai API key. The interface masks this value, "
+                        "but a saved workflow may still contain it."
+                    ),
+                    extra_dict={"password": True},
+                ),
+                io.String.Input(
+                    "user_prompt",
+                    multiline=True,
+                    dynamic_prompts=True,
+                    default=(
+                        "Analyze the reference images and write a detailed "
+                        "MiniMax H3 generation prompt."
+                    ),
+                ),
+                io.String.Input(
+                    "system_prompt",
+                    multiline=True,
+                    default=(
+                        "You write production-ready prompts for MiniMax H3 "
+                        "Reference to Video. Use the exact supplied <Picture n> "
+                        "tags, clearly assigning identity, appearance, style, "
+                        "motion, and camera. Return only the final generation prompt."
+                    ),
+                ),
+                io.Image.Input("image_0", optional=True),
+                io.Image.Input("image_1", optional=True),
+                io.Image.Input("image_2", optional=True),
+                io.Int.Input("max_tokens", default=256, min=1, max=4096),
+                io.Float.Input(
+                    "temperature", default=0.4, min=0.0, max=2.0, step=0.05
+                ),
+                io.Boolean.Input(
+                    "thinking",
+                    default=False,
+                    tooltip="Disable for faster prompt enhancement.",
+                ),
+                io.Int.Input(
+                    "seed",
+                    default=0,
+                    min=0,
+                    max=0xFFFFFFFF,
+                    control_after_generate=True,
+                ),
+                io.Int.Input(
+                    "image_max_dimension",
+                    default=1024,
+                    min=256,
+                    max=2048,
+                    step=64,
+                    advanced=True,
+                    tooltip=(
+                        "Images are resized to this maximum width or height before "
+                        "upload. Lower values are faster and cost fewer tokens."
+                    ),
+                ),
+                io.Int.Input(
+                    "timeout_seconds",
+                    default=180,
+                    min=15,
+                    max=600,
+                    advanced=True,
+                ),
+            ],
+            outputs=[
+                io.String.Output("generated_text"),
+                io.String.Output("usage_stats"),
+                io.String.Output("credits_remaining"),
+            ],
+        )
+
+    @classmethod
+    def execute(
+        cls,
+        api_key: str,
+        user_prompt: str,
+        system_prompt: str,
+        max_tokens: int,
+        temperature: float,
+        thinking: bool,
+        seed: int,
+        image_max_dimension: int,
+        timeout_seconds: int,
+        image_0=None,
+        image_1=None,
+        image_2=None,
+    ) -> io.NodeOutput:
+        api_key = (api_key or "").strip()
+        if not api_key:
+            raise ValueError("Abliteration.ai API key is required.")
+
+        content = []
+        pictures = [
+            image
+            for image in (image_0, image_1, image_2)
+            if image is not None
+        ]
+        if pictures:
+            labels = ", ".join(
+                f"<Picture {number}>" for number in range(1, len(pictures) + 1)
+            )
+            content.append(
+                {
+                    "type": "text",
+                    "text": (
+                        f"Reference images are mapped in connection order as {labels}. "
+                        "The following visual is a labeled contact sheet; treat every "
+                        "labeled panel as a separate reference image and use its exact "
+                        "<Picture n> tag in the final prompt. Do not ignore any panel."
+                    ),
+                }
+            )
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": _contact_sheet_data_url(
+                            pictures, int(image_max_dimension)
+                        )
+                    },
+                }
+            )
+        content.append(
+            {
+                "type": "text",
+                "text": f"User request:\n{(user_prompt or '').strip()}",
+            }
+        )
+
+        payload = {
+            "model": ABLITERATION_MODEL,
+            "messages": [
+                {"role": "system", "content": (system_prompt or "").strip()},
+                {"role": "user", "content": content},
+            ],
+            "max_tokens": int(max_tokens),
+            "temperature": float(temperature),
+            "thinking": bool(thinking),
+            "seed": int(seed),
+        }
+        request = urllib.request.Request(
+            ABLITERATION_API_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(
+                request, timeout=int(timeout_seconds)
+            ) as response:
+                result = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            details = error.read().decode("utf-8", errors="replace")
+            try:
+                parsed = json.loads(details)
+                details = parsed.get("error", {}).get("message", details)
+            except (json.JSONDecodeError, AttributeError):
+                pass
+            raise RuntimeError(
+                f"Abliteration.ai returned HTTP {error.code}: {details}"
+            ) from error
+        except urllib.error.URLError as error:
+            raise RuntimeError(
+                f"Could not connect to Abliteration.ai: {error.reason}"
+            ) from error
+
+        try:
+            generated_text = _response_text(
+                result["choices"][0]["message"]["content"]
+            )
+        except (KeyError, IndexError, TypeError) as error:
+            raise RuntimeError(
+                "Abliteration.ai returned an unexpected response."
+            ) from error
+        if not generated_text:
+            raise RuntimeError("Abliteration.ai returned an empty response.")
+
+        usage = result.get("usage") or {}
+        usage_stats = (
+            f"input: {usage.get('prompt_tokens', '?')} · "
+            f"output: {usage.get('completion_tokens', '?')} · "
+            f"total: {usage.get('total_tokens', '?')}"
+        )
+        remaining = result.get("remaining_credits")
+        used = result.get("estimated_credits_used")
+        estimated_cost = result.get("estimated_cost_usd")
+        if remaining is None:
+            credits_remaining = "Remaining credits: not reported"
+        else:
+            credits_remaining = f"Remaining credits: {remaining:,}"
+        if used is not None:
+            credits_remaining += f" · used: {used:,}"
+        if isinstance(estimated_cost, (int, float)):
+            credits_remaining += f" · estimated cost: ${estimated_cost:.6f}"
+        return io.NodeOutput(generated_text, usage_stats, credits_remaining)
+
+
 class PreviewVisionPrompt(io.ComfyNode):
     """Display generated prompt text and pass it through unchanged."""
 
@@ -286,7 +614,12 @@ class PreviewVisionPrompt(io.ComfyNode):
 class LocalVisionPromptExtension(ComfyExtension):
     @override
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
-        return [LocalVisionPromptGenerator, PreviewVisionPrompt]
+        return [
+            LocalVisionPromptGenerator,
+            AbliterationVisionPrompt,
+            H3StoryDirector,
+            PreviewVisionPrompt,
+        ]
 
 
 async def comfy_entrypoint() -> LocalVisionPromptExtension:
