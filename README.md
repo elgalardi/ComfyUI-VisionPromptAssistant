@@ -85,6 +85,12 @@ subject images into a complete, ordered MiniMax H3 production plan. It uses an
 OpenRouter vision model with strict structured output, then validates the
 response locally before returning a `plan_json` string.
 
+For a standalone I2V generation, set `scene_count` to `1` and connect the
+`scene_prompt` output directly to the MiniMax H3 I2V prompt input. This output
+contains only the complete shared prefix plus the generated scene prompt; it
+does not include JSON, duration, sampler steps, validation, or usage data. With
+multi-scene plans it returns the first scene's complete prompt.
+
 The default model is `x-ai/grok-4.20`, which supports multiple image inputs and
 strict structured outputs on OpenRouter. The model field remains editable.
 Reasoning is disabled by default for lower latency and cost and can be enabled

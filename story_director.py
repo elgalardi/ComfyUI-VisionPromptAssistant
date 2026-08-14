@@ -362,6 +362,14 @@ class H3StoryDirector(io.ComfyNode):
                 io.String.Output("validation"),
                 io.String.Output("usage_stats"),
                 io.String.Output("credits_remaining"),
+                io.String.Output(
+                    "scene_prompt",
+                    tooltip=(
+                        "Complete prompt for the first scene, with the shared "
+                        "prompt prefix included. Connect directly to MiniMax H3 "
+                        "I2V when scene_count is 1."
+                    ),
+                ),
             ],
         )
 
@@ -475,6 +483,11 @@ class H3StoryDirector(io.ComfyNode):
             int(steps),
             len(pictures),
         )
+        compiled_plan = json.loads(plan_json)
+        scene_prompt = "\n\n".join((
+            str(compiled_plan["prompt_prefix"]).strip(),
+            str(compiled_plan["shots"][0]["prompt"]).strip(),
+        ))
 
         usage = result.get("usage") or {}
         usage_stats = (
@@ -492,6 +505,7 @@ class H3StoryDirector(io.ComfyNode):
             validation,
             usage_stats,
             credits,
+            scene_prompt,
             ui=ui.PreviewText(preview),
         )
 
