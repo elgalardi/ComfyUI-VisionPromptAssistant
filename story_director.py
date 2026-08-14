@@ -277,7 +277,16 @@ class H3StoryDirector(io.ComfyNode):
                 io.Image.Input("image_0", optional=True),
                 io.Image.Input("image_1", optional=True),
                 io.Image.Input("image_2", optional=True),
-                io.Int.Input("scene_count", default=5, min=2, max=32),
+                io.Int.Input(
+                    "scene_count",
+                    default=5,
+                    min=1,
+                    max=32,
+                    tooltip=(
+                        "Use 1 for a standalone I2V shot, or more scenes for a "
+                        "connected H3 sequence."
+                    ),
+                ),
                 io.Float.Input(
                     "scene_duration_seconds",
                     default=5.0,
@@ -388,6 +397,9 @@ class H3StoryDirector(io.ComfyNode):
             )
         if not str(story_idea or "").strip():
             raise ValueError("A story idea is required.")
+        scene_count = int(scene_count)
+        if not 1 <= scene_count <= 32:
+            raise ValueError("scene_count must be between 1 and 32.")
 
         pictures = [image for image in (image_0, image_1, image_2) if image is not None]
         adult_direction = ""
@@ -401,7 +413,9 @@ class H3StoryDirector(io.ComfyNode):
         content = [{
             "type": "text",
             "text": (
-                f"Create exactly {int(scene_count)} connected scenes. Genre: {genre}. "
+                f"Create exactly {scene_count} "
+                f"{'standalone scene' if scene_count == 1 else 'connected scenes'}. "
+                f"Genre: {genre}. "
                 "Write the synopsis, story bible, prompt prefix, and every scene "
                 "prompt entirely in English. "
                 f"Only dialogue, lyrics, narration, and other spoken words may be "
@@ -443,7 +457,7 @@ class H3StoryDirector(io.ComfyNode):
                 "json_schema": {
                     "name": "minimax_h3_story_plan",
                     "strict": True,
-                    "schema": _story_schema(int(scene_count)),
+                    "schema": _story_schema(scene_count),
                 },
             },
             "provider": {"require_parameters": True},
@@ -456,7 +470,7 @@ class H3StoryDirector(io.ComfyNode):
         raw_story = _parse_json_response(content_text)
         plan_json, story_bible, synopsis, validation = _compile_story(
             raw_story,
-            int(scene_count),
+            scene_count,
             float(scene_duration_seconds),
             int(steps),
             len(pictures),
