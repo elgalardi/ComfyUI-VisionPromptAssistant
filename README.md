@@ -78,12 +78,57 @@ still be serialized inside a saved workflow. Remove the key before sharing a
 workflow JSON or image/video containing embedded workflow metadata, and rotate
 the key immediately if it is exposed.
 
+## Local Whisper Transcribe
+
+**Local Whisper Transcribe** accepts a native ComfyUI `AUDIO` value, converts it
+to mono 16 kHz in memory, and transcribes it locally with faster-whisper. It
+offers `large-v3` for parity with the standalone Captioner and `large-v3-turbo`
+for faster experiments, plus automatic language detection, VAD, beam-size and
+CUDA/CPU compute controls. Outputs include the complete transcript, timestamped
+segment JSON, detected language and a concise status string.
+
+Models download on first use to `ComfyUI/models/faster-whisper`. The Whisper
+backend is deliberately short-lived: after every transcription the node unloads
+CTranslate2, releases Python references and clears available CUDA cache before
+MiniMax H3 begins loading. Silent audio is detected before loading the model.
+
 ## H3 Story Director
 
-**H3 Story Director** turns a short story idea and up to three character or
-subject images into a complete, ordered MiniMax H3 production plan. It uses an
-OpenRouter vision model with strict structured output, then validates the
-response locally before returning a `plan_json` string.
+**H3 Story Director** is a multimodal planner for MiniMax H3. It accepts an
+optional story idea, up to three character or subject images, and an optional
+source-video `IMAGE` frame batch from VHS Load Video. It uses an OpenRouter vision model with strict structured
+output, then validates the response locally before returning a `plan_json` and
+the first complete mode-specific prompt.
+
+`Director Mode` provides three clear production paths:
+
+- `Continuous Story` preserves pose, action, camera, location and sound state
+  from one scene into the next.
+- `Cinematic Cuts` preserves identity and narrative state while resetting camera
+  position, framing, lens, pose and movement after every hard cut.
+- `Edit` automatically writes still-image generation/edit prompts when no source
+  video is connected. With a VHS `IMAGE` frame batch connected, it analyzes
+  `<Video 1>` and automatically infers motion transfer, character replacement or
+  insertion, wardrobe, environment, style, camera/choreography, or object editing
+  from the user's prompt. There is no separate operation selector.
+
+Video analysis samples 10 frames by default, distributed uniformly from 0% to
+100% of the VHS `IMAGE` batch. Each sample is sent as a separate full-detail
+image instead of being reduced into a contact sheet. The Director reconstructs
+one chronological progression and must track subject pose, body-part movement,
+direction, intensity, contact, clothing or visible nudity, visible anatomy,
+objects, setting, lighting, framing, and camera behavior. Clearly visible adult
+or explicit content is described directly and objectively without inventing
+details that are not visible. Observation labels and analysis methodology are
+forbidden from generation prompts. Analyses shorter than the required detail
+threshold are rejected before generation. The same source video must be connected
+to the H3 generation workflow as `<Video 1>`.
+
+`mode_prompt` returns the first complete prompt adapted to the chosen mode.
+`source_video_analysis` exposes the chronological interpretation for inspection
+and is empty when Edit has no source video. `scene_count` is always respected:
+requesting multiple video-edit scenes produces that many ordered, distinct prompts
+instead of silently forcing the result to one scene.
 
 For a standalone I2V generation, set `scene_count` to `1` and connect the
 `scene_prompt` output directly to the MiniMax H3 I2V prompt input. This output
@@ -96,12 +141,68 @@ strict structured outputs on OpenRouter. The model field remains editable.
 Reasoning is disabled by default for lower latency and cost and can be enabled
 for more complex story structures.
 
-Language is selectable between English, Spanish, and Japanese. Genre is a
-15-item menu covering drama, action, thriller, horror, comedy, romance,
-science fiction, fantasy, documentary, music video, anime, animated movie,
-erotic drama, erotic thriller, and explicit adult film. Adult genres require
+`story_idea` is optional. Leaving it empty enables Full Creative Control: the
+Director invents the premise and complete narrative arc from the selected genre,
+Motion Style, dialogue setting, scene count and duration, additional direction,
+and any connected reference images. Writing a premise keeps the original guided
+behavior. New nodes also start with an empty `additional_direction` field so the
+example musician story never leaks into an unrelated creative run.
+
+`Dialogue` is a fixed selector containing No dialogue, ten of the most widely
+spoken languages by total speakers (English, Mandarin Chinese, Hindi, Spanish,
+Standard Arabic, French, Bengali, Portuguese, Russian, and Indonesian), plus
+Japanese for continuity with the original workflow. The synopsis, story bible,
+JSON plan, and production directions remain in English.
+
+When dialogue is enabled, the Director writes every actual spoken line in quotes,
+assigns it to a visible speaker, and keeps the exchange naturally performable
+inside the selected duration. It never leaves dialogue for MiniMax to invent.
+Selecting No dialogue removes spoken dialogue, narration, voice-over, and
+intelligible background speech.
+
+`audio_content` independently controls the permitted vocal and musical content.
+Its first and default option, `Auto`, infers the appropriate dialogue, singing,
+instrumental score or intentional ambience from the complete story while keeping
+audio choices coherent across scenes. `Dialogue Only` excludes score and singing while retaining ambience and Foley;
+`Dialogue and Music` adds a non-vocal score that ducks beneath speech; `Singing
+Music Only` removes spoken dialogue and requires exact sung lyrics whenever lyrics
+are intelligible; and `Instrumental Music Only` prohibits every spoken or sung
+voice. The `Dialogue` language applies to spoken lines and lyrics. When `No
+dialogue` is combined with a dialogue mode, speech remains disabled. In singing
+mode it uses a language explicitly requested by the story or non-lexical vocals.
+
+Genre is an expanded menu covering the original drama, action, thriller, horror,
+comedy, romance, science fiction, fantasy, documentary, music video, anime,
+animation and adult categories, plus adventure, crime, detective mystery, film
+noir, sitcom, slasher, superhero, western, martial arts, heist, espionage,
+disaster, psychological drama, dark comedy, and musical. Commercial and social
+formats include advertising, product showcase, fashion, beauty, food, luxury,
+TikTok/Reels, YouTube, vlog, influencer/UGC, corporate, sports, travel,
+educational and video-podcast productions. Additional adult formats include
+OnlyFans-style creator video, glamour/boudoir, pornographic, fetish, sensual
+romance, erotic comedy, amateur-style, POV, couples, BDSM-themed, consensual
+fantasy roleplay, intimate art film, and explicit music-video formats. Adult genres require
 all depicted participants to be clearly consenting adults aged 18 or older and
 reject sexual treatment of minors or age-ambiguous references.
+
+The first genre option, `Auto`, is not treated as
+a literal genre. The Director infers a coherent genre, production format, tone,
+audience and visual language from the written premise, additional direction,
+reference images, source-video timeline and Director Mode. Explicit
+written intent takes precedence over ambiguous visual clues. If the inferred format
+is adult, the same consenting-adults-only validation remains mandatory.
+
+`Motion Style` independently controls the global action/camera cadence without
+changing scene duration. Its first and default option, `Auto`, infers the best
+motion intensity and camera language from the prompt, references, source video,
+genre, and Director Mode. Alongside Normal, Fast, Slow, Time Lapse, Stop Motion,
+Hyperlapse, Speed Ramp, Minimal, Fluid, and Intense Dynamic motion, it includes
+Super Fast, Super Slow, Handheld, Gimbal, Steadicam, Locked-Off, Dolly/Tracking,
+Crane/Drone, Orbit, Whip Pan, and Crash Zoom camera styles. Each selection expands
+into explicit physical-action and camera guidance for the LLM. More extreme choices
+include Chaotic Erratic, Frenetic Kinetic, Unhinged Handheld, Surreal Unpredictable,
+and Pulsing Rhythmic motion; calmer choices include Meditative Calm, Gentle Organic,
+Dreamlike Floating, Static Tableau, and Slow Observational motion.
 
 The model writes the synopsis, continuity bible, shared reference assignments,
 and scene prompts. The node—not the model—enforces the requested scene count,

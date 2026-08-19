@@ -22,6 +22,30 @@ function maskApiKey(node) {
     }
 }
 
+function migrateSimplifiedDirectorWidgets(node) {
+    const widget = (name) => node.widgets?.find((item) => item.name === name);
+    const genre = widget("genre");
+    const mode = widget("director_mode");
+    const samples = widget("video_sample_frames");
+    const audioContent = widget("audio_content");
+    const legacyAudioContent = {
+        "Solo diálogo": "Dialogue Only",
+        "Diálogo y música": "Dialogue and Music",
+        "Solo música con canto": "Singing Music Only",
+        "Solo música instrumental": "Instrumental Music Only",
+    };
+    if (genre?.value === "Auto — Infer from References & Prompt") genre.value = "Auto";
+    if (["Still Image / Edit", "Storyboard Frames", "Video Edit / Motion Transfer"].includes(mode?.value)) {
+        mode.value = "Edit";
+    }
+    if (audioContent?.value in legacyAudioContent) {
+        audioContent.value = legacyAudioContent[audioContent.value];
+    }
+    // Older workflows stored the removed edit_operation selector immediately
+    // before video_sample_frames. Reset the shifted legacy string safely.
+    if (samples && !Number.isFinite(Number(samples.value))) samples.value = 10;
+}
+
 function connectedPlanNodes(node) {
     const plans = [];
     for (const linkId of node.outputs?.[0]?.links ?? []) {
@@ -83,6 +107,13 @@ app.registerExtension({
                 Math.max(this.size[0], 390),
                 Math.max(this.size[1], 720),
             ]);
+            return result;
+        };
+
+        const onConfigure = nodeType.prototype.onConfigure;
+        nodeType.prototype.onConfigure = function () {
+            const result = onConfigure?.apply(this, arguments);
+            migrateSimplifiedDirectorWidgets(this);
             return result;
         };
 

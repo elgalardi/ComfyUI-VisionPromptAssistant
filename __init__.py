@@ -15,7 +15,13 @@ from comfy_api.latest import ComfyExtension, io, ui
 from PIL import Image, ImageDraw, ImageFont
 from typing_extensions import override
 
-from .story_director import H3StoryDirector
+from .story_director import (
+    H3StoryDirector,
+    H3StoryDirectorCleanCuts,
+    H3StoryDirectorStoryboardCuts,
+    H3StoryDirectorStoryboardFL2VA,
+)
+from .audio_transcriber import LocalWhisperTranscribe
 
 
 VISION_BLOCK = "<|vision_start|><|image_pad|><|vision_end|>"
@@ -611,6 +617,60 @@ class PreviewVisionPrompt(io.ComfyNode):
         return io.NodeOutput(prompt, ui=ui.PreviewText(prompt))
 
 
+class H3EditDuration24FPS(io.ComfyNode):
+    """Provide one frame-exact 24 fps duration source for Director and VHS."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3EditDuration24FPS",
+            display_name="H3 Edit Duration — 24 FPS",
+            category="conditioning/minimax",
+            search_aliases=[
+                "h3 frame load cap", "24 fps duration", "vhs frame cap",
+                "minimax edit duration",
+            ],
+            description=(
+                "Keeps H3 Story Director and VHS Load Video on one exact duration. "
+                "Connect duration_seconds to the Director and frame_load_cap to VHS."
+            ),
+            inputs=[
+                io.Float.Input(
+                    "duration_seconds",
+                    default=5.0,
+                    min=0.5,
+                    max=15.0,
+                    step=0.5,
+                    tooltip="Requested source-video duration at exactly 24 fps.",
+                ),
+            ],
+            outputs=[
+                io.Float.Output(
+                    "duration_seconds",
+                    tooltip="Connect to H3 Story Director scene_duration_seconds.",
+                ),
+                io.Int.Output(
+                    "frame_load_cap",
+                    tooltip="Connect directly to VHS Load Video frame_load_cap.",
+                ),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, duration_seconds: float) -> io.NodeOutput:
+        duration = float(duration_seconds)
+        if not math.isfinite(duration) or duration <= 0:
+            raise ValueError("duration_seconds must be a finite positive number.")
+        exact_frames = duration * 24.0
+        frame_load_cap = int(round(exact_frames))
+        if not math.isclose(exact_frames, frame_load_cap, abs_tol=1e-9):
+            raise ValueError(
+                "duration_seconds must resolve to a whole frame at 24 fps; "
+                f"{duration:g}s equals {exact_frames:g} frames."
+            )
+        return io.NodeOutput(duration, frame_load_cap)
+
+
 class LocalVisionPromptExtension(ComfyExtension):
     @override
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
@@ -618,7 +678,12 @@ class LocalVisionPromptExtension(ComfyExtension):
             LocalVisionPromptGenerator,
             AbliterationVisionPrompt,
             H3StoryDirector,
+            H3StoryDirectorCleanCuts,
+            H3StoryDirectorStoryboardCuts,
+            H3StoryDirectorStoryboardFL2VA,
+            LocalWhisperTranscribe,
             PreviewVisionPrompt,
+            H3EditDuration24FPS,
         ]
 
 
