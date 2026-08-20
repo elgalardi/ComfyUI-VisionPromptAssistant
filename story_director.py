@@ -707,7 +707,22 @@ def _director_mode_rules(
     common = (
         "These mode rules override any conflicting generic continuity instruction. "
         "Never mention Director Mode, private planning rules, contact sheets, sampled "
-        "frames, percentages, JSON, or analysis methodology in a generation prompt."
+        "frames, percentages, JSON, or analysis methodology in a generation prompt.\n"
+        "MANDATORY CAST INTEGRITY:\n"
+        "- Maintain one persistent cast ledger across the complete plan. Each stable subject "
+        "label represents exactly one physical person, never multiple copies.\n"
+        "- In every scene prompt, make the intended visible principal-character count and "
+        "their subject labels unambiguous. Do not invent background copies of them.\n"
+        "- When a new character enters, exactly one new person enters. The entrance changes "
+        "that character from absent or off-screen to present; it must not create a second "
+        "instance beside an already visible version of the same character.\n"
+        "- Never show the same person twice in foreground and background, at both sides of "
+        "the frame, or as cloned, twinned, duplicated, merged, or repeated anatomy unless "
+        "the user explicitly requests duplicates or twins.\n"
+        "- A mirror or reflective surface may show only a physically consistent reflection "
+        "of the existing person, never an additional independent body.\n"
+        "- Successive action beats describe the same persistent person over time and must "
+        "not be interpreted as multiple simultaneous instances."
     )
     if mode == "Cinematic Cuts":
         return f"""{common}
@@ -1085,6 +1100,17 @@ class H3StoryDirector(io.ComfyNode):
                     ),
                 ),
                 io.Combo.Input(
+                    "secondary_genre",
+                    options=["None", *GENRES],
+                    default="None",
+                    tooltip=(
+                        "Optionally blend a second genre into the primary genre. "
+                        "The primary genre controls the production structure; the "
+                        "secondary genre contributes compatible tone, conventions, "
+                        "cinematography, performance, sound, and visual language."
+                    ),
+                ),
+                io.Combo.Input(
                     id="language",
                     display_name="Dialogue",
                     options=DIALOGUE_OPTIONS,
@@ -1237,6 +1263,7 @@ class H3StoryDirector(io.ComfyNode):
         steps: int,
         draft_only: bool,
         genre: str,
+        secondary_genre: str,
         language: str,
         audio_content: str,
         motion_style: str,
@@ -1336,7 +1363,28 @@ class H3StoryDirector(io.ComfyNode):
         is_edit_mode = director_mode in {"Edit", "Reference Edit"}
         is_video_edit = is_edit_mode and source_video_connected
         is_still_mode = is_edit_mode and not source_video_connected
+        genre = str(genre or "Auto").strip()
+        secondary_genre = str(secondary_genre or "None").strip()
         auto_genre = genre in {"Auto", "Auto — Infer from References & Prompt"}
+        secondary_auto = secondary_genre == "Auto" and not auto_genre
+        secondary_enabled = (
+            secondary_genre not in {"", "None", "Auto"}
+            and secondary_genre != genre
+        )
+        secondary_direction = (
+            f" Secondary genre: {secondary_genre}. Blend its compatible tone, genre "
+            "conventions, cinematography, performance, sound, and visual language into "
+            "the primary genre without replacing the primary narrative structure."
+            if secondary_enabled else ""
+        )
+        if secondary_auto:
+            secondary_direction = (
+                " Infer one complementary secondary genre distinct from the selected "
+                "primary genre. Blend its compatible tone, conventions, cinematography, "
+                "performance, sound, and visual language without replacing the primary "
+                "narrative structure. Identify the inferred blend naturally in the "
+                "synopsis and story bible; never output Auto as a genre."
+            )
         genre_direction = (
             "Genre selection is AUTO. Infer one coherent genre, production format, "
             "tone, audience, and visual language from the user's written premise, "
@@ -1348,7 +1396,7 @@ class H3StoryDirector(io.ComfyNode):
             if auto_genre else
             f"Genre: {genre}. Apply this genre consistently to tone, structure, "
             "performance, cinematography, sound, and visual language."
-        )
+        ) + secondary_direction
         if story_idea:
             story_direction = f"User story premise:\n{story_idea}"
         elif is_still_mode:
@@ -1381,13 +1429,15 @@ class H3StoryDirector(io.ComfyNode):
                 "empty or that creative control was enabled in any generated prompt."
             )
         adult_direction = ""
-        if "Adults 18+" in genre:
+        if "Adults 18+" in genre or (
+            secondary_enabled and "Adults 18+" in secondary_genre
+        ):
             adult_direction = (
                 " This is an adults-only genre. Every depicted participant must be "
                 "an explicitly consenting adult aged 18 or older. Never create sexual "
                 "content involving a minor or a person whose age is ambiguous."
             )
-        elif auto_genre:
+        elif auto_genre or secondary_auto:
             adult_direction = (
                 " If the inferred direction is adult or sexually explicit, every "
                 "depicted participant must be an explicitly consenting adult aged 18 "
