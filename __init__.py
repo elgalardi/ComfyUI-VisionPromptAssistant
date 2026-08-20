@@ -16,7 +16,9 @@ from PIL import Image, ImageDraw, ImageFont
 from typing_extensions import override
 
 from .story_director import (
+    H3LLMModelAPI,
     H3StoryDirector,
+    H3StoryDirectorLLMAPI,
     H3StoryDirectorCleanCuts,
     H3StoryDirectorStoryboardCuts,
     H3StoryDirectorStoryboardFL2VA,
@@ -677,7 +679,9 @@ class LocalVisionPromptExtension(ComfyExtension):
         return [
             LocalVisionPromptGenerator,
             AbliterationVisionPrompt,
+            H3LLMModelAPI,
             H3StoryDirector,
+            H3StoryDirectorLLMAPI,
             H3StoryDirectorCleanCuts,
             H3StoryDirectorStoryboardCuts,
             H3StoryDirectorStoryboardFL2VA,

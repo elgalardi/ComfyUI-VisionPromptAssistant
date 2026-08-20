@@ -141,6 +141,26 @@ strict structured outputs on OpenRouter. The model field remains editable.
 Reasoning is disabled by default for lower latency and cost and can be enabled
 for more complex story structures.
 
+### External / datacenter LLM
+
+**H3 Story Director — LLM Model (API)** provides the same inputs, multimodal
+reference handling, validation, plan compiler, and outputs without calling
+OpenRouter. Its `llm_model` socket accepts the package's **H3 LLM Model (API)**
+output as well as the `LLMMODEL` output from YALLM's **LLM Model (API)** or
+**LLM Provider (API)** nodes.
+
+**H3 LLM Model (API)** connects to an OpenAI-compatible datacenter endpoint.
+Enter either a base URL ending in `/v1` or the complete `/chat/completions`
+URL, plus the served model ID and optional API key. The key widget is visually
+masked but may still be serialized in workflow metadata; deployment systems
+should inject or remove credentials before distributing workflows. YALLM can
+instead keep connection profiles and credentials in its server-side YAML.
+
+The external Director still performs all final plan validation locally. With a
+YALLM model that does not expose structured-output parameters, it supplies the
+exact JSON Schema in the system instruction and rejects malformed responses
+before any MiniMax render begins.
+
 `story_idea` is optional. Leaving it empty enables Full Creative Control: the
 Director invents the premise and complete narrative arc from the selected genre,
 Motion Style, dialogue setting, scene count and duration, additional direction,
@@ -207,7 +227,8 @@ Dreamlike Floating, Static Tableau, and Slow Observational motion.
 The model writes the synopsis, continuity bible, shared reference assignments,
 and scene prompts. The node—not the model—enforces the requested scene count,
 duration, and sampler steps. Every connected image must be assigned through its
-exact `<Picture 1>`, `<Picture 2>`, or `<Picture 3>` tag or the plan is rejected.
+exact `<Picture 1>`, `<Picture 2>`, `<Picture 3>`, or `<Picture 4>` tag or the
+plan is rejected.
 Incomplete JSON, missing scenes, duplicate IDs, and underspecified scene prompts
 also stop before video generation begins.
 

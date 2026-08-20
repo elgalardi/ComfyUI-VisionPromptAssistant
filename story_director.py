@@ -1018,6 +1018,196 @@ def _credits(api_key: str, timeout_seconds: int) -> str:
         return "Credits: not available"
 
 
+def _chat_completions_url(base_url: str) -> str:
+    """Normalize either an OpenAI base URL or a complete chat endpoint."""
+    url = str(base_url or "").strip().rstrip("/")
+    if not url:
+        raise ValueError("base_url is required for H3 LLM Model (API).")
+    if url.endswith("/chat/completions"):
+        return url
+    return f"{url}/chat/completions"
+
+
+class H3LLMModelAPIConnection:
+    """Small OpenAI-compatible LLMMODEL used by the external Director."""
+
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        api_key: str,
+        timeout_seconds: int,
+    ):
+        self.base_url = str(base_url or "").strip()
+        self.model = str(model or "").strip()
+        self.api_key = str(api_key or "").strip()
+        self.timeout_seconds = int(timeout_seconds)
+
+    def h3_chat_completion(self, payload: dict) -> dict:
+        request_payload = dict(payload)
+        request_payload["model"] = self.model
+        # These fields are OpenRouter-specific and should not leak into a
+        # datacenter's otherwise OpenAI-compatible endpoint.
+        request_payload.pop("provider", None)
+        request_payload.pop("reasoning", None)
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        request = urllib.request.Request(
+            _chat_completions_url(self.base_url),
+            data=json.dumps(request_payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(
+                request, timeout=self.timeout_seconds
+            ) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            details = error.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"LLM Model (API) returned HTTP {error.code}: {details}"
+            ) from error
+        except (json.JSONDecodeError, urllib.error.URLError, TimeoutError) as error:
+            reason = getattr(error, "reason", error)
+            raise RuntimeError(f"LLM Model (API) request failed: {reason}") from error
+
+
+def _external_llm_request(llm_model, payload: dict) -> dict:
+    """Use either our model connection or YALLM's LLMMODEL contract."""
+    if llm_model is None:
+        raise ValueError(
+            "Connect H3 LLM Model (API), YALLM LLM Model (API), or "
+            "YALLM LLM Provider (API)."
+        )
+    direct_request = getattr(llm_model, "h3_chat_completion", None)
+    if callable(direct_request):
+        return direct_request(payload)
+
+    # YALLM's current LLMModel keeps its OpenAI client and selected model on
+    # these attributes. Using them when present preserves max_tokens, strict
+    # JSON Schema, temperature, seed, and usage reporting. We still retain the
+    # public chat_completion fallback below for custom/datacenter adapters.
+    yallm_client = getattr(llm_model, "_llm", None)
+    yallm_model_name = getattr(llm_model, "_model", None)
+    if yallm_client is not None and yallm_model_name:
+        try:
+            output = yallm_client.chat.completions.create(
+                model=yallm_model_name,
+                messages=payload["messages"],
+                max_tokens=int(payload.get("max_tokens", 6144)),
+                temperature=float(payload.get("temperature", 0.45)),
+                seed=int(payload.get("seed", 0)),
+                response_format=payload.get("response_format"),
+            )
+            if hasattr(output, "model_dump"):
+                return output.model_dump()
+            content = output.choices[0].message.content if output.choices else ""
+            usage = getattr(output, "usage", None)
+            return {
+                "choices": [{"message": {"content": str(content or "")}}],
+                "usage": usage.model_dump() if hasattr(usage, "model_dump") else {},
+            }
+        except Exception as error:
+            print(
+                "[H3 Story Director] The connected YALLM provider did not "
+                "accept strict structured-output parameters; falling back to "
+                f"its public chat_completion contract ({type(error).__name__})."
+            )
+
+    chat_completion = getattr(llm_model, "chat_completion", None)
+    if not callable(chat_completion):
+        raise TypeError(
+            "The connected LLMMODEL does not expose chat_completion()."
+        )
+
+    # YALLM intentionally exposes a minimal chat_completion contract and does
+    # not accept response_format. Put the exact schema into the system message
+    # so the same parser/compiler can still validate its result.
+    messages = [dict(message) for message in payload["messages"]]
+    schema_instruction = (
+        "Return only one valid JSON object. It must match this JSON Schema "
+        "exactly; do not use Markdown fences or add commentary:\n"
+        + json.dumps(
+            payload["response_format"]["json_schema"]["schema"],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    )
+    messages[0] = dict(messages[0])
+    messages[0]["content"] = (
+        str(messages[0].get("content") or "").rstrip()
+        + "\n\n"
+        + schema_instruction
+    )
+    samplers = [("temperature", float(payload.get("temperature", 0.45)))]
+    try:
+        content = chat_completion(
+            messages,
+            samplers=samplers,
+            seed=int(payload.get("seed", 0)),
+        )
+    except TypeError:
+        # Permit simpler datacenter adapters that only accept messages.
+        content = chat_completion(messages)
+    if isinstance(content, (list, tuple)):
+        content = content[0] if content else ""
+    return {
+        "choices": [{"message": {"content": str(content or "")}}],
+        "usage": {},
+    }
+
+
+class H3LLMModelAPI(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3LLMModelAPI",
+            display_name="H3 LLM Model (API)",
+            category="text/minimax_h3",
+            search_aliases=["llm model api", "yallm", "datacenter llm"],
+            description=(
+                "Creates an OpenAI-compatible LLMMODEL connection for "
+                "H3 Story Director — LLM Model (API). Its output is also "
+                "compatible with nodes that accept YALLM's LLMMODEL type."
+            ),
+            inputs=[
+                io.String.Input(
+                    "base_url",
+                    default="http://127.0.0.1:8080/v1",
+                    tooltip=(
+                        "OpenAI-compatible base URL ending in /v1, or the full "
+                        "/chat/completions endpoint."
+                    ),
+                ),
+                io.String.Input("model", default=""),
+                io.String.Input(
+                    "api_key",
+                    default="",
+                    extra_dict={"password": True},
+                    tooltip="Optional for trusted internal datacenter endpoints.",
+                ),
+                io.Int.Input(
+                    "timeout_seconds", default=300, min=30, max=1800, advanced=True
+                ),
+            ],
+            outputs=[io.Custom("LLMMODEL").Output("llm_model")],
+        )
+
+    @classmethod
+    def execute(
+        cls, base_url: str, model: str, api_key: str, timeout_seconds: int
+    ) -> io.NodeOutput:
+        if not str(model or "").strip():
+            raise ValueError("model is required for H3 LLM Model (API).")
+        connection = H3LLMModelAPIConnection(
+            base_url, model, api_key, timeout_seconds
+        )
+        _chat_completions_url(connection.base_url)
+        return io.NodeOutput(connection)
+
+
 class H3StoryDirector(io.ComfyNode):
     @classmethod
     def define_schema(cls):
@@ -1282,6 +1472,7 @@ class H3StoryDirector(io.ComfyNode):
         image_3=None,
         source_video=None,
         bypass_director: bool = False,
+        llm_model=None,
     ) -> io.NodeOutput:
         if language in {"EspaÃ±ol", "EspaÃƒÂ±ol"}:
             language = "Español"
@@ -1349,8 +1540,9 @@ class H3StoryDirector(io.ComfyNode):
                 "",
                 ui=ui.PreviewText(f"{validation}\n\n{story_idea}"),
             )
+        uses_external_llm = llm_model is not None
         api_key = str(api_key or os.environ.get("OPENROUTER_API_KEY", "")).strip()
-        if not api_key:
+        if not uses_external_llm and not api_key:
             raise ValueError(
                 "An OpenRouter API key is required in the node or the "
                 "OPENROUTER_API_KEY environment variable."
@@ -1638,7 +1830,11 @@ class H3StoryDirector(io.ComfyNode):
             },
             "provider": {"require_parameters": True},
         }
-        result = _openrouter_request(api_key, payload, int(timeout_seconds))
+        result = (
+            _external_llm_request(llm_model, payload)
+            if uses_external_llm else
+            _openrouter_request(api_key, payload, int(timeout_seconds))
+        )
         try:
             content_text = result["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as error:
@@ -1676,8 +1872,14 @@ class H3StoryDirector(io.ComfyNode):
             f"input: {usage.get('prompt_tokens', '?')} · "
             f"output: {usage.get('completion_tokens', '?')} · "
             f"total: {usage.get('total_tokens', '?')}"
+            if usage else
+            "External LLM · usage not reported"
         )
-        credits = _credits(api_key, min(30, int(timeout_seconds)))
+        credits = (
+            "External LLM · credits not available"
+            if uses_external_llm else
+            _credits(api_key, min(30, int(timeout_seconds)))
+        )
         preview = f"{synopsis}\n\n{validation}\n\n--- PLAN JSON ---\n{plan_json}"
         plan_output = ExecutionBlocker(None) if draft_only else plan_json
         return io.NodeOutput(
@@ -1691,6 +1893,54 @@ class H3StoryDirector(io.ComfyNode):
             scene_prompt,
             source_video_analysis,
             ui=ui.PreviewText(preview),
+        )
+
+
+class H3StoryDirectorLLMAPI(H3StoryDirector):
+    """H3 Director variant driven by a wired YALLM-compatible LLMMODEL."""
+
+    @classmethod
+    def define_schema(cls):
+        schema = super().define_schema()
+        schema.node_id = "H3StoryDirectorLLMAPI"
+        schema.display_name = "H3 Story Director — LLM Model (API)"
+        schema.search_aliases = [
+            "h3 external llm director", "yallm h3 director",
+            "datacenter story director",
+        ]
+        schema.description = (
+            "The same multimodal H3 Story Director, driven by a connected "
+            "LLMMODEL instead of OpenRouter. Connect H3 LLM Model (API), "
+            "YALLM LLM Model (API), or YALLM LLM Provider (API)."
+        )
+        hidden_openrouter_inputs = {
+            "api_key", "model", "reasoning", "timeout_seconds",
+        }
+        schema.inputs = [
+            io.Custom("LLMMODEL").Input(
+                "llm_model",
+                tooltip=(
+                    "Accepts our H3 LLM Model (API) and YALLM-compatible "
+                    "LLM Model / Provider outputs."
+                ),
+            ),
+            *[
+                item for item in schema.inputs
+                if item.id not in hidden_openrouter_inputs
+            ],
+        ]
+        return schema
+
+    @classmethod
+    def execute(cls, llm_model, **kwargs) -> io.NodeOutput:
+        return H3StoryDirector.execute.__func__(
+            cls,
+            api_key="",
+            model="",
+            reasoning=False,
+            timeout_seconds=300,
+            llm_model=llm_model,
+            **kwargs,
         )
 
 
