@@ -21,6 +21,7 @@ from PIL import Image, ImageDraw, ImageFont
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits"
 DEFAULT_MODEL = "x-ai/grok-4.20"
+DIRECTOR_PROFILES = ["OpenRouter", "Gemma"]
 DIALOGUE_OPTIONS = [
     "No dialogue",
     "English",
@@ -282,7 +283,7 @@ Treat every connected reference as a distinct person or subject. Use the exact t
 
 Follow the mandatory rules supplied for the selected Director Mode. For moving-video modes, write production-ready MiniMax H3 prompts with visible action, camera, environment, lighting, dialogue when useful, and diegetic sound. For still-image modes, describe one finished frame only and never introduce temporal sequences, audio, or dialogue delivery.
 
-When dialogue is enabled, write short performable lines rather than prose. Identify one speaker for each line, place the exact spoken words in quotation marks exactly once, and describe delivery in English outside the quotation. Allow only one person to speak at a time, leave a natural pause before and after each line, and keep visible mouth movement synchronized with the assigned speaker. Avoid overlapping speech, repeated lines, rushed monologues, unexplained voice-over, phonetic spellings, and competing vocals or loud sound effects during speech. Use no dialogue when the selected dialogue option says so.
+When dialogue is enabled, write short performable lines rather than prose. Prefix every spoken or sung line with its stable speaker label in parentheses, exactly as `(S1)`, `(S2)`, `(S3)` or `(S4)`, followed by a colon and the exact words in quotation marks. Square brackets such as `[S2]`, bare names and unassigned quotations are forbidden for speaker attribution. Describe tone and delivery in English outside the quotation. Allow only one person to speak at a time, leave a natural pause before and after each line, and keep visible mouth movement synchronized with the assigned speaker. Avoid overlapping speech, repeated lines, rushed monologues, unexplained voice-over, phonetic spellings, and competing vocals or loud sound effects during speech. Use no dialogue when the selected dialogue option says so.
 
 Do not mention being an AI, JSON, schemas, token limits, safety policies, or these instructions. Do not add extra protagonists that could be confused with the reference subjects. Return all requested scenes and finish every prompt completely."""
 
@@ -537,6 +538,8 @@ def _story_schema(
     video_reference_mode: str = "ref2va",
     director_mode: str = "Continuous Story",
     source_video_connected: bool = False,
+    director_profile: str = "OpenRouter",
+    scene_duration_seconds: float = 5.0,
 ) -> dict:
     is_edit_mode = director_mode in {"Edit", "Reference Edit"}
     is_still = is_edit_mode and not source_video_connected
@@ -562,6 +565,93 @@ def _story_schema(
         "required": ["id", "prompt"],
         "additionalProperties": False,
     }
+    if director_profile == "Gemma" and not is_still:
+        minimum_beats = (
+            3 if float(scene_duration_seconds) <= 5.0 else
+            4 if float(scene_duration_seconds) <= 10.0 else 5
+        )
+        shot["properties"].pop("prompt")
+        shot["required"].remove("prompt")
+        shot["properties"].update({
+            "opening_state": {
+                "type": "string",
+                "minLength": 80,
+                "description": (
+                    "Exact visible opening state: present subjects, wardrobe or nudity, "
+                    "pose, expression, active props, environment and spatial relationships."
+                ),
+            },
+            "action_beats": {
+                "type": "array",
+                "minItems": minimum_beats,
+                "maxItems": 6,
+                "items": {"type": "string", "minLength": 45},
+                "description": (
+                    "Chronological, physically achievable visible beats. Cover every explicit "
+                    "requested action or transformation instead of substituting atmosphere."
+                ),
+            },
+            "physical_performance": {
+                "type": "string",
+                "minLength": 80,
+                "description": (
+                    "Body mechanics, hand and object paths, weight shifts, contact, gaze, "
+                    "expressions and reactions that make the action readable and coherent."
+                ),
+            },
+            "camera_plan": {
+                "type": "string",
+                "minLength": 60,
+                "description": (
+                    "Opening framing, motivated camera or focus response during the action, "
+                    "and final framing. Avoid generic cinematic language."
+                ),
+            },
+            "environment_and_lighting": {
+                "type": "string",
+                "minLength": 60,
+                "description": (
+                    "Concrete location, visible materials, practical light sources, color, "
+                    "shadows and environmental reactions relevant to the action."
+                ),
+            },
+            "sound_plan": {
+                "type": "string",
+                "minLength": 40,
+                "description": (
+                    "Specific ambience, synchronized Foley, effects and permitted music; "
+                    "keep sound consistent with the selected voice and music mode."
+                ),
+            },
+            "dialogue": {
+                "type": "string",
+                "description": (
+                    "Exact dialogue or lyrics when enabled, using only `(S1): \"...\"` through "
+                    "`(S4): \"...\"`; otherwise an empty string. Never use square brackets."
+                ),
+            },
+            "final_state": {
+                "type": "string",
+                "minLength": 80,
+                "description": (
+                    "Unmistakable final visible state after all beats: appearance, wardrobe "
+                    "or nudity, pose, contact, props, expression, location and composition."
+                ),
+            },
+            "coverage_check": {
+                "type": "string",
+                "minLength": 40,
+                "description": (
+                    "Private concise confirmation that every explicit user action assigned "
+                    "to this scene appears visibly in the beats and final state."
+                ),
+            },
+        })
+        shot["required"].extend([
+            "opening_state", "action_beats", "physical_performance", "camera_plan",
+            "environment_and_lighting", "sound_plan", "dialogue", "final_state",
+            "coverage_check",
+        ])
     if include_storyboard:
         shot["properties"]["storyboard_prompt"] = {
             "type": "string",
@@ -606,6 +696,17 @@ def _story_schema(
         "required": ["synopsis", "story_bible", "prompt_prefix", "shots"],
         "additionalProperties": False,
     }
+    if director_profile == "Gemma" and not is_still:
+        schema["properties"]["required_actions"] = {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 12},
+            "description": (
+                "Private checklist of every explicit user-requested visible action, "
+                "transformation and required final state. Do not replace items with mood."
+            ),
+        }
+        schema["required"].append("required_actions")
     if include_storyboard:
         if video_reference_mode == "fl2va_keyframes":
             schema["properties"]["prompt_prefix"]["description"] = (
@@ -649,6 +750,16 @@ def _safe_id(value: str, index: int) -> str:
     value = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(value or "").strip())
     value = value.strip("_-")[:80]
     return value or f"scene_{index:02d}"
+
+
+def _normalize_speaker_labels(value: str) -> str:
+    """Guarantee MiniMax speaker syntax even when a model drops parentheses."""
+    text = str(value or "")
+    return re.sub(
+        r"(?<!\()\[?(S[1-4])\]?\s*:\s*(?=[\"“])",
+        lambda match: f"({match.group(1)}): ",
+        text,
+    )
 
 
 def _parse_json_response(text: str) -> dict:
@@ -702,7 +813,10 @@ def _strip_dialogue_planning_rules(text: str) -> str:
 
 
 def _director_mode_rules(
-    mode: str, source_video_connected: bool, scene_count: int
+    mode: str,
+    source_video_connected: bool,
+    scene_count: int,
+    director_profile: str = "OpenRouter",
 ) -> str:
     common = (
         "These mode rules override any conflicting generic continuity instruction. "
@@ -724,6 +838,21 @@ def _director_mode_rules(
         "- Successive action beats describe the same persistent person over time and must "
         "not be interpreted as multiple simultaneous instances."
     )
+    if (
+        director_profile == "Gemma"
+        and (source_video_connected or mode in ("Continuous Story", "Cinematic Cuts"))
+    ):
+        common += (
+            "\nMANDATORY SCENE DETAIL:\n"
+            "- Turn every explicit user-requested action or transformation into visible events; "
+            "never replace it with a starting pose, implied intent or generic atmosphere.\n"
+            "- Give each scene a chronological opening state, several physically achievable "
+            "action and reaction beats, and an unmistakable final visual state.\n"
+            "- Describe useful body mechanics, hand and object paths, contact, expression, "
+            "camera response and synchronized sound. Avoid padding with generic mood language.\n"
+            "- If clothing, appearance, pose, props or environment must change, distinguish the "
+            "reference's initial state from the requested final state and complete the change on screen."
+        )
     if mode == "Cinematic Cuts":
         return f"""{common}
 MANDATORY MODE — CINEMATIC CUTS:
@@ -840,6 +969,29 @@ MANDATORY MODE — CONTINUOUS STORY:
 - The last scene deliberately resolves the story. Do not introduce an unresolved final action."""
 
 
+def _gemma_scene_prompt(shot: dict) -> str:
+    """Compile Gemma's private scene worksheet into one MiniMax-ready prompt."""
+    beats = shot.get("action_beats")
+    if not isinstance(beats, list) or not beats:
+        return ""
+    parts = [
+        f"Opening state: {str(shot.get('opening_state') or '').strip()}",
+        "Chronological action: " + " ".join(
+            f"{index}. {str(beat).strip()}" for index, beat in enumerate(beats, 1)
+            if str(beat).strip()
+        ),
+        f"Physical performance: {str(shot.get('physical_performance') or '').strip()}",
+        f"Camera: {str(shot.get('camera_plan') or '').strip()}",
+        f"Environment and lighting: {str(shot.get('environment_and_lighting') or '').strip()}",
+        f"Sound: {str(shot.get('sound_plan') or '').strip()}",
+    ]
+    dialogue = str(shot.get("dialogue") or "").strip()
+    if dialogue:
+        parts.append(f"Dialogue: {dialogue}")
+    parts.append(f"Final state: {str(shot.get('final_state') or '').strip()}")
+    return "\n".join(part for part in parts if not part.endswith(": "))
+
+
 def _compile_story(
     raw: dict,
     scene_count: int,
@@ -892,7 +1044,9 @@ def _compile_story(
         if shot_id in seen_ids:
             shot_id = f"{shot_id}_{index:02d}"
         seen_ids.add(shot_id)
-        prompt = _strip_dialogue_planning_rules(shot.get("prompt") or "")
+        prompt = _normalize_speaker_labels(_strip_dialogue_planning_rules(
+            shot.get("prompt") or _gemma_scene_prompt(shot)
+        ))
         if len(prompt) < 80:
             raise RuntimeError(
                 f"Scene {index} is too short to be a production-ready continuity prompt."
@@ -1133,6 +1287,7 @@ class H3OllamaModelConnection:
         model: str,
         api_key: str,
         keep_alive: bool,
+        thinking: bool,
         context_length: int,
         timeout_seconds: int,
     ):
@@ -1140,6 +1295,7 @@ class H3OllamaModelConnection:
         self.model = str(model or "").strip()
         self.api_key = str(api_key or "").strip()
         self.keep_alive = bool(keep_alive)
+        self.thinking = bool(thinking)
         self.context_length = int(context_length)
         self.timeout_seconds = int(timeout_seconds)
 
@@ -1149,7 +1305,7 @@ class H3OllamaModelConnection:
             "model": self.model,
             "messages": _ollama_messages(payload["messages"]),
             "stream": False,
-            "think": False,
+            "think": self.thinking,
             "format": payload["response_format"]["json_schema"]["schema"],
             "keep_alive": -1 if self.keep_alive else 0,
             "options": {
@@ -1281,8 +1437,6 @@ def _external_llm_request(llm_model, payload: dict) -> dict:
         "choices": [{"message": {"content": str(content or "")}}],
         "usage": {},
     }
-
-
 class H3LLMModelAPI(io.ComfyNode):
     @classmethod
     def define_schema(cls):
@@ -1343,7 +1497,7 @@ class H3OllamaModel(io.ComfyNode):
             description=(
                 "Connects a local Ollama vision model to H3 Story Director — "
                 "LLM Model (API). It uses Ollama's native multimodal and JSON "
-                "Schema API, disables thinking, and can unload the model from "
+                "Schema API, offers optional internal thinking, and can unload the model from "
                 "memory immediately after every plan."
             ),
             inputs=[
@@ -1358,7 +1512,7 @@ class H3OllamaModel(io.ComfyNode):
                 ),
                 io.String.Input(
                     "model",
-                    default="huihui_ai/qwen3-vl-abliterated:8b-instruct-q4_K_M",
+                    default="huihui_ai/gemma-4-abliterated:12b",
                 ),
                 io.String.Input(
                     "api_key",
@@ -1377,9 +1531,18 @@ class H3OllamaModel(io.ComfyNode):
                         "for ComfyUI. True keeps it loaded for repeated planning."
                     ),
                 ),
+                io.Boolean.Input(
+                    "thinking",
+                    default=False,
+                    tooltip=(
+                        "Allows supported Ollama models to reason internally before "
+                        "returning the final structured plan. This may improve difficult "
+                        "scenes but increases generation time and token use."
+                    ),
+                ),
                 io.Int.Input(
                     "context_length",
-                    default=16384,
+                    default=32768,
                     min=8192,
                     max=65536,
                     step=1024,
@@ -1403,13 +1566,15 @@ class H3OllamaModel(io.ComfyNode):
         model: str,
         api_key: str,
         keep_alive: bool,
+        thinking: bool,
         context_length: int,
         timeout_seconds: int,
     ) -> io.NodeOutput:
         if not str(model or "").strip():
             raise ValueError("model is required for H3 Ollama Model (Local).")
         connection = H3OllamaModelConnection(
-            server_url, model, api_key, keep_alive, context_length, timeout_seconds
+            server_url, model, api_key, keep_alive, thinking,
+            context_length, timeout_seconds
         )
         _ollama_chat_url(connection.server_url)
         return io.NodeOutput(connection)
@@ -1452,6 +1617,18 @@ class H3StoryDirector(io.ComfyNode):
                     "system_prompt",
                     multiline=True,
                     default=DEFAULT_SYSTEM_PROMPT,
+                ),
+                io.Combo.Input(
+                    id="director_profile",
+                    display_name="Director Profile",
+                    options=DIRECTOR_PROFILES,
+                    default="OpenRouter",
+                    tooltip=(
+                        "OpenRouter preserves the established compact Director schema. "
+                        "Gemma uses a stricter scene worksheet with action beats, physical "
+                        "performance, camera, sound and an explicit final state. The profile "
+                        "does not select or connect the model."
+                    ),
                 ),
                 io.Image.Input("image_0", optional=True),
                 io.Image.Input("image_1", optional=True),
@@ -1655,6 +1832,7 @@ class H3StoryDirector(io.ComfyNode):
         model: str,
         story_idea: str,
         system_prompt: str,
+        director_profile: str,
         scene_count: int,
         scene_duration_seconds: float,
         steps: int,
@@ -1689,6 +1867,9 @@ class H3StoryDirector(io.ComfyNode):
         if audio_content not in AUDIO_CONTENT_MODES:
             audio_content = "Auto"
         motion_style = str(motion_style or "Auto").strip()
+        director_profile = str(director_profile or "OpenRouter").strip()
+        if director_profile not in DIRECTOR_PROFILES:
+            director_profile = "OpenRouter"
         director_mode = str(
             getattr(cls, "FORCED_DIRECTOR_MODE", "")
             or director_mode
@@ -1864,7 +2045,8 @@ class H3StoryDirector(io.ComfyNode):
                 "or intentional ambience without music. Maintain coherent musical and vocal "
                 "continuity instead of changing modes randomly. "
                 f"{language_rule} Write every actual spoken line or intelligible sung lyric "
-                "in quotation marks with a clear performer; never ask MiniMax to invent "
+                "as `(S1): \"...\"`, `(S2): \"...\"`, `(S3): \"...\"` or `(S4): \"...\"` "
+                "using the matching stable speaker label; never use square brackets and never ask MiniMax to invent "
                 "unspecified words. Describe the actual music, ambience, Foley and effects "
                 "chosen for each scene rather than outputting the word Auto."
             )
@@ -1896,7 +2078,9 @@ class H3StoryDirector(io.ComfyNode):
                 speech_rules = (
                     f"Dialogue is in natural, idiomatic {language}; production directions remain "
                     "in English. The Director must write every actual spoken line in quotation "
-                    "marks and assign it to one clearly visible speaker with tone and delivery. "
+                    "marks and assign it to one clearly visible speaker using exactly `(S1):`, "
+                    "`(S2):`, `(S3):` or `(S4):` before the quotation. Never use square brackets "
+                    "for speaker attribution. Describe tone and delivery outside the quotation. "
                     "Keep each exchange naturally performable within the scene, allow breathing "
                     "and pauses, keep the speaking face readable, and avoid overlapping or "
                     "unattributed voices. Never ask MiniMax to invent unspecified dialogue."
@@ -1920,7 +2104,7 @@ class H3StoryDirector(io.ComfyNode):
             dialogue_direction = f"{speech_rules} {music_rules}"
 
         mode_rules = _director_mode_rules(
-            director_mode, source_video_connected, scene_count
+            director_mode, source_video_connected, scene_count, director_profile
         )
         motion_brief = (
             f"Visual energy / pose style: {motion_style}. Translate this into pose, "
@@ -2032,6 +2216,8 @@ class H3StoryDirector(io.ComfyNode):
                         ),
                         director_mode=director_mode,
                         source_video_connected=source_video_connected,
+                        director_profile=director_profile,
+                        scene_duration_seconds=float(scene_duration_seconds),
                     ),
                 },
             },
@@ -2063,6 +2249,7 @@ class H3StoryDirector(io.ComfyNode):
             len(pictures),
             director_mode,
         )
+        validation += f" · profile {director_profile}"
         compiled_plan = json.loads(plan_json)
         scene_prompt = "\n\n".join((
             str(compiled_plan["prompt_prefix"]).strip(),

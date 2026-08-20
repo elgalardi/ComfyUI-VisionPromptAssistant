@@ -95,7 +95,7 @@ MiniMax H3 begins loading. Silent audio is detected before loading the model.
 ## H3 Story Director
 
 **H3 Story Director** is a multimodal planner for MiniMax H3. It accepts an
-optional story idea, up to three character or subject images, and an optional
+optional story idea, up to four character or subject images, and an optional
 source-video `IMAGE` frame batch from VHS Load Video. It uses an OpenRouter vision model with strict structured
 output, then validates the response locally before returning a `plan_json` and
 the first complete mode-specific prompt.
@@ -141,6 +141,16 @@ strict structured outputs on OpenRouter. The model field remains editable.
 Reasoning is disabled by default for lower latency and cost and can be enabled
 for more complex story structures.
 
+`Director Profile` separates model-specific planning without changing any public
+output or downstream H3 node. `OpenRouter` retains the established compact scene
+schema. `Gemma` requires a private structured worksheet for every moving-video
+scene: an explicit-action checklist, duration-aware chronological beats, physical
+performance, motivated camera, concrete environment and lighting, synchronized
+sound, dialogue, final state, and a coverage check. The node compiles those
+private fields into the same MiniMax-ready scene prompt and discards the checks.
+This keeps OpenRouter stable while allowing future local-model profiles to be
+added independently.
+
 ### External / datacenter LLM
 
 **H3 Story Director — LLM Model (API)** provides the same inputs, multimodal
@@ -168,10 +178,12 @@ LAN, remote, or hosted server root, an address ending in `/api`, or the complete
 `/api/chat` endpoint; an optional masked API key supports protected services. It
 uses Ollama's native multimodal chat endpoint so up to four Director images, the
 exact JSON Schema, seed, temperature, output-token budget, and context length
-are preserved. Thinking is disabled. `keep_alive=false` sends `0` and unloads
+are preserved. `thinking=false` favors speed; `thinking=true` lets supported
+models reason internally before returning the final structured plan. `keep_alive=false` sends `0` and unloads
 the VLM before MiniMax begins; `keep_alive=true` sends `-1` and keeps it resident
-for repeated plans. The recommended first test model is
-`huihui_ai/qwen3-vl-abliterated:8b-instruct-q4_K_M`.
+for repeated plans. The currently tested local profile is `Gemma` with
+`huihui_ai/gemma-4-abliterated:12b`. Select the matching Director Profile in
+H3 Story Director — LLM Model (API); the profile does not select the model itself.
 
 `story_idea` is optional. Leaving it empty enables Full Creative Control: the
 Director invents the premise and complete narrative arc from the selected genre,
@@ -187,7 +199,7 @@ Japanese for continuity with the original workflow. The synopsis, story bible,
 JSON plan, and production directions remain in English.
 
 When dialogue is enabled, the Director writes every actual spoken line in quotes,
-assigns it to a visible speaker, and keeps the exchange naturally performable
+assigns it as `(S1):`, `(S2):`, `(S3):`, or `(S4):`, and keeps the exchange naturally performable
 inside the selected duration. It never leaves dialogue for MiniMax to invent.
 Selecting No dialogue removes spoken dialogue, narration, voice-over, and
 intelligible background speech.

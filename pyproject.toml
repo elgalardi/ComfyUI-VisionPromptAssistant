@@ -1,6 +1,6 @@
 [project]
 name = "vision-prompt-assistant"
-version = "1.4.1"
+version = "1.5.0"
 description = "Generate reference-aware prompts and structured MiniMax H3 story plans."
 license = { file = "LICENSE" }
 requires-python = ">=3.10"

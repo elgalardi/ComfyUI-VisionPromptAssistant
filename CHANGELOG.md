@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.0 - 2026-08-20
+
+- Added separate `OpenRouter` and `Gemma` Director Profiles without changing
+  the public H3 plan format or downstream node compatibility.
+- Added Gemma's structured scene worksheet with duration-aware action beats,
+  physical performance, camera, environment, sound, dialogue, final state, and
+  private coverage validation.
+- Added optional Ollama thinking and updated new Ollama nodes for the tested
+  `huihui_ai/gemma-4-abliterated:12b` model with a 32768-token context default.
+- Standardized generated speaker attribution as `(S1)` through `(S4)` while
+  retaining the existing stable subject-label system.
+- Added deterministic normalization for bare or square-bracket speaker labels.
+- Strengthened explicit-action coverage and final-state description for Gemma
+  while leaving the established OpenRouter schema compact.
+
 ## 1.1.0 - 2026-08-05
 
 - Simplified Vision Prompt Assistant to three image reference inputs.
