@@ -161,6 +161,18 @@ YALLM model that does not expose structured-output parameters, it supplies the
 exact JSON Schema in the system instruction and rejects malformed responses
 before any MiniMax render begins.
 
+**H3 Ollama Model (Local)** is the Ollama-protocol connection for the same
+external Director. Its default server is `http://127.0.0.1:11434`, the standard
+address when Ollama and ComfyUI run on one computer. The address accepts a local,
+LAN, remote, or hosted server root, an address ending in `/api`, or the complete
+`/api/chat` endpoint; an optional masked API key supports protected services. It
+uses Ollama's native multimodal chat endpoint so up to four Director images, the
+exact JSON Schema, seed, temperature, output-token budget, and context length
+are preserved. Thinking is disabled. `keep_alive=false` sends `0` and unloads
+the VLM before MiniMax begins; `keep_alive=true` sends `-1` and keeps it resident
+for repeated plans. The recommended first test model is
+`huihui_ai/qwen3-vl-abliterated:8b-instruct-q4_K_M`.
+
 `story_idea` is optional. Leaving it empty enables Full Creative Control: the
 Director invents the premise and complete narrative arc from the selected genre,
 Motion Style, dialogue setting, scene count and duration, additional direction,

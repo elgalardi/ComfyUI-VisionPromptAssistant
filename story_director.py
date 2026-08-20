@@ -1074,12 +1074,136 @@ class H3LLMModelAPIConnection:
             raise RuntimeError(f"LLM Model (API) request failed: {reason}") from error
 
 
+def _ollama_chat_url(server_url: str) -> str:
+    url = str(server_url or "").strip().rstrip("/")
+    if not url:
+        raise ValueError("server_url is required for H3 Ollama Model (Local).")
+    if url.endswith("/api/chat"):
+        return url
+    if url.endswith("/api"):
+        return f"{url}/chat"
+    return f"{url}/api/chat"
+
+
+def _ollama_messages(messages: list[dict]) -> list[dict]:
+    """Translate OpenAI multimodal message parts to Ollama's native format."""
+    converted = []
+    for message in messages:
+        content = message.get("content", "")
+        if isinstance(content, str):
+            converted.append({
+                "role": str(message.get("role") or "user"),
+                "content": content,
+            })
+            continue
+        text_parts = []
+        images = []
+        for part in content or []:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") == "text":
+                text_parts.append(str(part.get("text") or ""))
+            elif part.get("type") == "image_url":
+                image_url = part.get("image_url") or {}
+                data_url = (
+                    image_url.get("url", "")
+                    if isinstance(image_url, dict) else str(image_url)
+                )
+                if "," in data_url and data_url.startswith("data:image/"):
+                    images.append(data_url.split(",", 1)[1])
+                elif data_url:
+                    raise ValueError(
+                        "H3 Ollama Model expects embedded image data from the "
+                        "Director, not a remote image URL."
+                    )
+        converted_message = {
+            "role": str(message.get("role") or "user"),
+            "content": "\n".join(part for part in text_parts if part),
+        }
+        if images:
+            converted_message["images"] = images
+        converted.append(converted_message)
+    return converted
+
+
+class H3OllamaModelConnection:
+    def __init__(
+        self,
+        server_url: str,
+        model: str,
+        api_key: str,
+        keep_alive: bool,
+        context_length: int,
+        timeout_seconds: int,
+    ):
+        self.server_url = str(server_url or "").strip()
+        self.model = str(model or "").strip()
+        self.api_key = str(api_key or "").strip()
+        self.keep_alive = bool(keep_alive)
+        self.context_length = int(context_length)
+        self.timeout_seconds = int(timeout_seconds)
+
+    def h3_chat_completion(self, payload: dict) -> dict:
+        chat_url = _ollama_chat_url(self.server_url)
+        request_payload = {
+            "model": self.model,
+            "messages": _ollama_messages(payload["messages"]),
+            "stream": False,
+            "think": False,
+            "format": payload["response_format"]["json_schema"]["schema"],
+            "keep_alive": -1 if self.keep_alive else 0,
+            "options": {
+                "num_ctx": self.context_length,
+                "num_predict": int(payload.get("max_tokens", 6144)),
+                "temperature": float(payload.get("temperature", 0.45)),
+                "seed": int(payload.get("seed", 0)),
+            },
+        }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        request = urllib.request.Request(
+            chat_url,
+            data=json.dumps(request_payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(
+                request, timeout=self.timeout_seconds
+            ) as response:
+                result = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            details = error.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"Ollama returned HTTP {error.code}: {details}"
+            ) from error
+        except (json.JSONDecodeError, urllib.error.URLError, TimeoutError) as error:
+            reason = getattr(error, "reason", error)
+            raise RuntimeError(f"Ollama request failed: {reason}") from error
+
+        content = str((result.get("message") or {}).get("content") or "")
+        if not content.strip():
+            raise RuntimeError("Ollama returned an empty response.")
+        return {
+            "choices": [{"message": {"content": content}}],
+            "usage": {
+                "prompt_tokens": result.get("prompt_eval_count"),
+                "completion_tokens": result.get("eval_count"),
+                "total_tokens": (
+                    int(result.get("prompt_eval_count") or 0)
+                    + int(result.get("eval_count") or 0)
+                ),
+            },
+        }
+
+
 def _external_llm_request(llm_model, payload: dict) -> dict:
     """Use either our model connection or YALLM's LLMMODEL contract."""
     if llm_model is None:
         raise ValueError(
-            "Connect H3 LLM Model (API), YALLM LLM Model (API), or "
-            "YALLM LLM Provider (API)."
+            "Connect H3 Ollama Model (Local), H3 LLM Model (API), "
+            "YALLM LLM Model (API), or YALLM LLM Provider (API)."
         )
     direct_request = getattr(llm_model, "h3_chat_completion", None)
     if callable(direct_request):
@@ -1205,6 +1329,89 @@ class H3LLMModelAPI(io.ComfyNode):
             base_url, model, api_key, timeout_seconds
         )
         _chat_completions_url(connection.base_url)
+        return io.NodeOutput(connection)
+
+
+class H3OllamaModel(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3OllamaModel",
+            display_name="H3 Ollama Model (Local)",
+            category="text/minimax_h3",
+            search_aliases=["ollama h3 director", "local vlm", "ollama model"],
+            description=(
+                "Connects a local Ollama vision model to H3 Story Director — "
+                "LLM Model (API). It uses Ollama's native multimodal and JSON "
+                "Schema API, disables thinking, and can unload the model from "
+                "memory immediately after every plan."
+            ),
+            inputs=[
+                io.String.Input(
+                    "server_url",
+                    default="http://127.0.0.1:11434",
+                    tooltip=(
+                        "Paste a local, LAN, remote, or hosted Ollama-compatible "
+                        "address. Accepts a server root, an address ending in "
+                        "/api, or the complete /api/chat endpoint."
+                    ),
+                ),
+                io.String.Input(
+                    "model",
+                    default="huihui_ai/qwen3-vl-abliterated:8b-instruct-q4_K_M",
+                ),
+                io.String.Input(
+                    "api_key",
+                    default="",
+                    extra_dict={"password": True},
+                    tooltip=(
+                        "Optional Bearer token for protected remote or hosted "
+                        "Ollama-compatible services. Local Ollama needs no key."
+                    ),
+                ),
+                io.Boolean.Input(
+                    "keep_alive",
+                    default=False,
+                    tooltip=(
+                        "False unloads the model after every plan and frees VRAM "
+                        "for ComfyUI. True keeps it loaded for repeated planning."
+                    ),
+                ),
+                io.Int.Input(
+                    "context_length",
+                    default=16384,
+                    min=8192,
+                    max=65536,
+                    step=1024,
+                    advanced=True,
+                    tooltip=(
+                        "Includes the system prompt, JSON Schema, visual tokens, "
+                        "and generated plan. Larger values consume more VRAM."
+                    ),
+                ),
+                io.Int.Input(
+                    "timeout_seconds", default=600, min=60, max=3600, advanced=True
+                ),
+            ],
+            outputs=[io.Custom("LLMMODEL").Output("llm_model")],
+        )
+
+    @classmethod
+    def execute(
+        cls,
+        server_url: str,
+        model: str,
+        api_key: str,
+        keep_alive: bool,
+        context_length: int,
+        timeout_seconds: int,
+    ) -> io.NodeOutput:
+        if not str(model or "").strip():
+            raise ValueError("model is required for H3 Ollama Model (Local).")
+        connection = H3OllamaModelConnection(
+            server_url, model, api_key, keep_alive, context_length, timeout_seconds
+        )
+        _ollama_chat_url(connection.server_url)
         return io.NodeOutput(connection)
 
 
@@ -1910,8 +2117,9 @@ class H3StoryDirectorLLMAPI(H3StoryDirector):
         ]
         schema.description = (
             "The same multimodal H3 Story Director, driven by a connected "
-            "LLMMODEL instead of OpenRouter. Connect H3 LLM Model (API), "
-            "YALLM LLM Model (API), or YALLM LLM Provider (API)."
+            "LLMMODEL instead of OpenRouter. Connect H3 Ollama Model (Local), "
+            "H3 LLM Model (API), YALLM LLM Model (API), or YALLM LLM "
+            "Provider (API)."
         )
         hidden_openrouter_inputs = {
             "api_key", "model", "reasoning", "timeout_seconds",
@@ -1920,8 +2128,8 @@ class H3StoryDirectorLLMAPI(H3StoryDirector):
             io.Custom("LLMMODEL").Input(
                 "llm_model",
                 tooltip=(
-                    "Accepts our H3 LLM Model (API) and YALLM-compatible "
-                    "LLM Model / Provider outputs."
+                    "Accepts H3 Ollama Model (Local), H3 LLM Model (API), and "
+                    "YALLM-compatible LLM Model / Provider outputs."
                 ),
             ),
             *[

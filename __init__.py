@@ -17,6 +17,7 @@ from typing_extensions import override
 
 from .story_director import (
     H3LLMModelAPI,
+    H3OllamaModel,
     H3StoryDirector,
     H3StoryDirectorLLMAPI,
     H3StoryDirectorCleanCuts,
@@ -680,6 +681,7 @@ class LocalVisionPromptExtension(ComfyExtension):
             LocalVisionPromptGenerator,
             AbliterationVisionPrompt,
             H3LLMModelAPI,
+            H3OllamaModel,
             H3StoryDirector,
             H3StoryDirectorLLMAPI,
             H3StoryDirectorCleanCuts,
