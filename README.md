@@ -142,14 +142,29 @@ Reasoning is disabled by default for lower latency and cost and can be enabled
 for more complex story structures.
 
 `Director Profile` separates model-specific planning without changing any public
-output or downstream H3 node. `OpenRouter` retains the established compact scene
-schema. `Gemma` requires a private structured worksheet for every moving-video
-scene: an explicit-action checklist, duration-aware chronological beats, physical
-performance, motivated camera, concrete environment and lighting, synchronized
-sound, dialogue, final state, and a coverage check. The node compiles those
-private fields into the same MiniMax-ready scene prompt and discards the checks.
-This keeps OpenRouter stable while allowing future local-model profiles to be
-added independently.
+output or downstream H3 node. `OpenRouter` and `Gemma` use model-specific planning
+instructions but compile to one canonical MiniMax contract: `<Subject N>` identifies
+a persistent visible subject, `<Picture N>` identifies its concrete visual source,
+and `(S1)` through `(S4)` are reserved exclusively for dialogue or singing. Subject
+and Picture numbers are independent, so several people may originate from one
+reference image. Both profiles share cast integrity, continuity, scene-detail and
+genre/look locks. Gemma alone keeps its stricter completeness validation, compact
+prompt repair and malformed-response retry behavior.
+
+`Visual Look` controls capture aesthetics independently from genre and Motion
+Style. Choices include cinematic, naturalistic, raw, amateur home video,
+smartphone/UGC, webcam, camcorder, MiniDV, VHS, Super 8, 16mm, documentary,
+found footage, reality TV, CCTV, bodycam, action camera, broadcast, glossy
+commercial, fashion editorial, soft-focus dream imagery, and hidden-camera
+observation. Non-cinematic selections explicitly suppress generic film polish,
+dramatic grading, artificial shallow focus, and sweeping camera language. The
+selected output dimensions are never overridden to imitate a legacy format.
+
+Genre conventions must be demonstrated in each scene rather than merely named,
+and dialogue or lyrics must remain exclusively in the selected language without
+translations or bilingual repetition. A deterministic style contract is prepended
+for both profiles so the selected primary genre, secondary genre and Visual Look
+remain authoritative when MiniMax receives the final plan.
 
 ### External / datacenter LLM
 

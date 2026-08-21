@@ -56,6 +56,104 @@ DIRECTOR_MODES = [
     "Reference Edit",
     "Edit",
 ]
+VISUAL_LOOKS = {
+    "Auto": (
+        "Infer the most suitable capture aesthetic from the written request, genre, "
+        "references and production mode. Apply it concretely; never output Auto."
+    ),
+    "Cinematic": (
+        "Use deliberate feature-film composition, controlled lighting, motivated lens and "
+        "focus choices, polished color, intentional camera movement and refined production design."
+    ),
+    "Naturalistic": (
+        "Use believable available light, restrained grading, ordinary lens behavior, natural "
+        "performance and unobtrusive camera operation without artificial glamour."
+    ),
+    "Raw / Unpolished": (
+        "Use direct observational presentation, practical lighting, ordinary locations, visible "
+        "imperfections and minimally choreographed operation. Avoid cinematic polish."
+    ),
+    "Amateur Home Video": (
+        "Use personal home-video capture, imperfect but readable framing, available light, casual "
+        "operator reactions, ordinary room acoustics and no professional staging."
+    ),
+    "Smartphone / Cellphone": (
+        "Use handheld phone capture, broad depth of field, responsive autofocus and autoexposure, "
+        "minor rolling shutter, casual reframing and realistic phone compression."
+    ),
+    "Vertical Social Media / UGC": (
+        "Use spontaneous creator-style recording, direct-to-camera presence, practical lighting, "
+        "quick readable framing and authentic user-generated presentation. Preserve output dimensions."
+    ),
+    "Webcam / Livestream": (
+        "Use a fixed consumer webcam viewpoint, broad focus, screen-lit exposure, modest dynamic "
+        "range, room ambience and the immediacy of an uninterrupted live feed."
+    ),
+    "Consumer Camcorder": (
+        "Use consumer camcorder optics, deep focus, reactive zoom and autofocus, handheld operator "
+        "movement, practical color and straightforward event recording."
+    ),
+    "MiniDV": (
+        "Use early-digital MiniDV character: crisp edges, limited highlights, mild interlaced-video "
+        "feel, consumer autofocus, handheld framing and period-appropriate color response."
+    ),
+    "VHS / Analog Tape": (
+        "Use soft analog-video detail, chroma bleed, tape grain, mild tracking noise and unstable "
+        "color response while preserving the selected canvas and subject readability."
+    ),
+    "Super 8 Film": (
+        "Use intimate small-gauge film texture, visible grain, gentle flicker, warm color drift, "
+        "soft detail and tactile handheld home-movie operation."
+    ),
+    "16mm Film": (
+        "Use textured 16mm grain, organic highlight roll-off, restrained detail, practical lighting "
+        "and documentary or independent-film camera behavior."
+    ),
+    "Documentary": (
+        "Use evidence-focused observational coverage, motivated reframing, available light, credible "
+        "locations, readable geography and no beautifying intervention."
+    ),
+    "Found Footage": (
+        "Use in-world operator footage with imperfect framing, reactive movement, occlusion, exposure "
+        "correction and recording artifacts, while keeping the central action legible."
+    ),
+    "Reality TV": (
+        "Use reactive unscripted coverage, quick reframing, practical interiors, compressed telephoto "
+        "observation, candid reactions and broadcast-reality immediacy."
+    ),
+    "CCTV / Security Camera": (
+        "Use a fixed high-corner surveillance viewpoint, deep focus, wide coverage, flat practical "
+        "exposure, limited detail and continuous impersonal observation."
+    ),
+    "Bodycam": (
+        "Use chest-mounted first-person capture, wide-angle distortion, movement tied to the wearer's "
+        "body, abrupt occlusion, autoexposure and raw situational audio."
+    ),
+    "Action Camera": (
+        "Use an ultra-wide action-camera view, deep focus, strong stabilization or body-mounted motion, "
+        "high environmental clarity and energetic spatial movement."
+    ),
+    "Broadcast Television": (
+        "Use clean broadcast exposure, controlled multi-purpose framing, deep readable focus, studio "
+        "or location television lighting and polished but non-filmic video color."
+    ),
+    "Commercial / Glossy": (
+        "Use pristine product-grade lighting, controlled reflections, polished surfaces, precise "
+        "camera movement, clean color separation and premium advertising finish."
+    ),
+    "Fashion Editorial": (
+        "Use deliberate fashion posing, graphic composition, directional beauty lighting, selective "
+        "texture, confident lens choices and magazine-editorial visual rhythm."
+    ),
+    "Dreamlike / Soft Focus": (
+        "Use diffused highlights, gentle soft focus, floating tonal transitions, restrained contrast "
+        "and subtly unreal atmosphere while keeping identities and actions coherent."
+    ),
+    "Surveillance / Hidden Camera": (
+        "Use an obstructed or discreet fixed viewpoint, imperfect angle, practical exposure, broad "
+        "focus and detached observational behavior without cinematic staging."
+    ),
+}
 CINEMATIC_CUT_SHOT_LIBRARY = """
 INTERNAL CINEMATOGRAPHY LIBRARY — SELECT, DO NOT DUMP:
 - Shot scale: extreme wide establishing shot, wide shot, full shot, medium-wide shot,
@@ -279,11 +377,11 @@ MOTION_STYLES = {
 }
 DEFAULT_SYSTEM_PROMPT = """You are a multimodal director and continuity supervisor for MiniMax H3 image and video productions. Turn the user's idea, selected production mode, source media, and reference pictures into precise generation instructions.
 
-Treat every connected reference as a distinct person or subject. Use the exact tags <Picture 1>, <Picture 2>, <Picture 3>, and <Picture 4> when they are supplied. Define stable subject labels S1, S2, S3, and S4 in the shared prompt. Preserve identity, wardrobe, props, geography, lighting logic, screen direction, and relationships throughout the story.
+Treat each connected <Picture N> as a visual source, not automatically as one person. A Picture may contain several distinct people, and several persistent subjects may therefore originate from the same Picture. Define reusable visible identities with `<Subject 1>`, `<Subject 2>`, `<Subject 3>` and `<Subject 4>` in the shared prompt, explicitly grounding each referenced Subject in the correct `<Picture N>`. Subject and Picture numbers are independent. Use stable natural role descriptions for important characters without a connected image. Preserve identity, current wardrobe, props, geography, lighting logic, screen direction and relationships throughout the story.
 
 Follow the mandatory rules supplied for the selected Director Mode. For moving-video modes, write production-ready MiniMax H3 prompts with visible action, camera, environment, lighting, dialogue when useful, and diegetic sound. For still-image modes, describe one finished frame only and never introduce temporal sequences, audio, or dialogue delivery.
 
-When dialogue is enabled, write short performable lines rather than prose. Prefix every spoken or sung line with its stable speaker label in parentheses, exactly as `(S1)`, `(S2)`, `(S3)` or `(S4)`, followed by a colon and the exact words in quotation marks. Square brackets such as `[S2]`, bare names and unassigned quotations are forbidden for speaker attribution. Describe tone and delivery in English outside the quotation. Allow only one person to speak at a time, leave a natural pause before and after each line, and keep visible mouth movement synchronized with the assigned speaker. Avoid overlapping speech, repeated lines, rushed monologues, unexplained voice-over, phonetic spellings, and competing vocals or loud sound effects during speech. Use no dialogue when the selected dialogue option says so.
+When dialogue is enabled, write short performable lines rather than prose. Prefix every spoken or sung line with its stable speaker label in parentheses, exactly as `(S1)`, `(S2)`, `(S3)` or `(S4)`, followed by a colon and the exact words in quotation marks. Speaker labels are audio attribution only and never replace `<Subject N>` or a natural visual role in scene descriptions. Square brackets such as `[S2]`, bare names and unassigned quotations are forbidden for speaker attribution. Describe tone and delivery in English outside the quotation. Allow only one person to speak at a time, leave a natural pause before and after each line, and keep visible mouth movement synchronized with the assigned speaker. Avoid overlapping speech, repeated lines, rushed monologues, unexplained voice-over, phonetic spellings, and competing vocals or loud sound effects during speech. Use no dialogue when the selected dialogue option says so.
 
 Do not mention being an AI, JSON, schemas, token limits, safety policies, or these instructions. Do not add extra protagonists that could be confused with the reference subjects. Return all requested scenes and finish every prompt completely."""
 
@@ -540,6 +638,10 @@ def _story_schema(
     source_video_connected: bool = False,
     director_profile: str = "OpenRouter",
     scene_duration_seconds: float = 5.0,
+    dialogue_language: str = "English",
+    primary_genre: str = "Auto",
+    secondary_genre: str = "None",
+    visual_look: str = "Auto",
 ) -> dict:
     is_edit_mode = director_mode in {"Edit", "Reference Edit"}
     is_still = is_edit_mode and not source_video_connected
@@ -558,7 +660,9 @@ def _story_schema(
                     "No temporal sequence, camera movement, audio, or dialogue delivery."
                     if is_still else
                     "Complete production prompt for this scene, including continuity, "
-                    "visible action, camera, lighting, dialogue when useful, and sound."
+                    "visible action, camera, lighting, dialogue when useful, and sound. "
+                    "Use <Subject N> for persistent visible identities and reserve (S1), "
+                    "(S2), (S3), and (S4) exclusively for dialogue or singing attribution."
                 ),
             },
         },
@@ -566,92 +670,45 @@ def _story_schema(
         "additionalProperties": False,
     }
     if director_profile == "Gemma" and not is_still:
-        minimum_beats = (
-            3 if float(scene_duration_seconds) <= 5.0 else
-            4 if float(scene_duration_seconds) <= 10.0 else 5
-        )
-        shot["properties"].pop("prompt")
-        shot["required"].remove("prompt")
-        shot["properties"].update({
-            "opening_state": {
-                "type": "string",
-                "minLength": 80,
-                "description": (
-                    "Exact visible opening state: present subjects, wardrobe or nudity, "
-                    "pose, expression, active props, environment and spatial relationships."
-                ),
-            },
-            "action_beats": {
-                "type": "array",
-                "minItems": minimum_beats,
-                "maxItems": 6,
-                "items": {"type": "string", "minLength": 45},
-                "description": (
-                    "Chronological, physically achievable visible beats. Cover every explicit "
-                    "requested action or transformation instead of substituting atmosphere."
-                ),
-            },
-            "physical_performance": {
-                "type": "string",
-                "minLength": 80,
-                "description": (
-                    "Body mechanics, hand and object paths, weight shifts, contact, gaze, "
-                    "expressions and reactions that make the action readable and coherent."
-                ),
-            },
-            "camera_plan": {
-                "type": "string",
-                "minLength": 60,
-                "description": (
-                    "Opening framing, motivated camera or focus response during the action, "
-                    "and final framing. Avoid generic cinematic language."
-                ),
-            },
-            "environment_and_lighting": {
-                "type": "string",
-                "minLength": 60,
-                "description": (
-                    "Concrete location, visible materials, practical light sources, color, "
-                    "shadows and environmental reactions relevant to the action."
-                ),
-            },
-            "sound_plan": {
-                "type": "string",
-                "minLength": 40,
-                "description": (
-                    "Specific ambience, synchronized Foley, effects and permitted music; "
-                    "keep sound consistent with the selected voice and music mode."
-                ),
-            },
-            "dialogue": {
-                "type": "string",
-                "description": (
-                    "Exact dialogue or lyrics when enabled, using only `(S1): \"...\"` through "
-                    "`(S4): \"...\"`; otherwise an empty string. Never use square brackets."
-                ),
-            },
-            "final_state": {
-                "type": "string",
-                "minLength": 80,
-                "description": (
-                    "Unmistakable final visible state after all beats: appearance, wardrobe "
-                    "or nudity, pose, contact, props, expression, location and composition."
-                ),
-            },
-            "coverage_check": {
-                "type": "string",
-                "minLength": 40,
-                "description": (
-                    "Private concise confirmation that every explicit user action assigned "
-                    "to this scene appears visibly in the beats and final state."
-                ),
-            },
-        })
-        shot["required"].extend([
-            "opening_state", "action_beats", "physical_performance", "camera_plan",
-            "environment_and_lighting", "sound_plan", "dialogue", "final_state",
-            "coverage_check",
-        ])
+        shot["properties"]["prompt"] = {
+            "type": "string",
+            "minLength": 220,
+            "description": (
+                "One complete MiniMax H3 production prompt in natural English prose, "
+                "with no headings, JSON keys, worksheet labels or placeholders. Begin "
+                "with the exact visible opening state and cast. In visual prose, identify "
+                "every referenced person naturally as `the man from <Picture 1>`, `the woman "
+                "from <Picture 1>`, or the correct role and Picture number. A single Picture "
+                "may contain several distinct people, and several roles may therefore use the "
+                "same Picture tag; never assume character number equals Picture number. Never use bare S1, "
+                "S2, S3 or S4 as visual character names; reserve `(S1)` only for spoken lines. "
+                "Continue with at least "
+                "two chronological literal visible action beats, including concrete body "
+                "or object mechanics and the observable result of each beat. Maintain one "
+                "physically coherent body configuration: name the acting subject, affected "
+                "subject, exact contact, direction and resulting position; never call one act "
+                "a kiss when a different contact is visible, jump between incompatible poses, "
+                "or restart an action already completed by the preceding scene. Use literal "
+                "anatomical and material terms when the request is explicit; do not substitute "
+                "metaphors such as milk unless the user explicitly requests that substance. Integrate "
+                "motivated camera behavior, environment, practical lighting, the selected "
+                f"genres ({primary_genre}; {secondary_genre}), and visual look ({visual_look}). "
+                "Describe synchronized ambience, Foley and permitted music. Include dialogue "
+                f"only in natural {dialogue_language}, formatted `(S1): \"...\"`, without "
+                "translation or repetition. End with the unmistakable final visible state "
+                "that the next scene inherits. Preserve the user's semantic specificity."
+            ),
+        }
+        shot["properties"]["coverage_check"] = {
+            "type": "string",
+            "minLength": 60,
+            "description": (
+                "Private confirmation that the scene prompt contains every assigned user "
+                "action, correct cast and references, opening state, at least two action "
+                "beats, genre/look execution, sound/dialogue rules, and final state."
+            ),
+        }
+        shot["required"].append("coverage_check")
     if include_storyboard:
         shot["properties"]["storyboard_prompt"] = {
             "type": "string",
@@ -681,7 +738,10 @@ def _story_schema(
                 "type": "string",
                 "description": (
                     "Shared MiniMax H3 instructions prepended to every scene. Define "
-                    "each supplied Picture tag and all permanent continuity rules. "
+                    "persistent visible identities with official Subject/Picture grammar, "
+                    "for example `<Subject 1> is the woman grounded in <Picture 1>`. "
+                    "Subject and Picture numbers are independent and multiple Subjects may "
+                    "share one Picture. State all permanent continuity rules. "
                     "Never include dialogue-planning rules, word limits, line limits, "
                     "or instructions about how dialogue should be written."
                 ),
@@ -762,6 +822,70 @@ def _normalize_speaker_labels(value: str) -> str:
     )
 
 
+def _normalize_visual_subject_labels(value: str) -> str:
+    """Convert bare Gemma cast labels to H3 visual Subject tags.
+
+    Parenthesized speaker labels are intentionally preserved for dialogue.
+    Subject and Picture numbers are independent: several Subjects may be
+    grounded in the same Picture when one reference contains several people.
+    """
+    return re.sub(
+        r"(?<!\()\bS([1-4])\b",
+        lambda match: f"<Subject {match.group(1)}>",
+        str(value or ""),
+        flags=re.IGNORECASE,
+    )
+
+
+def _director_style_contract(
+    genre: str, secondary_genre: str, visual_look: str
+) -> str:
+    """Create a deterministic style lock for local models with aesthetic bias."""
+    primary = str(genre or "Auto").strip()
+    secondary = str(secondary_genre or "None").strip()
+    look = str(visual_look or "Auto").strip()
+    parts = [
+        "MANDATORY STYLE CONTRACT FOR EVERY SCENE:",
+        (
+            "Infer one primary genre from the request and references, then express its "
+            "recognizable production format through concrete staging, performance, camera, "
+            "lighting, setting, pacing and sound."
+            if primary in {"Auto", "Auto — Infer from References & Prompt"} else
+            f"Primary genre is `{primary}`. Its recognizable production format must control "
+            "staging, performance, camera, lighting, setting, pacing and sound; it is not "
+            "merely a label or mood adjective."
+        ),
+    ]
+    if secondary == "Auto" and primary not in {
+        "Auto", "Auto — Infer from References & Prompt"
+    }:
+        parts.append(
+            "Infer one compatible secondary genre and apply it only as a clearly visible "
+            "supporting layer without replacing the primary format."
+        )
+    elif secondary not in {"", "None", "Auto", primary}:
+        parts.append(
+            f"Secondary genre is `{secondary}`. Express its compatible conventions as a "
+            "supporting layer without replacing the primary format."
+        )
+    if look == "Auto":
+        parts.append(
+            "Infer a capture look from the chosen genre, request and references; keep it "
+            "specific and consistent instead of defaulting to generic film polish."
+        )
+    else:
+        parts.append(
+            f"Capture look is `{look}`: {VISUAL_LOOKS[look]}"
+        )
+    parts.append(
+        "Do not default to warm cinematic lighting, amber glow, moody cinematic atmosphere, "
+        "shallow depth of field, polished studio lighting or a slow dramatic push-in. Use any "
+        "of those only when the selected genre, capture look, user request or visible reference "
+        "specifically motivates it. Describe the actual genre-specific alternative in each scene."
+    )
+    return "\n".join(parts)
+
+
 def _parse_json_response(text: str) -> dict:
     text = str(text or "").strip()
     if text.startswith("```"):
@@ -771,10 +895,13 @@ def _parse_json_response(text: str) -> dict:
         value = json.loads(text)
     except json.JSONDecodeError as error:
         raise RuntimeError(
-            "OpenRouter returned incomplete or invalid JSON. Increase max_tokens or use a model with structured outputs."
+            "The language model returned incomplete or invalid JSON. Increase max_tokens, "
+            "reduce the scene count, or use a model with reliable structured outputs."
         ) from error
     if not isinstance(value, dict):
-        raise RuntimeError("OpenRouter returned JSON, but the story result is not an object.")
+        raise RuntimeError(
+            "The language model returned JSON, but the story result is not an object."
+        )
     return value
 
 
@@ -812,6 +939,171 @@ def _strip_dialogue_planning_rules(text: str) -> str:
     return cleaned.strip()
 
 
+_WORKSHEET_LEAK_MARKERS = re.compile(
+    r"(?:[\"']?\s*[,}]?\s*)?(?:physical_performance|camera_plan|"
+    r"environment_and_lighting|genre_execution|visual_look_execution|sound_plan|"
+    r"dialogue|final_state|coverage_check)[\"']?\s*[:&]",
+    flags=re.IGNORECASE,
+)
+_INLINE_SPEAKER_LINE = re.compile(
+    r"\s*(?:[.?!]\s*)?[\"']?\s*\(?S[1-4]\)?\s*:?\s*"
+    r"(?:[\"“][^\"”\r\n]*[\"”]|[^.?!\r\n]*(?:[.?!]|$))",
+    flags=re.IGNORECASE,
+)
+
+
+def _clean_gemma_prose(value, *, allow_dialogue: bool = False) -> str:
+    """Remove worksheet serialization leaks without rewriting scene content."""
+    text = str(value or "").strip()
+    leak = _WORKSHEET_LEAK_MARKERS.search(text)
+    if leak:
+        text = text[:leak.start()].rstrip(" \t\r\n,;:'\"")
+    if not allow_dialogue:
+        text = _INLINE_SPEAKER_LINE.sub("", text)
+    text = text.replace("**", "")
+    text = re.sub(r"[\"']\s*,\s*[.]", ".", text)
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+    text = re.sub(r"([,.;:!?])(?:\s*\1)+", r"\1", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(
+        r"(?:\s+|^)(?:First|Then|Next|After that|Finally),?\s*$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text.strip(" \t\r\n,;")
+
+
+def _clean_gemma_dialogue(value) -> str:
+    """Keep valid speaker lines once and discard duplicated model chatter."""
+    text = _clean_gemma_prose(value, allow_dialogue=True)
+    matches = re.findall(
+        r"\(?S([1-4])\)?\s*:\s*[\"“]([^\"”\r\n]+)[\"”]",
+        text,
+        flags=re.IGNORECASE,
+    )
+    unique = []
+    seen_speakers = set()
+    for speaker, words in matches:
+        words = re.sub(r"\s+", " ", words).strip()
+        # Gemma sometimes writes the requested line and immediately repeats a
+        # translation with the same speaker. The requested-language line is
+        # consistently first; accept one exact utterance per speaker rather
+        # than leaking a bilingual duplicate into MiniMax.
+        if words and speaker not in seen_speakers:
+            seen_speakers.add(speaker)
+            unique.append(f'(S{speaker}): "{words}"')
+    return " ".join(unique)
+
+
+def _dedupe_gemma_inline_dialogue(text: str) -> str:
+    """Remove an immediately repeated same-speaker translation from prose."""
+    previous = None
+    # Standardize `S2:`, `[S2]:` and the already-correct `(S2):` before
+    # looking for repetitions; otherwise two equivalent source forms become
+    # identical only after this function has already run.
+    cleaned = _normalize_speaker_labels(str(text or ""))
+    # Normalize Gemma's common `(S2) "line"` variant before deduplication.
+    cleaned = re.sub(
+        r"\(S([1-4])\)\s*(?=[\"“])",
+        lambda match: f"(S{match.group(1)}): ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    pattern = re.compile(
+        r'(\(S([1-4])\)\s*:\s*["“][^"”\r\n]+["”])'
+        r'(?:\s+\(S\2\)\s*:\s*["“][^"”\r\n]+["”])+',
+        flags=re.IGNORECASE,
+    )
+    while previous != cleaned:
+        previous = cleaned
+        cleaned = pattern.sub(r"\1", cleaned)
+    # A final bare speaker marker is model chatter, not performable dialogue.
+    cleaned = re.sub(
+        r"\s+\(S([1-4])\)\s*\.?(?=\s|$)",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return cleaned
+
+
+_GEMMA_FIELD_NAMES = (
+    r"physical_performance|camera_plan|environment_and_lighting|"
+    r"genre_execution|visual_look_execution|sound_plan|final_state|coverage_check"
+)
+_GEMMA_BROKEN_VALUE = re.compile(
+    # Reject leaked snake_case worksheet prose such as
+    # `physical_performance_subject_moves...`, or a bare schema-field label.
+    # Do not reject ordinary prose containing phrases like "final state".
+    rf"(?:\b(?:{_GEMMA_FIELD_NAMES})(?:_[a-z][a-z0-9_]*)+\b|"
+    rf"^\s*(?:{_GEMMA_FIELD_NAMES})\s*:?\s*$|^[\s\"'\[\]{{}},:]+$)",
+    flags=re.IGNORECASE,
+)
+
+
+def _gemma_scene_issues(raw: dict, scene_count: int) -> list[str]:
+    """Reject truncated worksheets before they become expensive video prompts."""
+    shots = raw.get("shots") if isinstance(raw, dict) else None
+    if not isinstance(shots, list) or len(shots) != int(scene_count):
+        return [f"expected {scene_count} complete scenes"]
+    issues = []
+    prose_minimums = {
+        "opening_state": 45,
+        "physical_performance": 45,
+        "camera_plan": 35,
+        "environment_and_lighting": 40,
+        "genre_execution": 35,
+        "visual_look_execution": 35,
+        "sound_plan": 25,
+        "final_state": 45,
+    }
+    for index, shot in enumerate(shots, 1):
+        if not isinstance(shot, dict):
+            issues.append(f"scene {index} is not an object")
+            continue
+        direct_prompt = _clean_gemma_prose(
+            shot.get("prompt"), allow_dialogue=True
+        )
+        if direct_prompt:
+            sentences = [
+                part for part in re.split(r"(?<=[.!?])\s+", direct_prompt)
+                if len(part.strip()) >= 15
+            ]
+            # A useful H3 shot can be concise. Character-count targets made
+            # valid four-scene plans fail twice simply because Gemma wrote
+            # compact prose. Reject structural damage, not writing style.
+            if len(direct_prompt) < 220 or len(sentences) < 3:
+                issues.append(
+                    f"scene {index} has an incomplete direct production prompt"
+                )
+            elif _GEMMA_BROKEN_VALUE.search(direct_prompt):
+                issues.append(
+                    f"scene {index} contains broken worksheet fragments"
+                )
+            continue
+        for field, minimum in prose_minimums.items():
+            cleaned = _clean_gemma_prose(shot.get(field))
+            if len(cleaned) < minimum or _GEMMA_BROKEN_VALUE.search(cleaned):
+                issues.append(f"scene {index} has broken or incomplete {field}")
+        beats = shot.get("action_beats")
+        usable = 0
+        if isinstance(beats, list):
+            for beat in beats:
+                if isinstance(beat, dict):
+                    candidate = " ".join(str(beat.get(key) or "") for key in (
+                        "visible_action", "physical_mechanics", "visible_result"
+                    ))
+                else:
+                    candidate = str(beat or "")
+                cleaned = _clean_gemma_prose(candidate)
+                if len(cleaned) >= 45 and not _GEMMA_BROKEN_VALUE.search(cleaned):
+                    usable += 1
+        if usable < 2:
+            issues.append(f"scene {index} has fewer than two complete visible action beats")
+    return issues
+
+
 def _director_mode_rules(
     mode: str,
     source_video_connected: bool,
@@ -823,10 +1115,15 @@ def _director_mode_rules(
         "Never mention Director Mode, private planning rules, contact sheets, sampled "
         "frames, percentages, JSON, or analysis methodology in a generation prompt.\n"
         "MANDATORY CAST INTEGRITY:\n"
-        "- Maintain one persistent cast ledger across the complete plan. Each stable subject "
-        "label represents exactly one physical person, never multiple copies.\n"
+        "- Maintain one persistent cast ledger across the complete plan. Use `<Subject N>` "
+        "for reusable visible identities. Each Subject represents exactly one physical person, "
+        "never multiple copies. Use stable natural visual roles for characters without images.\n"
+        "- Ground every referenced Subject in the correct `<Picture N>` inside prompt_prefix. "
+        "Subject and Picture numbers are independent: one Picture may ground several Subjects.\n"
+        "- Reserve `(S1)`, `(S2)`, `(S3)` and `(S4)` exclusively for dialogue or singing "
+        "attribution; never use bare S labels as visual character names.\n"
         "- In every scene prompt, make the intended visible principal-character count and "
-        "their subject labels unambiguous. Do not invent background copies of them.\n"
+        "their Subject tags or natural visual roles unambiguous. Do not invent background copies.\n"
         "- When a new character enters, exactly one new person enters. The entrance changes "
         "that character from absent or off-screen to present; it must not create a second "
         "instance beside an already visible version of the same character.\n"
@@ -838,10 +1135,7 @@ def _director_mode_rules(
         "- Successive action beats describe the same persistent person over time and must "
         "not be interpreted as multiple simultaneous instances."
     )
-    if (
-        director_profile == "Gemma"
-        and (source_video_connected or mode in ("Continuous Story", "Cinematic Cuts"))
-    ):
+    if source_video_connected or mode in ("Continuous Story", "Cinematic Cuts"):
         common += (
             "\nMANDATORY SCENE DETAIL:\n"
             "- Turn every explicit user-requested action or transformation into visible events; "
@@ -974,22 +1268,51 @@ def _gemma_scene_prompt(shot: dict) -> str:
     beats = shot.get("action_beats")
     if not isinstance(beats, list) or not beats:
         return ""
+    def sentence(value) -> str:
+        text = _clean_gemma_prose(value)
+        return text if not text or text.endswith((".", "!", "?", '"', "”")) else f"{text}."
+
+    clean_beats = []
+    for beat in beats:
+        if isinstance(beat, dict):
+            phase = str(beat.get("phase") or "").strip().lower()
+            action = sentence(beat.get("visible_action"))
+            mechanics = sentence(beat.get("physical_mechanics"))
+            result = sentence(beat.get("visible_result"))
+            rendered = " ".join(part for part in (action, mechanics, result) if part)
+            if rendered:
+                clean_beats.append((phase, rendered))
+        elif _clean_gemma_prose(beat):
+            # Backward compatibility for plans saved by the first Gemma worksheet.
+            clean_beats.append(("", sentence(beat)))
+    transitions = ("First,", "Then,", "Next,", "After that,", "Finally,")
+    action_prose = " ".join(
+        f"{transitions[min(index, len(transitions) - 1)]} "
+        f"{rendered}"
+        for index, (_phase, rendered) in enumerate(clean_beats)
+    )
+    opening = sentence(shot.get("opening_state"))
     parts = [
-        f"Opening state: {str(shot.get('opening_state') or '').strip()}",
-        "Chronological action: " + " ".join(
-            f"{index}. {str(beat).strip()}" for index, beat in enumerate(beats, 1)
-            if str(beat).strip()
-        ),
-        f"Physical performance: {str(shot.get('physical_performance') or '').strip()}",
-        f"Camera: {str(shot.get('camera_plan') or '').strip()}",
-        f"Environment and lighting: {str(shot.get('environment_and_lighting') or '').strip()}",
-        f"Sound: {str(shot.get('sound_plan') or '').strip()}",
+        f"At the opening of the shot, {opening.lstrip()}" if opening else "",
+        action_prose,
+        " ".join(filter(None, (
+            sentence(shot.get("physical_performance")),
+            sentence(shot.get("camera_plan")),
+        ))),
+        " ".join(filter(None, (
+            sentence(shot.get("environment_and_lighting")),
+            sentence(shot.get("genre_execution")),
+            sentence(shot.get("visual_look_execution")),
+        ))),
+        sentence(shot.get("sound_plan")),
     ]
-    dialogue = str(shot.get("dialogue") or "").strip()
+    dialogue = _clean_gemma_dialogue(shot.get("dialogue"))
     if dialogue:
-        parts.append(f"Dialogue: {dialogue}")
-    parts.append(f"Final state: {str(shot.get('final_state') or '').strip()}")
-    return "\n".join(part for part in parts if not part.endswith(": "))
+        parts.append(dialogue)
+    final_state = sentence(shot.get("final_state"))
+    if final_state:
+        parts.append(f"By the end of the shot, {final_state}")
+    return "\n\n".join(part for part in parts if str(part).strip())
 
 
 def _compile_story(
@@ -999,10 +1322,26 @@ def _compile_story(
     steps: int,
     picture_count: int,
     director_mode: str = "Continuous Story",
+    director_profile: str = "OpenRouter",
 ) -> tuple[str, str, str, str, str]:
     synopsis = str(raw.get("synopsis") or "").strip()
     story_bible = str(raw.get("story_bible") or "").strip()
     prompt_prefix = _strip_dialogue_planning_rules(raw.get("prompt_prefix") or "")
+    # Both planning backends occasionally compress a real reference assignment
+    # into `[S1] <Picture 1>`. Normalize every backend to one H3 contract.
+    # Subject and Picture captures are intentionally independent so multiple
+    # people from one reference remain representable.
+    prompt_prefix = re.sub(
+        r"\[S([1-4])\]\s*(<Picture\s+([1-4])>)",
+        lambda match: (
+            f"<Subject {match.group(1)}> is the exact persistent subject defined by "
+            f"{match.group(2)}; preserve identity, appearance, wardrobe, "
+            "anatomy, and all relevant visible traits whenever present"
+        ),
+        prompt_prefix,
+        flags=re.IGNORECASE,
+    )
+    prompt_prefix = _normalize_visual_subject_labels(prompt_prefix)
     storyboard_prompt_prefix = str(raw.get("storyboard_prompt_prefix") or "").strip()
     source_video_analysis = str(raw.get("source_video_analysis") or "").strip()
     shots = raw.get("shots")
@@ -1023,10 +1362,12 @@ def _compile_story(
     repaired_reference_count = len(missing_tags)
     if missing_tags:
         fallback_assignments = " ".join(
-            f"{tag} is an exact connected visual reference; use it for the "
-            "subject, object, appearance, environment, or style assigned by the "
-            "user request and scene, preserving every relevant visible trait."
-            for tag in missing_tags
+            f"<Picture {index}> is an exact connected visual source. Use it only for "
+            "the person, object, place or style assigned to it by the user request and "
+            "story bible; preserve the relevant visible traits whenever that assignment "
+            "is active."
+            for index in range(1, picture_count + 1)
+            if f"<Picture {index}>" in missing_tags
         )
         if storyboard_prompt_prefix:
             storyboard_prompt_prefix = "\n\n".join((
@@ -1044,8 +1385,14 @@ def _compile_story(
         if shot_id in seen_ids:
             shot_id = f"{shot_id}_{index:02d}"
         seen_ids.add(shot_id)
+        generated_prompt = _gemma_scene_prompt(shot) if director_profile == "Gemma" else ""
+        source_prompt = shot.get("prompt") or generated_prompt
+        if director_profile == "Gemma":
+            source_prompt = _dedupe_gemma_inline_dialogue(source_prompt)
+        source_prompt = _normalize_speaker_labels(source_prompt)
+        source_prompt = _normalize_visual_subject_labels(source_prompt)
         prompt = _normalize_speaker_labels(_strip_dialogue_planning_rules(
-            shot.get("prompt") or _gemma_scene_prompt(shot)
+            source_prompt
         ))
         if len(prompt) < 80:
             raise RuntimeError(
@@ -1063,6 +1410,7 @@ def _compile_story(
 
     plan = {
         "prompt_prefix": prompt_prefix,
+        "director_mode": director_mode,
         "defaults": {
             "duration_seconds": float(duration_seconds),
             "steps": int(steps),
@@ -1704,6 +2052,16 @@ class H3StoryDirector(io.ComfyNode):
                         "prompt, references, source video, genre, and mode."
                     ),
                 ),
+                io.Combo.Input(
+                    id="visual_look",
+                    display_name="Visual Look",
+                    options=list(VISUAL_LOOKS),
+                    default="Auto",
+                    tooltip=(
+                        "Controls the capture aesthetic independently from genre and motion. "
+                        "Non-cinematic choices explicitly suppress generic film polish."
+                    ),
+                ),
                 io.String.Input(
                     "additional_direction",
                     multiline=True,
@@ -1842,6 +2200,7 @@ class H3StoryDirector(io.ComfyNode):
         language: str,
         audio_content: str,
         motion_style: str,
+        visual_look: str,
         additional_direction: str,
         max_tokens: int,
         temperature: float,
@@ -1867,6 +2226,9 @@ class H3StoryDirector(io.ComfyNode):
         if audio_content not in AUDIO_CONTENT_MODES:
             audio_content = "Auto"
         motion_style = str(motion_style or "Auto").strip()
+        visual_look = str(visual_look or "Auto").strip()
+        if visual_look not in VISUAL_LOOKS:
+            visual_look = "Auto"
         director_profile = str(director_profile or "OpenRouter").strip()
         if director_profile not in DIRECTOR_PROFILES:
             director_profile = "OpenRouter"
@@ -2106,6 +2468,70 @@ class H3StoryDirector(io.ComfyNode):
         mode_rules = _director_mode_rules(
             director_mode, source_video_connected, scene_count, director_profile
         )
+        visual_look_direction = (
+            f"Visual Look: {visual_look}. {VISUAL_LOOKS[visual_look]}"
+        )
+        if visual_look not in {"Auto", "Cinematic"}:
+            visual_look_direction += (
+                " Do not reinterpret this selection as cinematic. Avoid generic cinematic "
+                "atmosphere, sweeping dolly language, artificial shallow depth of field, "
+                "dramatic color grading and polished studio lighting unless the selected "
+                "look itself explicitly requires one of those properties."
+            )
+        profile_rules = ""
+        style_contract = _director_style_contract(
+            genre, secondary_genre, visual_look
+        )
+        if director_profile == "Gemma":
+            profile_genre_rule = (
+                "- Infer one primary genre from the request and references, then execute it in "
+                "every scene through concrete action, performance, setting, camera and sound."
+                if auto_genre else
+                f"- Execute primary genre `{genre}` in every scene through concrete action, "
+                "performance, setting, camera and sound; never treat it as a decorative label."
+            )
+            if secondary_genre == "Auto" and not auto_genre:
+                profile_secondary_rule = (
+                    "- Infer one compatible secondary genre and use it only as a supporting layer; "
+                    "never let it erase the primary genre."
+                )
+            elif secondary_enabled:
+                profile_secondary_rule = (
+                    f"- Execute secondary genre `{secondary_genre}` only as a compatible layer and "
+                    "never let it erase the primary genre."
+                )
+            else:
+                profile_secondary_rule = (
+                    "- No secondary genre is active; do not invent a competing genre identity."
+                )
+            profile_visual_rule = (
+                "- Infer one coherent capture aesthetic and execute its camera, focus, lighting, "
+                "exposure, color and texture consistently; never output Auto."
+                if visual_look == "Auto" else
+                f"- Execute Visual Look `{visual_look}` literally and consistently."
+            )
+            profile_language_rule = (
+                "- Dialogue is disabled: dialogue must be an empty string in every scene."
+                if language == "No dialogue" else
+                f"- Any dialogue or intelligible lyrics must be exclusively natural idiomatic "
+                f"{language}, with no translation, bilingual repetition or language mixing."
+            )
+            profile_rules = (
+                "MANDATORY GEMMA PROFILE:\n"
+                f"{profile_genre_rule}\n"
+                f"{profile_secondary_rule}\n"
+                f"{profile_visual_rule}\n"
+                f"{profile_language_rule}\n"
+                "- Preserve the user's requested action at the same semantic specificity. Never "
+                "downgrade a concrete act into mood, implication, seduction, posing, atmosphere "
+                "or a generic interaction; never intensify it beyond what was requested.\n"
+                "- Build each action beat as cause -> physical mechanics -> observable result. "
+                "Name the acting subject, affected subject or object, direction, contact and "
+                "result whenever they are visually relevant.\n"
+                "- Complete every private worksheet field with scene-specific evidence. The "
+                "coverage check must verify actions, genre, visual look and final state.\n"
+                f"{style_contract}"
+            )
         motion_brief = (
             f"Visual energy / pose style: {motion_style}. Translate this into pose, "
             "composition and implied energy without describing temporal movement."
@@ -2126,6 +2552,7 @@ class H3StoryDirector(io.ComfyNode):
                 f"Director mode: {director_mode}. "
                 f"{genre_direction} "
                 f"{motion_brief} "
+                f"{visual_look_direction} "
                 "Write the synopsis, story bible, prompt prefix, and every scene "
                 "prompt entirely in English. "
                 f"Dialogue direction: {dialogue_direction} "
@@ -2133,7 +2560,8 @@ class H3StoryDirector(io.ComfyNode):
                 f"{duration_brief}\n\n"
                 f"{story_direction}\n\n"
                 f"Additional direction:\n{str(additional_direction or '').strip()}"
-                f"{adult_direction}"
+                f"{adult_direction}\n\n"
+                f"{style_contract}"
             ),
         }]
         for index, image in enumerate(pictures, 1):
@@ -2193,6 +2621,7 @@ class H3StoryDirector(io.ComfyNode):
                     "content": "\n\n".join((
                         str(system_prompt or "").strip(),
                         mode_rules,
+                        profile_rules,
                     )).strip(),
                 },
                 {"role": "user", "content": content},
@@ -2218,6 +2647,10 @@ class H3StoryDirector(io.ComfyNode):
                         source_video_connected=source_video_connected,
                         director_profile=director_profile,
                         scene_duration_seconds=float(scene_duration_seconds),
+                        dialogue_language=language,
+                        primary_genre=genre,
+                        secondary_genre=secondary_genre,
+                        visual_look=visual_look,
                     ),
                 },
             },
@@ -2233,6 +2666,72 @@ class H3StoryDirector(io.ComfyNode):
         except (KeyError, IndexError, TypeError) as error:
             raise RuntimeError("OpenRouter returned an unexpected response.") from error
         raw_story = _parse_json_response(content_text)
+        if director_profile == "Gemma" and not is_still_mode:
+            worksheet_issues = _gemma_scene_issues(raw_story, scene_count)
+            if worksheet_issues:
+                concise_issues = "; ".join(worksheet_issues[:12])
+                print(
+                    "[H3 Story Director] Gemma returned an incomplete scene plan; "
+                    "requesting one complete automatic correction: " + concise_issues
+                )
+                correction_payload = {
+                    **payload,
+                    "temperature": min(float(temperature), 0.25),
+                    "messages": [
+                        *payload["messages"],
+                        {"role": "assistant", "content": content_text},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Rewrite the COMPLETE JSON plan from the beginning. "
+                                "Do not patch or continue the previous text. The previous "
+                                "plan is invalid because: " + concise_issues + ". "
+                                "For every scene, return one complete `prompt` written as "
+                                "natural production prose with at least three complete "
+                                "sentences covering visible action, physical interaction, "
+                                "camera/framing, environment/lighting, sound, and the final "
+                                "visible state. Never place JSON keys, schema field names, "
+                                "underscored placeholders, dangling quotes, translations, "
+                                "or partial fragments inside a prompt. Visual characters "
+                                "must use natural role phrases and the correct <Picture N> "
+                                "when referenced; reserve (S1), (S2), etc. only for spoken "
+                                "dialogue. Preserve the user's exact requested actions, cast, "
+                                "genre, language, and scene count."
+                            ),
+                        },
+                    ],
+                }
+                corrected_result = (
+                    _external_llm_request(llm_model, correction_payload)
+                    if uses_external_llm else
+                    _openrouter_request(
+                        api_key, correction_payload, int(timeout_seconds)
+                    )
+                )
+                try:
+                    corrected_text = corrected_result["choices"][0]["message"]["content"]
+                except (KeyError, IndexError, TypeError) as error:
+                    raise RuntimeError(
+                        "Gemma returned an unexpected response while correcting its plan."
+                    ) from error
+                corrected_story = _parse_json_response(corrected_text)
+                second_issues = _gemma_scene_issues(corrected_story, scene_count)
+                if second_issues:
+                    raise RuntimeError(
+                        "Gemma produced incomplete scene plans twice; video generation "
+                        "was stopped to avoid wasting time. Remaining problems: "
+                        + "; ".join(second_issues[:12])
+                    )
+                raw_story = corrected_story
+                result = corrected_result
+        if style_contract:
+            # Keep the selected format authoritative for MiniMax as well as for
+            # either planning backend. This deterministic prefix prevents model
+            # preferences from silently replacing the user's controls.
+            existing_prefix = str(raw_story.get("prompt_prefix") or "").strip()
+            raw_story["prompt_prefix"] = "\n\n".join(
+                part for part in (style_contract, existing_prefix) if part
+            )
         if is_video_edit:
             analysis = str(raw_story.get("source_video_analysis") or "").strip()
             if len(analysis) < 500:
@@ -2241,6 +2740,34 @@ class H3StoryDirector(io.ComfyNode):
                     "The plan was rejected before generation; retry with more "
                     "video samples or a stronger vision model."
                 )
+            # Some otherwise valid local/API models describe the source correctly
+            # but omit the literal MiniMax reference tag from the generation text.
+            # Keep this protocol detail deterministic instead of discarding an
+            # expensive vision pass and asking the model to regenerate the plan.
+            prompt_prefix = str(raw_story.get("prompt_prefix") or "").strip()
+            shots = raw_story.get("shots") or []
+            generation_text = "\n".join((
+                prompt_prefix,
+                *(str(shot.get("prompt") or "") for shot in shots
+                  if isinstance(shot, dict)),
+            ))
+            if "<Video 1>" not in generation_text:
+                source_rule = (
+                    "Use <Video 1> as the locked source plate and temporal blueprint; "
+                    "apply only the requested edit while preserving all unrequested "
+                    "timing, composition, motion, identity, environment and camera details."
+                    if director_mode == "Edit" else
+                    "Use <Video 1> as the exact source motion and camera blueprint for "
+                    "the requested reference edit while preserving the requested identities "
+                    "and transformations consistently."
+                )
+                raw_story["prompt_prefix"] = "\n\n".join(
+                    part for part in (source_rule, prompt_prefix) if part
+                )
+                print(
+                    "[H3 Story Director] Restored the required <Video 1> tag "
+                    "deterministically before compiling the plan."
+                )
         plan_json, story_bible, synopsis, validation, source_video_analysis = _compile_story(
             raw_story,
             scene_count,
@@ -2248,6 +2775,7 @@ class H3StoryDirector(io.ComfyNode):
             int(steps),
             len(pictures),
             director_mode,
+            director_profile,
         )
         validation += f" · profile {director_profile}"
         compiled_plan = json.loads(plan_json)
@@ -2257,8 +2785,7 @@ class H3StoryDirector(io.ComfyNode):
         ))
         if is_video_edit and "<Video 1>" not in scene_prompt:
             raise RuntimeError(
-                "The Video Edit prompt did not preserve the required <Video 1> tag. "
-                "The plan was rejected before generation."
+                "Internal Video Edit normalization failed to preserve <Video 1>."
             )
 
         usage = result.get("usage") or {}
