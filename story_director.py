@@ -153,6 +153,182 @@ VISUAL_LOOKS = {
         "Use an obstructed or discreet fixed viewpoint, imperfect angle, practical exposure, broad "
         "focus and detached observational behavior without cinematic staging."
     ),
+    "Laptop / PC Webcam": (
+        "Use a built-in laptop or desktop webcam at monitor height, fixed wide framing, screen-led "
+        "facial illumination, broad focus, modest dynamic range and realistic compressed video."
+    ),
+    "Streamer / RGB Gaming Setup": (
+        "Use a fixed streamer-camera composition with monitor and RGB practicals, desk microphone, "
+        "gaming-room depth, screen spill, direct-to-camera presence and clean livestream exposure."
+    ),
+    "Screenlife / Desktop Capture": (
+        "Present the event through a computer-screen visual language: stable webcam window, desktop "
+        "or application framing, screen illumination and readable digital-interface context."
+    ),
+    "Video Call / Conference Webcam": (
+        "Use an ordinary video-call viewpoint with centered laptop framing, automatic exposure and "
+        "white balance, modest bitrate, room ambience and believable network-video character."
+    ),
+    "Casting / Audition Tape": (
+        "Use a straightforward audition setup with a neutral practical room, fixed eye-level camera, "
+        "clear full-body or medium framing, simple lighting and an unembellished performance-recording feel."
+    ),
+    "Adult Casting / Audition (Consenting Adults 18+)": (
+        "Use a clearly consensual adults-only casting-room setup with a fixed practical camera, direct "
+        "performance framing, plain production space, neutral work lights and non-cinematic recording."
+    ),
+    "Adult Studio Production (Consenting Adults 18+)": (
+        "Use a professional consenting-adult studio setup with readable staging, controlled practical "
+        "lighting, stable multi-purpose framing, clean exposure and visible production-grade image quality."
+    ),
+    "Creator Bedroom Camera": (
+        "Use an intimate creator-operated bedroom camera, practical lamps or ring light, fixed or casually "
+        "adjusted framing, authentic room detail and polished but personal online-content presentation."
+    ),
+    "Dashcam / Vehicle Camera": (
+        "Use a fixed dashboard or windshield-mounted wide view, deep focus, vehicle vibration, changing "
+        "exposure through glass, road reflections and continuous observational recording."
+    ),
+    "Doorbell / Fixed Home Camera": (
+        "Use a fixed wide-angle residential security viewpoint, mild barrel distortion, deep focus, automatic "
+        "exposure, compressed detail and an impersonal always-on recording style."
+    ),
+    "Behind the Scenes / Production Diary": (
+        "Use candid behind-the-scenes coverage with visible production context, practical work lights, reactive "
+        "handheld reframing, informal performances and documentary production-diary immediacy."
+    ),
+    "Podcast / Talk Show Studio": (
+        "Use a clean studio-camera setup with microphones, practical set lighting, stable conversational "
+        "coverage, controlled exposure and a polished podcast or talk-show visual language."
+    ),
+    "1940s Black-and-White Studio": (
+        "Use monochrome studio-era photography, sculpted hard key light, deep shadows, restrained camera "
+        "movement, formal blocking, period lenses and visible fine film grain."
+    ),
+    "1950s Technicolor Studio": (
+        "Use saturated three-strip-Technicolor-inspired color, bright controlled studio lighting, formal "
+        "classical composition, polished production design and measured heavy-camera movement."
+    ),
+    "1960s Mod / Pop Cinema": (
+        "Use bold period color, harder frontal or graphic lighting, zoom-lens energy, playful composition, "
+        "stylized production design and crisp mid-century film texture."
+    ),
+    "1970s Gritty New Hollywood": (
+        "Use earthy color, pushed 16mm or 35mm grain, practical low-light interiors, available-light texture, "
+        "imperfect zooms or handheld observation and candid naturalistic staging."
+    ),
+    "1980s Analog Neon Video": (
+        "Use saturated neon and tungsten color, analog-video softness, blooming highlights, period practicals, "
+        "smoky atmosphere and assertive music-video or broadcast-era framing."
+    ),
+    "1990s Cable TV / Consumer Video": (
+        "Use late-analog cable or Hi8 character, direct flash or practical light, reactive consumer zoom, "
+        "soft detail, date-era color and casual television or home-video composition."
+    ),
+    "2000s Y2K Digital Camera": (
+        "Use early compact-digital or DV sharpness, clipped highlights, direct on-camera flash, cool auto white "
+        "balance, modest resolution and candid turn-of-the-millennium framing."
+    ),
+    "2010s DSLR / YouTube": (
+        "Use early creator-era DSLR video with shallow depth of field, clean but lightly compressed 1080p detail, "
+        "softbox or window light, tripod framing and recognizable YouTube production polish."
+    ),
+    "Flat LOG / Ungraded Digital": (
+        "Use a deliberately ungraded logarithmic-camera appearance with very low contrast, restrained saturation, "
+        "lifted shadow information, protected highlights and broad neutral tonal latitude; do not add a finished LUT."
+    ),
+    "Neutral Rec.709 / Broadcast Color": (
+        "Use balanced display-ready Rec.709-style contrast, neutral whites, natural skin color, controlled legal-looking "
+        "saturation and clean broadcast tonal separation without a strong creative color bias."
+    ),
+    "Teal and Orange Blockbuster": (
+        "Use a controlled complementary grade with cyan-teal shadows and environments, warm amber-orange skin and "
+        "highlights, strong subject separation, polished contrast and restrained saturation outside the key palette."
+    ),
+    "Bleach Bypass / Silver Retention": (
+        "Use a silver-retention-inspired finish with increased contrast, dense dark shadows, reduced color saturation, "
+        "harder highlights, visible grain and a metallic tactile image without losing essential subject detail."
+    ),
+    "Cross-Processed Reversal Film": (
+        "Use cross-processed reversal-film character with shifted color relationships, punchy contrast, unusual cyan, "
+        "green or magenta casts, compressed tonal transitions and expressive photochemical unpredictability."
+    ),
+    "Film Print Emulation": (
+        "Use a restrained theatrical film-print finish with rich but controlled blacks, smooth highlight roll-off, "
+        "gentle color crosstalk, moderate saturation, fine grain and cohesive photochemical density."
+    ),
+    "Two-Strip Technicolor": (
+        "Use a stylized early two-color palette dominated by warm reds, coral skin, cyan-green shadows and limited blues, "
+        "with vintage studio contrast and deliberately restricted chromatic separation."
+    ),
+    "High-Key Pastel": (
+        "Use bright soft illumination, open shadows, low-to-moderate contrast, creamy highlights and a controlled pastel "
+        "palette while retaining readable edges and natural subject separation."
+    ),
+    "Low-Key Desaturated": (
+        "Use sparse motivated light, deep shaped shadows, restrained saturation, subdued highlights and selective color "
+        "accents for a tense, intimate and minimally illuminated finish."
+    ),
+    "Muted Earth Tones": (
+        "Use restrained ochre, olive, brown, clay and weathered neutral colors, soft saturation, natural skin separation "
+        "and gently compressed highlights for an organic grounded palette."
+    ),
+    "Warm Golden Grade": (
+        "Use warm amber highlights, honeyed skin tones, gently cool neutral shadows, soft highlight bloom and a luminous "
+        "golden-hour-inspired grade without turning the whole image uniformly orange."
+    ),
+    "Cool Moonlight Grade": (
+        "Use deep blue-cyan night ambience, neutral protected skin, cool shadow separation, restrained highlights and "
+        "localized motivated practical lights while preserving believable nighttime exposure."
+    ),
+    "Day for Night": (
+        "Simulate night from daylight with lowered exposure, cool blue-biased ambience, controlled bright sky, deepened "
+        "shadows and selective warm practicals; avoid an evenly blue filter over skin and highlights."
+    ),
+    "Warm Tungsten Interior": (
+        "Use warm tungsten practicals, amber highlights, natural falloff into cooler or neutral shadows, soft skin response "
+        "and believable mixed-color interior lighting."
+    ),
+    "Sodium Vapor Urban Night": (
+        "Use dirty amber-orange street lighting, deep cyan or neutral night shadows, hard pools of practical illumination, "
+        "limited color rendering and gritty urban contrast."
+    ),
+    "Fluorescent Institutional Green": (
+        "Use cool overhead fluorescent lighting, subtle green-cyan contamination, pale highlights, flat institutional "
+        "surfaces and controlled sickly color separation without destroying skin readability."
+    ),
+    "Neon Magenta and Cyan": (
+        "Use strong motivated magenta and cyan practicals, saturated colored edge light, deep neutral separation and glossy "
+        "night contrast while preventing uncontrolled color spill across every surface."
+    ),
+    "Monochrome High Contrast": (
+        "Use pure black-and-white rendering with hard tonal separation, deep blacks, bright shaped highlights, crisp texture "
+        "and expressive film grain; introduce no residual color."
+    ),
+    "Monochrome Soft Silver": (
+        "Use nuanced black-and-white tonality with silvery midtones, open shadow detail, gentle highlight roll-off, soft skin "
+        "response and fine restrained grain."
+    ),
+    "Sepia / Faded Archive": (
+        "Use warm sepia-brown monochromatic color, faded density, softened contrast, aged print texture, restrained flicker "
+        "and archival wear while keeping the image legible."
+    ),
+    "Faded Vintage Print": (
+        "Use lifted blacks, softened highlights, reduced saturation, gentle dye fading, warm paper-like neutrals, subtle grain "
+        "and an aged photochemical print character."
+    ),
+    "Crushed Blacks / Punchy Contrast": (
+        "Use deliberate dense blacks, steep contrast, bright controlled highlights and bold color separation while preserving "
+        "the essential silhouette, face and action rather than losing them in clipped shadow."
+    ),
+    "Lifted Blacks / Matte Grade": (
+        "Use raised black levels, compressed contrast, soft highlight response, restrained saturation and a modern matte finish "
+        "with enough local contrast to keep subjects dimensional."
+    ),
+    "Clean HDR / Modern Digital": (
+        "Use high dynamic range, clean shadow detail, protected bright highlights, precise neutral color, crisp microcontrast "
+        "and polished contemporary digital-camera clarity without artificial oversharpening."
+    ),
 }
 CINEMATIC_CUT_SHOT_LIBRARY = """
 INTERNAL CINEMATOGRAPHY LIBRARY — SELECT, DO NOT DUMP:
@@ -381,7 +557,7 @@ Treat each connected <Picture N> as a visual source, not automatically as one pe
 
 Follow the mandatory rules supplied for the selected Director Mode. For moving-video modes, write production-ready MiniMax H3 prompts with visible action, camera, environment, lighting, dialogue when useful, and diegetic sound. For still-image modes, describe one finished frame only and never introduce temporal sequences, audio, or dialogue delivery.
 
-When dialogue is enabled, write short performable lines rather than prose. Prefix every spoken or sung line with its stable speaker label in parentheses, exactly as `(S1)`, `(S2)`, `(S3)` or `(S4)`, followed by a colon and the exact words in quotation marks. Speaker labels are audio attribution only and never replace `<Subject N>` or a natural visual role in scene descriptions. Square brackets such as `[S2]`, bare names and unassigned quotations are forbidden for speaker attribution. Describe tone and delivery in English outside the quotation. Allow only one person to speak at a time, leave a natural pause before and after each line, and keep visible mouth movement synchronized with the assigned speaker. Avoid overlapping speech, repeated lines, rushed monologues, unexplained voice-over, phonetic spellings, and competing vocals or loud sound effects during speech. Use no dialogue when the selected dialogue option says so.
+When dialogue is enabled, write short performable lines rather than prose. Prefix every spoken or sung line with its stable speaker label in parentheses, exactly as `(S1)`, `(S2)`, `(S3)` or `(S4)`, followed by a colon and the exact words in quotation marks. Speaker labels are audio attribution only and never replace `<Subject N>` or a natural visual role in scene descriptions. Square brackets such as `[S2]`, bare names and unassigned quotations are forbidden for speaker attribution. Describe tone and delivery in English outside the quotation. Allow only one person to speak at a time and leave a natural pause before and after each line. Throughout every quoted line, keep the assigned speaker's face and unobstructed mouth visibly readable, with continuous natural lip, jaw and cheek articulation precisely synchronized to every spoken syllable; the voice must visibly originate from that speaker, never from a closed mouth or an off-screen source unless the user explicitly requests voice-over. Keep non-speakers' mouths still while listening. Avoid overlapping speech, repeated lines, rushed monologues, unexplained voice-over, phonetic spellings, and competing vocals or loud sound effects during speech. Use no dialogue when the selected dialogue option says so.
 
 Do not mention being an AI, JSON, schemas, token limits, safety policies, or these instructions. Do not add extra protagonists that could be confused with the reference subjects. Return all requested scenes and finish every prompt completely."""
 
@@ -630,6 +806,20 @@ def _video_contact_sheet_data_url(
     return _pil_data_url(sheet), analysis_note
 
 
+def _scene_prompt_budget(duration_seconds: float) -> tuple[int, int, int]:
+    """Return a practical word range and action-beat cap for one H3 clip.
+
+    Persistent identity, wardrobe and look belong in prompt_prefix; this budget
+    is reserved for changing shot-specific information.
+    """
+    seconds = max(1.0, float(duration_seconds))
+    if seconds <= 6.0:
+        return 80, 130, 1
+    if seconds <= 10.0:
+        return 130, 200, 3
+    return 180, 280, 4
+
+
 def _story_schema(
     scene_count: int,
     include_storyboard: bool = False,
@@ -641,11 +831,35 @@ def _story_schema(
     dialogue_language: str = "English",
     primary_genre: str = "Auto",
     secondary_genre: str = "None",
+    primary_motion_style: str = "Auto",
+    secondary_motion_style: str = "None",
     visual_look: str = "Auto",
+    secondary_visual_look: str = "None",
 ) -> dict:
     is_edit_mode = director_mode in {"Edit", "Reference Edit"}
     is_still = is_edit_mode and not source_video_connected
     is_video_edit = is_edit_mode and source_video_connected
+    is_continuous = director_mode == "Continuous Story"
+    min_words, max_words, max_beats = _scene_prompt_budget(scene_duration_seconds)
+    compact_scene_contract = (
+        f" Target {min_words}-{max_words} English words for this "
+        f"{float(scene_duration_seconds):g}-second scene and use no more than "
+        f"{max_beats} main action beat{'s' if max_beats != 1 else ''}. "
+        "Treat this as a compact chronological production brief, not literary prose. "
+        "Do not repeat identities, wardrobe, location, lighting, visual look, music or "
+        "continuity facts already established by prompt_prefix unless they change in this "
+        "scene or are required to disambiguate an action. Spend the available detail on "
+        "visible mechanics, camera changes, synchronized sound and the inherited final state."
+    )
+    continuous_scene_contract = (
+        " This is one invisible time partition of a single unbroken take. Keep the "
+        "same location, traversable route, action phase, screen direction, subject and "
+        "camera velocity, rig, height, axis, lens behavior, framing distance, lighting "
+        "and sound phase. Begin at the exact next instant after the preceding final "
+        "state and never introduce a cut, new angle, location jump, camera reset, "
+        "restarted action or invented escalation."
+        if is_continuous else ""
+    )
     shot = {
         "type": "object",
         "properties": {
@@ -662,17 +876,29 @@ def _story_schema(
                     "Complete production prompt for this scene, including continuity, "
                     "visible action, camera, lighting, dialogue when useful, and sound. "
                     "Use <Subject N> for persistent visible identities and reserve (S1), "
-                    "(S2), (S3), and (S4) exclusively for dialogue or singing attribution."
+                    "(S2), (S3), and (S4) exclusively for dialogue or singing attribution. "
+                    "Mention exactly the Subjects visible in this scene, omit future or absent "
+                    "characters completely. Put globally persistent wardrobe/appearance "
+                    "overrides in prompt_prefix and repeat only changes or details needed to "
+                    "make the current action unambiguous."
+                    + compact_scene_contract
+                    + continuous_scene_contract
                 ),
             },
         },
         "required": ["id", "prompt"],
         "additionalProperties": False,
     }
+    if not is_still:
+        # Character limits make the duration budget machine-readable for both
+        # OpenRouter structured output and local OpenAI-compatible backends.
+        shot["properties"]["prompt"]["minLength"] = max(160, min_words * 4)
+        shot["properties"]["prompt"]["maxLength"] = max_words * 8
     if director_profile == "Gemma" and not is_still:
         shot["properties"]["prompt"] = {
             "type": "string",
-            "minLength": 220,
+            "minLength": max(160, min_words * 4),
+            "maxLength": max_words * 8,
             "description": (
                 "One complete MiniMax H3 production prompt in natural English prose, "
                 "with no headings, JSON keys, worksheet labels or placeholders. Begin "
@@ -682,21 +908,25 @@ def _story_schema(
                 "may contain several distinct people, and several roles may therefore use the "
                 "same Picture tag; never assume character number equals Picture number. Never use bare S1, "
                 "S2, S3 or S4 as visual character names; reserve `(S1)` only for spoken lines. "
-                "Continue with at least "
-                "two chronological literal visible action beats, including concrete body "
+                f"Continue with up to {max_beats} chronological literal visible action "
+                "beats appropriate to the available screen time, including concrete body "
                 "or object mechanics and the observable result of each beat. Maintain one "
                 "physically coherent body configuration: name the acting subject, affected "
                 "subject, exact contact, direction and resulting position; never call one act "
                 "a kiss when a different contact is visible, jump between incompatible poses, "
                 "or restart an action already completed by the preceding scene. Use literal "
                 "anatomical and material terms when the request is explicit; do not substitute "
-                "metaphors such as milk unless the user explicitly requests that substance. Integrate "
-                "motivated camera behavior, environment, practical lighting, the selected "
-                f"genres ({primary_genre}; {secondary_genre}), and visual look ({visual_look}). "
-                "Describe synchronized ambience, Foley and permitted music. Include dialogue "
+                "metaphors such as milk unless the user explicitly requests that substance. Include "
+                "only scene-changing or action-critical camera, environment and lighting details; "
+                f"execute the selected genres ({primary_genre}; {secondary_genre}), motion styles "
+                f"({primary_motion_style}; {secondary_motion_style}), and visual looks "
+                f"({visual_look}; {secondary_visual_look}) without restating their unchanged descriptions. Describe only "
+                "synchronized sound events that occur or change in this scene. Include dialogue "
                 f"only in natural {dialogue_language}, formatted `(S1): \"...\"`, without "
                 "translation or repetition. End with the unmistakable final visible state "
                 "that the next scene inherits. Preserve the user's semantic specificity."
+                + compact_scene_contract
+                + continuous_scene_contract
             ),
         }
         shot["properties"]["coverage_check"] = {
@@ -704,7 +934,7 @@ def _story_schema(
             "minLength": 60,
             "description": (
                 "Private confirmation that the scene prompt contains every assigned user "
-                "action, correct cast and references, opening state, at least two action "
+                "action, correct cast and references, opening state, appropriately limited action "
                 "beats, genre/look execution, sound/dialogue rules, and final state."
             ),
         }
@@ -732,6 +962,13 @@ def _story_schema(
                 "description": (
                     "Continuity bible defining subjects, appearance, wardrobe, props, "
                     "locations, visual language, and relationships."
+                    + (
+                        " For Continuous Story, also lock one immutable take ledger: "
+                        "traversable route, action phase, screen direction, subject speed, "
+                        "camera rig/height/axis/lens/framing/direction/speed, lighting and "
+                        "sound phase; do not redesign these per scene."
+                        if is_continuous else ""
+                    )
                 ),
             },
             "prompt_prefix": {
@@ -741,7 +978,12 @@ def _story_schema(
                     "persistent visible identities with official Subject/Picture grammar, "
                     "for example `<Subject 1> is the woman grounded in <Picture 1>`. "
                     "Subject and Picture numbers are independent and multiple Subjects may "
-                    "share one Picture. State all permanent continuity rules. "
+                    "share one Picture. Include only Subjects visible in every requested scene; "
+                    "future or temporary characters belong only in their active scene prompts. "
+                    "Spell out every user-requested wardrobe and appearance override literally once; "
+                    "never replace it with `preserve wardrobe` or `same outfit`. State all "
+                    "permanent continuity rules. Keep this shared prefix compact because it is "
+                    "prepended to every scene; never repeat its unchanged facts in scene prompts. "
                     "Never include dialogue-planning rules, word limits, line limits, "
                     "or instructions about how dialogue should be written."
                 ),
@@ -767,6 +1009,19 @@ def _story_schema(
             ),
         }
         schema["required"].append("required_actions")
+    elif director_profile == "OpenRouter":
+        schema["properties"]["persistent_visual_overrides"] = {
+            "type": "string",
+            "description": (
+                "Exact concrete user-requested wardrobe, colors, garment fit, covered or "
+                "exposed areas, hair, accessories, footwear and persistent props for Subjects "
+                "visible from scene 1. These override conflicting mutable details in reference "
+                "images. Never use vague phrases such as preserve wardrobe or same outfit. "
+                "Exclude future characters, later locations and events. Return an empty string "
+                "only when the user supplied no persistent visible override."
+            ),
+        }
+        schema["required"].append("persistent_visual_overrides")
     if include_storyboard:
         if video_reference_mode == "fl2va_keyframes":
             schema["properties"]["prompt_prefix"]["description"] = (
@@ -822,6 +1077,42 @@ def _normalize_speaker_labels(value: str) -> str:
     )
 
 
+def _ensure_dialogue_lipsync(value: str) -> str:
+    """Add one production cue only when an actual attributed line exists."""
+    text = str(value or "").strip()
+    has_dialogue = re.search(
+        r"\(S[1-4]\)\s*:\s*[\"“][^\"”]+[\"”]", text,
+        flags=re.IGNORECASE,
+    )
+    if not has_dialogue:
+        return text
+    if re.search(
+        r"\b(?:lip[ -]?sync|lip articulation|mouth articulation|spoken syllable)",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return text
+    cue = (
+        "The visible assigned speaker articulates every quoted syllable with precise "
+        "natural lip sync; listeners keep their mouths still."
+    )
+    return f"{text} {cue}".strip()
+
+
+def _ensure_final_scene_closure(value: str, director_mode: str) -> str:
+    """Give the delivered final H3 clip an explicit terminal performance beat."""
+    text = str(value or "").strip()
+    if str(director_mode) not in {"Continuous Story", "Cinematic Cuts"}:
+        return text
+    if "FINAL SCENE CLOSURE:" in text:
+        return text
+    cue = (
+        "FINAL SCENE CLOSURE: Complete the requested outcome, introduce no new "
+        "action, and hold the resolved final state as camera and sound settle."
+    )
+    return f"{text} {cue}".strip()
+
+
 def _normalize_visual_subject_labels(value: str) -> str:
     """Convert bare Gemma cast labels to H3 visual Subject tags.
 
@@ -837,13 +1128,73 @@ def _normalize_visual_subject_labels(value: str) -> str:
     )
 
 
+def _route_scoped_subject_prefix(
+    prompt_prefix: str, shots: list[dict]
+) -> tuple[str, list[str], int]:
+    """Keep future/temporary cast definitions out of the shared H3 prefix.
+
+    A model may correctly delay a character in scene prompts while defining that
+    character globally. MiniMax then sees the future identity from frame one and
+    may render it early. Route every Subject-bearing prefix unit only to scenes
+    that actually mention all Subjects in that unit; keep it global only when all
+    referenced Subjects are active in every scene.
+    """
+    normalized_shots = [
+        _normalize_visual_subject_labels(str(shot.get("prompt") or ""))
+        if isinstance(shot, dict) else ""
+        for shot in shots
+    ]
+    units = [
+        unit.strip()
+        for unit in re.split(r"(?<=[.!?;])\s+|[\r\n]+", str(prompt_prefix or ""))
+        if unit.strip()
+    ]
+    shared: list[str] = []
+    scoped: list[list[str]] = [[] for _ in shots]
+    routed = 0
+    for unit in units:
+        subjects = sorted(set(re.findall(
+            r"<Subject\s+([1-4])>", unit, flags=re.IGNORECASE
+        )))
+        if not subjects:
+            shared.append(unit)
+            continue
+        active = [
+            all(re.search(
+                rf"<Subject\s+{re.escape(subject)}>", scene,
+                flags=re.IGNORECASE,
+            ) for subject in subjects)
+            for scene in normalized_shots
+        ]
+        if active and all(active):
+            shared.append(unit)
+            continue
+        for index, is_active in enumerate(active):
+            if is_active:
+                scoped[index].append(unit)
+        routed += 1
+    return (
+        "\n".join(shared).strip(),
+        ["\n".join(items).strip() for items in scoped],
+        routed,
+    )
+
+
 def _director_style_contract(
-    genre: str, secondary_genre: str, visual_look: str
+    genre: str,
+    secondary_genre: str,
+    motion_style: str,
+    secondary_motion_style: str,
+    visual_look: str,
+    secondary_visual_look: str,
 ) -> str:
     """Create a deterministic style lock for local models with aesthetic bias."""
     primary = str(genre or "Auto").strip()
     secondary = str(secondary_genre or "None").strip()
+    motion = str(motion_style or "Auto").strip()
+    secondary_motion = str(secondary_motion_style or "None").strip()
     look = str(visual_look or "Auto").strip()
+    secondary_look = str(secondary_visual_look or "None").strip()
     parts = [
         "MANDATORY STYLE CONTRACT FOR EVERY SCENE:",
         (
@@ -868,6 +1219,17 @@ def _director_style_contract(
             f"Secondary genre is `{secondary}`. Express its compatible conventions as a "
             "supporting layer without replacing the primary format."
         )
+    if secondary_motion == "Auto" and motion != "Auto":
+        parts.append(
+            "Infer one compatible secondary motion treatment. It may add camera operation, "
+            "stabilization or rhythmic nuance, but the primary motion remains authoritative."
+        )
+    elif secondary_motion not in {"", "None", "Auto", motion}:
+        parts.append(
+            f"Secondary motion style is {secondary_motion}: "
+            f"{MOTION_STYLES[secondary_motion]} Apply it only as a compatible supporting "
+            "behavior; if it conflicts with the primary motion, preserve the primary."
+        )
     if look == "Auto":
         parts.append(
             "Infer a capture look from the chosen genre, request and references; keep it "
@@ -876,6 +1238,17 @@ def _director_style_contract(
     else:
         parts.append(
             f"Capture look is `{look}`: {VISUAL_LOOKS[look]}"
+        )
+    if secondary_look == "Auto" and look != "Auto":
+        parts.append(
+            "Infer one compatible secondary visual treatment and apply it as a restrained "
+            "finishing accent without replacing the primary capture medium."
+        )
+    elif secondary_look not in {"", "None", "Auto", look}:
+        parts.append(
+            f"Secondary visual look is {secondary_look}: {VISUAL_LOOKS[secondary_look]} "
+            "Blend only compatible color, texture or finishing traits. The primary look controls "
+            "capture medium, viewpoint and base image behavior whenever the two conflict."
         )
     parts.append(
         "Do not default to warm cinematic lighting, amber glow, moody cinematic atmosphere, "
@@ -1073,7 +1446,7 @@ def _gemma_scene_issues(raw: dict, scene_count: int) -> list[str]:
             # A useful H3 shot can be concise. Character-count targets made
             # valid four-scene plans fail twice simply because Gemma wrote
             # compact prose. Reject structural damage, not writing style.
-            if len(direct_prompt) < 220 or len(sentences) < 3:
+            if len(direct_prompt) < 160 or len(sentences) < 3:
                 issues.append(
                     f"scene {index} has an incomplete direct production prompt"
                 )
@@ -1256,11 +1629,42 @@ MANDATORY MODE — PRECISION VIDEO EDIT:
   must repeat the same narrow edit constraint and strict preservation requirement."""
     return f"""{common}
 MANDATORY MODE — CONTINUOUS STORY:
-- Scene 1 establishes the story. Every later scene continues the preceding final pose, movement,
-  object state, screen direction, camera trajectory, location, lighting and sound state.
-- End every non-final scene on a clear unfinished action that the next scene can continue.
+- Treat the complete multi-scene result as ONE UNBROKEN TAKE. Scene boundaries are invisible
+  time partitions required by generation, never editorial cuts, new coverage, establishing
+  shots, narrative chapters, location resets or opportunities to redesign the camera.
+- Before writing scenes, privately lock one take ledger: exact location and traversable route;
+  subject identity, wardrobe and props; screen direction and action phase; camera rig, height,
+  side of axis, lens behavior, framing distance, movement vector and speed; lighting direction,
+  exposure, ambience, music and sound perspective. Keep that ledger unchanged unless the user
+  explicitly requests an observable change, and then show the complete change continuously.
+- The selected genre controls performance, staging, texture and sound inside this same take.
+  The selected motion style controls the speed and energy of the same continuous action. Neither
+  selection authorizes a cut, a new angle, a new lens, a new location, a camera reversal, a
+  sudden acceleration, a dramatic push-in or an invented escalation.
+- Scene 1 begins the requested action without adding a larger story arc. Every later scene must
+  begin at the exact next instant after the preceding final state: same body configuration,
+  planted foot, hand and object positions, momentum, facing, gaze, fabric and hair motion,
+  camera trajectory, framing distance, environment, lighting and sound phase.
+- Keep camera and subject velocity continuous across every boundary. A tracking camera keeps
+  tracking in the same direction at the same height, distance and pace; it must not tilt,
+  reframe, slow, reverse or become a push-in merely because a new scene begins.
+- Never teleport between a sidewalk, alley, doorway, room or other space. A location may change
+  only when the user requests it or the subject visibly traverses the complete connected route;
+  the preceding scene must reach the exact threshold state inherited by the next scene.
+- End every non-final scene during one clearly unfinished physical action. Start the next scene
+  by continuing that exact action, not by restating, restarting, intensifying or replacing it.
+- For a simple repeated request such as walking, dancing or observing, sustain that action and
+  its established setting/camera across all scenes. Do not invent seduction, contact, dialogue,
+  destinations, wardrobe changes, plot escalation or a final encounter unless requested.
 - Preserve identity, wardrobe, props, geography and relationships across the sequence.
-- The last scene deliberately resolves the story. Do not introduce an unresolved final action."""
+- The final scene is the actual ending, not another bridge. Complete every remaining action and
+  outcome explicitly requested by the user before the shot ends, then hold the resolved visible
+  state for a final beat while camera motion and sound settle naturally. Never finish at the
+  beginning, anticipation or midpoint of that final action. For an intentionally ongoing repeated
+  action, sustain it through the shot and finish on a stable natural beat. Do not introduce a new
+  camera setup, destination, contact or story event merely to manufacture a dramatic resolution.
+- Do not write meta phrases such as `Scene 1 establishes`, `Scene 2 continues`, `the story
+  intensifies`, or `the final scene resolves`. Describe only the uninterrupted visible take."""
 
 
 def _gemma_scene_prompt(shot: dict) -> str:
@@ -1342,6 +1746,16 @@ def _compile_story(
         flags=re.IGNORECASE,
     )
     prompt_prefix = _normalize_visual_subject_labels(prompt_prefix)
+    persistent_visual_overrides = str(
+        raw.get("persistent_visual_overrides") or ""
+    ).strip()
+    if persistent_visual_overrides:
+        prompt_prefix = "\n\n".join((
+            "AUTHORITATIVE USER VISUAL OVERRIDES — these mutable details replace "
+            "conflicting clothing, appearance and prop details in reference images:\n"
+            + persistent_visual_overrides,
+            prompt_prefix,
+        ))
     storyboard_prompt_prefix = str(raw.get("storyboard_prompt_prefix") or "").strip()
     source_video_analysis = str(raw.get("source_video_analysis") or "").strip()
     shots = raw.get("shots")
@@ -1353,7 +1767,19 @@ def _compile_story(
             f"The director returned {actual} scenes, but {scene_count} were requested. The plan was not accepted."
         )
 
-    reference_assignment_prefix = storyboard_prompt_prefix or prompt_prefix
+    scoped_subject_prefixes = ["" for _ in shots]
+    routed_subject_units = 0
+    if not storyboard_prompt_prefix:
+        prompt_prefix, scoped_subject_prefixes, routed_subject_units = (
+            _route_scoped_subject_prefix(prompt_prefix, shots)
+        )
+
+    reference_assignment_prefix = storyboard_prompt_prefix or "\n".join((
+        prompt_prefix,
+        *scoped_subject_prefixes,
+        *(str(shot.get("prompt") or "") for shot in shots
+          if isinstance(shot, dict)),
+    ))
     missing_tags = [
         f"<Picture {index}>"
         for index in range(1, picture_count + 1)
@@ -1391,9 +1817,15 @@ def _compile_story(
             source_prompt = _dedupe_gemma_inline_dialogue(source_prompt)
         source_prompt = _normalize_speaker_labels(source_prompt)
         source_prompt = _normalize_visual_subject_labels(source_prompt)
+        scoped_prefix = scoped_subject_prefixes[index - 1]
+        if scoped_prefix:
+            source_prompt = "\n\n".join((scoped_prefix, source_prompt))
         prompt = _normalize_speaker_labels(_strip_dialogue_planning_rules(
             source_prompt
         ))
+        prompt = _ensure_dialogue_lipsync(prompt)
+        if index == len(shots):
+            prompt = _ensure_final_scene_closure(prompt, director_mode)
         if len(prompt) < 80:
             raise RuntimeError(
                 f"Scene {index} is too short to be a production-ready continuity prompt."
@@ -1425,6 +1857,11 @@ def _compile_story(
         f"Valid: {director_mode} · {scene_count} scenes · {picture_count} references · "
         f"{float(duration_seconds):g}s requested per scene · {int(steps)} steps"
     )
+    if routed_subject_units:
+        validation += (
+            f" · routed {routed_subject_units} temporally scoped Subject "
+            f"definition{'s' if routed_subject_units != 1 else ''}"
+        )
     if repaired_reference_count:
         validation += (
             f" · repaired {repaired_reference_count} omitted Picture "
@@ -2053,6 +2490,15 @@ class H3StoryDirector(io.ComfyNode):
                     ),
                 ),
                 io.Combo.Input(
+                    "secondary_motion_style",
+                    options=["None", *MOTION_STYLES],
+                    default="None",
+                    tooltip=(
+                        "Adds one compatible motion or camera behavior. The primary motion "
+                        "style remains authoritative whenever the two selections conflict."
+                    ),
+                ),
+                io.Combo.Input(
                     id="visual_look",
                     display_name="Visual Look",
                     options=list(VISUAL_LOOKS),
@@ -2060,6 +2506,16 @@ class H3StoryDirector(io.ComfyNode):
                     tooltip=(
                         "Controls the capture aesthetic independently from genre and motion. "
                         "Non-cinematic choices explicitly suppress generic film polish."
+                    ),
+                ),
+                io.Combo.Input(
+                    id="secondary_visual_look",
+                    display_name="Secondary Visual Look",
+                    options=["None", *VISUAL_LOOKS],
+                    default="None",
+                    tooltip=(
+                        "Adds compatible color, texture, processing, or finishing traits. "
+                        "The primary look continues to control the base capture aesthetic."
                     ),
                 ),
                 io.String.Input(
@@ -2200,7 +2656,9 @@ class H3StoryDirector(io.ComfyNode):
         language: str,
         audio_content: str,
         motion_style: str,
+        secondary_motion_style: str,
         visual_look: str,
+        secondary_visual_look: str,
         additional_direction: str,
         max_tokens: int,
         temperature: float,
@@ -2226,9 +2684,19 @@ class H3StoryDirector(io.ComfyNode):
         if audio_content not in AUDIO_CONTENT_MODES:
             audio_content = "Auto"
         motion_style = str(motion_style or "Auto").strip()
+        secondary_motion_style = str(secondary_motion_style or "None").strip()
+        if secondary_motion_style not in {"None", *MOTION_STYLES}:
+            secondary_motion_style = "None"
+        if secondary_motion_style == motion_style:
+            secondary_motion_style = "None"
         visual_look = str(visual_look or "Auto").strip()
         if visual_look not in VISUAL_LOOKS:
             visual_look = "Auto"
+        secondary_visual_look = str(secondary_visual_look or "None").strip()
+        if secondary_visual_look not in {"None", *VISUAL_LOOKS}:
+            secondary_visual_look = "None"
+        if secondary_visual_look == visual_look:
+            secondary_visual_look = "None"
         director_profile = str(director_profile or "OpenRouter").strip()
         if director_profile not in DIRECTOR_PROFILES:
             director_profile = "OpenRouter"
@@ -2248,6 +2716,19 @@ class H3StoryDirector(io.ComfyNode):
             "Apply the requested movement style consistently while preserving "
             "physical coherence and readable action.",
         )
+        secondary_motion_direction = ""
+        if secondary_motion_style == "Auto":
+            secondary_motion_direction = (
+                " Infer one distinct compatible secondary motion treatment. Use it only "
+                "as a supporting camera, stabilization, or rhythmic behavior; the primary "
+                "motion remains authoritative."
+            )
+        elif secondary_motion_style != "None":
+            secondary_motion_direction = (
+                f" Secondary motion style: {secondary_motion_style}. "
+                f"{MOTION_STYLES[secondary_motion_style]} Apply it as a supporting layer; "
+                "discard any trait that contradicts the primary motion or Director Mode."
+            )
         scene_count = int(scene_count)
         if not 1 <= scene_count <= 32:
             raise ValueError("scene_count must be between 1 and 32.")
@@ -2476,11 +2957,27 @@ class H3StoryDirector(io.ComfyNode):
                 " Do not reinterpret this selection as cinematic. Avoid generic cinematic "
                 "atmosphere, sweeping dolly language, artificial shallow depth of field, "
                 "dramatic color grading and polished studio lighting unless the selected "
-                "look itself explicitly requires one of those properties."
+                "primary or secondary look explicitly requires one of those properties."
+            )
+        if secondary_visual_look == "Auto":
+            visual_look_direction += (
+                " Infer one distinct compatible secondary visual treatment and apply it only "
+                "as a restrained color, texture, processing, or finishing accent."
+            )
+        elif secondary_visual_look != "None":
+            visual_look_direction += (
+                f" Secondary Visual Look: {secondary_visual_look}. "
+                f"{VISUAL_LOOKS[secondary_visual_look]} Blend only compatible finishing traits; "
+                "the primary look controls capture medium, viewpoint, and base image behavior."
             )
         profile_rules = ""
         style_contract = _director_style_contract(
-            genre, secondary_genre, visual_look
+            genre,
+            secondary_genre,
+            motion_style,
+            secondary_motion_style,
+            visual_look,
+            secondary_visual_look,
         )
         if director_profile == "Gemma":
             profile_genre_rule = (
@@ -2532,17 +3029,60 @@ class H3StoryDirector(io.ComfyNode):
                 "coverage check must verify actions, genre, visual look and final state.\n"
                 f"{style_contract}"
             )
+        else:
+            profile_rules = (
+                "MANDATORY OPENROUTER PROFILE:\n"
+                "- Treat every explicit user-specified visible attribute as authoritative: "
+                "wardrobe, colors, garment type and fit, exposed or covered body areas, hair, "
+                "accessories, footwear, props and location. These instructions override "
+                "conflicting mutable details visible in a reference image.\n"
+                "- Never compress an explicit attribute into vague phrases such as `preserve "
+                "wardrobe`, `same outfit`, `as described`, or `keep appearance`. State the exact "
+                "requested visible details in prompt_prefix when they apply to every scene and "
+                "place them once in prompt_prefix when globally persistent. Do not repeat those "
+                "unchanged details in every scene; restate only scene-scoped or newly changed facts.\n"
+                "- Keep the complete cast and future events in the private story_bible, but put "
+                "only Subjects visible in every scene inside prompt_prefix. A character who "
+                "enters later must not be named, described, tagged, implied in the background, "
+                "or grounded in a Picture inside prompt_prefix. Define that character only in "
+                "the first scene where they become visible and in later scenes where present.\n"
+                "- Every scene prompt must name exactly the Subjects actually visible in that "
+                "scene. Omit future, absent, departed and off-screen characters completely; do "
+                "not mention them even in a negative instruction.\n"
+                "- Preserve mutable continuity from the latest completed scene, not from an "
+                "obsolete reference state. Never restore replaced clothing, props, hairstyle, "
+                "location or physical state merely because it appears in <Picture N>.\n"
+                "- Translate every requested event into literal visible action with an opening "
+                "state, physically achievable progression and unmistakable final state.\n"
+                f"{style_contract}"
+            )
         motion_brief = (
             f"Visual energy / pose style: {motion_style}. Translate this into pose, "
-            "composition and implied energy without describing temporal movement."
+            "composition and implied energy without describing temporal movement. "
+            + (
+                "Infer one compatible secondary pose or compositional energy."
+                if secondary_motion_style == "Auto" else
+                (
+                    f"Secondary motion style: {secondary_motion_style}. Translate only its "
+                    "compatible energy into pose and composition, not temporal movement."
+                    if secondary_motion_style != "None" else ""
+                )
+            )
             if is_still_mode else
-            f"Motion style: {motion_style}. {motion_direction}"
+            f"Motion style: {motion_style}. {motion_direction}{secondary_motion_direction}"
         )
         duration_brief = (
             "Each prompt describes exactly one finished still image."
             if is_still_mode else
             f"Each scene will be generated for approximately "
-            f"{float(scene_duration_seconds):g} seconds."
+            f"{float(scene_duration_seconds):g} seconds. "
+            f"Write each scene as a compact {_scene_prompt_budget(scene_duration_seconds)[0]}-"
+            f"{_scene_prompt_budget(scene_duration_seconds)[1]} word production brief with no "
+            f"more than {_scene_prompt_budget(scene_duration_seconds)[2]} main action "
+            f"beat{'s' if _scene_prompt_budget(scene_duration_seconds)[2] != 1 else ''}. "
+            "Put invariant identity, wardrobe, setting, look and sound rules in prompt_prefix "
+            "once; scene prompts contain only the opening state, changes, camera/sound events "
+            "and final state that occur during their own screen time."
         )
         content = [{
             "type": "text",
@@ -2557,6 +3097,15 @@ class H3StoryDirector(io.ComfyNode):
                 "prompt entirely in English. "
                 f"Dialogue direction: {dialogue_direction} "
                 "Keep MiniMax tags such as <Picture 1> unchanged. "
+                f"FINAL SCENE CONTRACT: Scene {scene_count} is the actual ending, "
+                "not another transition. It must visibly complete every remaining "
+                "action and outcome explicitly requested for the ending, then hold "
+                "a resolved physical state for a final beat while camera and sound "
+                "settle. Never end the final scene with a newly started, anticipated "
+                "or half-completed action. For an intentionally ongoing repeated "
+                "action, sustain it and finish on a stable natural beat without "
+                "inventing a new event. Non-final scenes may remain open for their "
+                "successor; the final scene may not. "
                 f"{duration_brief}\n\n"
                 f"{story_direction}\n\n"
                 f"Additional direction:\n{str(additional_direction or '').strip()}"
@@ -2650,7 +3199,10 @@ class H3StoryDirector(io.ComfyNode):
                         dialogue_language=language,
                         primary_genre=genre,
                         secondary_genre=secondary_genre,
+                        primary_motion_style=motion_style,
+                        secondary_motion_style=secondary_motion_style,
                         visual_look=visual_look,
+                        secondary_visual_look=secondary_visual_look,
                     ),
                 },
             },
@@ -3058,7 +3610,4 @@ MANDATORY FL2VA KEYFRAME STORYBOARD DIRECTION:
 
 __all__ = [
     "H3StoryDirector",
-    "H3StoryDirectorCleanCuts",
-    "H3StoryDirectorStoryboardCuts",
-    "H3StoryDirectorStoryboardFL2VA",
 ]

@@ -20,9 +20,6 @@ from .story_director import (
     H3OllamaModel,
     H3StoryDirector,
     H3StoryDirectorLLMAPI,
-    H3StoryDirectorCleanCuts,
-    H3StoryDirectorStoryboardCuts,
-    H3StoryDirectorStoryboardFL2VA,
 )
 from .audio_transcriber import LocalWhisperTranscribe
 
@@ -684,9 +681,6 @@ class LocalVisionPromptExtension(ComfyExtension):
             H3OllamaModel,
             H3StoryDirector,
             H3StoryDirectorLLMAPI,
-            H3StoryDirectorCleanCuts,
-            H3StoryDirectorStoryboardCuts,
-            H3StoryDirectorStoryboardFL2VA,
             LocalWhisperTranscribe,
             PreviewVisionPrompt,
             H3EditDuration24FPS,

@@ -265,9 +265,12 @@ Dreamlike Floating, Static Tableau, and Slow Observational motion.
 
 The model writes the synopsis, continuity bible, shared reference assignments,
 and scene prompts. The node—not the model—enforces the requested scene count,
-duration, and sampler steps. Every connected image must be assigned through its
-exact `<Picture 1>`, `<Picture 2>`, `<Picture 3>`, or `<Picture 4>` tag or the
-plan is rejected.
+duration, and sampler steps. Explicit user wardrobe and appearance overrides are
+stored as authoritative mutable state above conflicting reference-image details.
+Subject definitions that are not active in every scene are automatically removed
+from the shared prefix and routed only into scenes where that Subject appears;
+this prevents future characters from leaking into earlier generations. Connected
+images retain their exact `<Picture 1>` through `<Picture 4>` tags.
 Incomplete JSON, missing scenes, duplicate IDs, and underspecified scene prompts
 also stop before video generation begins.
 
