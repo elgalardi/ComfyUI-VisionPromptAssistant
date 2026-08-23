@@ -1204,6 +1204,15 @@ def _compile_reference_controls(raw: dict, scene_count: int, picture_count: int)
             continue
         role = str(item.get("role") or "Auto").strip().lower()
         assignment = str(item.get("assignment") or "").strip()
+        # Small/local models often answer the field description rather than the
+        # field itself ("Defines the exact identity..."). Keep the meaning while
+        # preventing that worksheet language from leaking into MiniMax prompts.
+        assignment = re.sub(
+            r"^(?:this\s+)?(?:picture\s+)?defines\s+(?:the\s+)?(?:exact\s+)?",
+            "",
+            assignment,
+            flags=re.IGNORECASE,
+        ).strip(" .;:")
         if not assignment:
             continue
         active = _clean_scene_numbers(item.get("active_scenes"), scene_count)
@@ -1239,6 +1248,85 @@ def _compile_reference_controls(raw: dict, scene_count: int, picture_count: int)
                 scoped[index].append(instruction)
         accepted += 1
     return shared, scoped, accepted
+
+
+_GARMENT_WORDS = re.compile(
+    r"\b(?:shirt|t-?shirt|top|dress|skirt|jeans|pants|trousers|shorts|hoodie|"
+    r"jacket|coat|sweater|blouse|bra|underwear|lingerie|stockings|socks|shoes|"
+    r"sneakers|boots|uniform|suit|robe|clothes|clothing|wears|wearing|vestido|"
+    r"falda|pantalones|camisa|ropa|medias|zapatos)\b",
+    flags=re.IGNORECASE,
+)
+_UNDRESSED_WORDS = re.compile(
+    r"\b(?:completely|fully|already)?\s*(?:naked|nude|undressed|desnudad[oa]|sin ropa)\b",
+    flags=re.IGNORECASE,
+)
+_VISIBLE_REMOVAL_WORDS = re.compile(
+    r"\b(?:remove|removes|removed|taking off|takes off|pulls off|strips off|"
+    r"unbuttons|unzips|slides off|discard|quita|quitar|retira|desabrocha)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _initial_subject_contracts(raw: dict) -> dict[int, str]:
+    """Extract explicit scene-one states from the model's user-override field."""
+    contracts = {}
+    text = str(raw.get("persistent_visual_overrides") or "")
+    for line in re.split(r"[\r\n]+", text):
+        match = re.match(r"\s*(?:<)?Subject\s+([1-4])(?:>)?\s+(.+)", line, re.IGNORECASE)
+        if not match:
+            continue
+        detail = match.group(2).strip(" .")
+        if re.search(r"\b(?:begins?|starts?|initially|at the beginning|from scene 1)\b", detail, re.IGNORECASE):
+            contracts[int(match.group(1))] = detail
+    return contracts
+
+
+def _state_consistency_issues(raw: dict) -> list[str]:
+    """Catch costly visual-state contradictions before H3 receives the plan."""
+    shots = raw.get("shots") or []
+    if not shots or not isinstance(shots[0], dict):
+        return []
+    first_prompt = _normalize_visual_subject_labels(str(shots[0].get("prompt") or ""))
+    issues = []
+    for subject, contract in _initial_subject_contracts(raw).items():
+        if not _GARMENT_WORDS.search(contract):
+            continue
+        tag = rf"<Subject\s+{subject}>"
+        subject_positions = [m.start() for m in re.finditer(tag, first_prompt, re.IGNORECASE)]
+        if not subject_positions:
+            issues.append(
+                f"Scene 1 omits <Subject {subject}> despite its explicit initial-state contract: {contract}"
+            )
+            continue
+        subject_sentences = [
+            sentence for sentence in re.split(r"(?<=[.!?])\s+|[\r\n]+", first_prompt)
+            if re.search(tag, sentence, re.IGNORECASE)
+        ]
+        subject_text = " ".join(subject_sentences)
+        naked = _UNDRESSED_WORDS.search(subject_text)
+        if naked:
+            removal = _VISIBLE_REMOVAL_WORDS.search(subject_text)
+            if removal is None or removal.start() > naked.start():
+                issues.append(
+                    f"Scene 1 shows <Subject {subject}> undressed before visibly performing the "
+                    f"requested transition from this initial state: {contract}"
+                )
+        # The exact initial garment state must be visibly established, not left
+        # solely in a shared prefix that a video model may underweight.
+        expected_garments = {
+            match.group(0).lower() for match in _GARMENT_WORDS.finditer(contract)
+            if match.group(0).lower() not in {"wears", "wearing"}
+        }
+        stated_garments = {
+            match.group(0).lower() for match in _GARMENT_WORDS.finditer(subject_text)
+            if match.group(0).lower() not in {"wears", "wearing"}
+        }
+        if expected_garments and not expected_garments.intersection(stated_garments):
+            issues.append(
+                f"Scene 1 does not visibly establish <Subject {subject}>'s initial wardrobe: {contract}"
+            )
+    return list(dict.fromkeys(issues))
 
 
 def _compile_continuity_controls(raw: dict, scene_count: int):
@@ -1959,6 +2047,12 @@ def _compile_story(
     continuity_scoped, continuity_lock_count = _compile_continuity_controls(
         raw, scene_count
     )
+    initial_contracts = _initial_subject_contracts(raw)
+    for subject, contract in initial_contracts.items():
+        continuity_scoped[0].insert(
+            0,
+            f"AUTHORITATIVE OPENING STATE — <Subject {subject}> {contract}",
+        )
     if reference_shared:
         prompt_prefix = "\n\n".join((prompt_prefix, *reference_shared))
 
@@ -2089,6 +2183,8 @@ def _compile_story(
         validation += f" · {reference_role_count} semantic reference role(s)"
     if continuity_lock_count:
         validation += f" · {continuity_lock_count} continuity lock(s) enforced"
+    if initial_contracts:
+        validation += f" · {len(initial_contracts)} opening state contract(s) enforced"
     if toolkit_prompt_rules:
         findings = []
         combined_prompts = [
@@ -3569,6 +3665,65 @@ class H3StoryDirector(io.ComfyNode):
                     )
                 raw_story = corrected_story
                 result = corrected_result
+        state_issues = _state_consistency_issues(raw_story)
+        if state_issues:
+            concise_issues = "; ".join(state_issues[:8])
+            print(
+                "[H3 Story Director] Visual state contradiction detected; "
+                "requesting one automatic corrected plan: " + concise_issues
+            )
+            state_correction_payload = {
+                **payload,
+                "temperature": min(float(temperature), 0.2),
+                "messages": [
+                    *payload["messages"],
+                    {
+                        "role": "assistant",
+                        "content": json.dumps(raw_story, ensure_ascii=False),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Rewrite the COMPLETE JSON plan from the beginning. Do not patch, "
+                            "continue or explain the previous response. Preserve the requested "
+                            "story, cast, references, genres, motion, look, dialogue language, "
+                            "scene count and schema. The previous plan contains these visual "
+                            "state contradictions: " + concise_issues + ". Every explicit "
+                            "initial wardrobe or physical state must be visibly true at the "
+                            "opening of Scene 1. If that state changes, describe the complete "
+                            "visible transition before showing its result; never jump directly "
+                            "to the result. Populate continuity_ledger with the initial state, "
+                            "the scene where each transformation occurs, and the exact inherited "
+                            "result for every later active scene. Do not introduce any additional "
+                            "action or change that the user did not request."
+                        ),
+                    },
+                ],
+            }
+            corrected_result = (
+                _external_llm_request(llm_model, state_correction_payload)
+                if uses_external_llm else
+                _openrouter_request(
+                    api_key, state_correction_payload, int(timeout_seconds)
+                )
+            )
+            try:
+                corrected_text = corrected_result["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as error:
+                raise RuntimeError(
+                    "The Director returned an unexpected response while repairing "
+                    "visual-state continuity."
+                ) from error
+            corrected_story = _parse_json_response(corrected_text)
+            remaining_issues = _state_consistency_issues(corrected_story)
+            if remaining_issues:
+                raise RuntimeError(
+                    "The Director produced contradictory initial visual states twice; "
+                    "generation was stopped before spending GPU time. Remaining problems: "
+                    + "; ".join(remaining_issues[:8])
+                )
+            raw_story = corrected_story
+            result = corrected_result
         if style_contract:
             # Keep the selected format authoritative for MiniMax as well as for
             # either planning backend. This deterministic prefix prevents model
