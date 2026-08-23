@@ -1084,7 +1084,7 @@ def _normalize_h3_dialogue(value: str, language: str) -> str:
     if spoken_language == "No dialogue":
         return text
     pattern = re.compile(
-        r"\((S[1-4])\)\s*:\s*[\"“]([^\"”]+)[\"”]",
+        r"\((S[1-4])\)\s*(?:says\s*)?:\s*[\"“]([^\"”]+)[\"”]",
         flags=re.IGNORECASE,
     )
     return pattern.sub(
