@@ -94,6 +94,13 @@ MiniMax H3 begins loading. Silent audio is detected before loading the model.
 
 ## H3 Story Director
 
+### Experimental H3 Toolkit prompt rules
+
+Enable `toolkit_prompt_rules` to request self-contained per-scene rendered prompts,
+positive camera descriptions, Subject-bound retention (`<Subject N>` defined from
+`<Picture N>`), and non-blocking lint findings in the validation output. It is off
+by default so existing workflows retain their established prompt contract.
+
 **H3 Story Director** is a multimodal planner for MiniMax H3. It accepts an
 optional story idea, up to four character or subject images, and an optional
 source-video `IMAGE` frame batch from VHS Load Video. It uses an OpenRouter vision model with strict structured

@@ -1727,6 +1727,7 @@ def _compile_story(
     picture_count: int,
     director_mode: str = "Continuous Story",
     director_profile: str = "OpenRouter",
+    toolkit_prompt_rules: bool = False,
 ) -> tuple[str, str, str, str, str]:
     synopsis = str(raw.get("synopsis") or "").strip()
     story_bible = str(raw.get("story_bible") or "").strip()
@@ -1866,6 +1867,31 @@ def _compile_story(
         validation += (
             f" · repaired {repaired_reference_count} omitted Picture "
             f"assignment{'s' if repaired_reference_count != 1 else ''}"
+        )
+    if toolkit_prompt_rules:
+        findings = []
+        combined_prompts = [
+            "\n\n".join((prompt_prefix, str(shot.get("prompt") or "")))
+            for shot in compiled_shots
+        ]
+        forbidden = (
+            (r"\bno cuts?\b|\bwithout (?:any )?cuts?\b|\bnever cuts?\b", "names cuts negatively"),
+            (r"\bno camera movement\b|\bno angle change\b", "names unwanted camera behavior"),
+            (r"\bcontinu(?:e|es|ing) (?:the )?(?:same|previous)\b|\bthe same (?:room|shot|scene)\b", "relies on relative continuity wording"),
+        )
+        for scene_index, text in enumerate(combined_prompts, 1):
+            for pattern, label in forbidden:
+                if re.search(pattern, text, flags=re.IGNORECASE):
+                    findings.append(f"scene {scene_index} {label}")
+        if any(
+            re.search(r"<Picture\s+\d+>\s*(?:is|:).*\b(?:fully|partially)_preserved\b", text, re.IGNORECASE)
+            for text in combined_prompts
+        ):
+            findings.append("retention appears bound to Picture rather than Subject")
+        validation += (
+            " · H3 Toolkit lint clean"
+            if not findings else
+            " · H3 Toolkit lint warnings: " + "; ".join(dict.fromkeys(findings))
         )
     return (
         json.dumps(plan, ensure_ascii=False, indent=2),
@@ -2606,6 +2632,15 @@ class H3StoryDirector(io.ComfyNode):
                         "is created locally for downstream chain nodes."
                     ),
                 ),
+                io.Boolean.Input(
+                    "toolkit_prompt_rules",
+                    default=False,
+                    optional=True,
+                    tooltip=(
+                        "Experimental H3 Toolkit rules: self-contained rendered prompts, "
+                        "positive camera wording, Subject-bound retention, and prompt lint."
+                    ),
+                ),
             ],
             outputs=[
                 io.String.Output("plan_json"),
@@ -2674,6 +2709,7 @@ class H3StoryDirector(io.ComfyNode):
         image_3=None,
         source_video=None,
         bypass_director: bool = False,
+        toolkit_prompt_rules: bool = False,
         llm_model=None,
     ) -> io.NodeOutput:
         if language in {"EspaÃ±ol", "EspaÃƒÂ±ol"}:
@@ -3084,6 +3120,21 @@ class H3StoryDirector(io.ComfyNode):
             "once; scene prompts contain only the opening state, changes, camera/sound events "
             "and final state that occur during their own screen time."
         )
+        toolkit_direction = ""
+        if bool(toolkit_prompt_rules):
+            toolkit_direction = (
+                "\n\nEXPERIMENTAL H3 TOOLKIT PROMPT CONTRACT:\n"
+                "- The rendered prompt for each scene is prompt_prefix plus that scene prompt; "
+                "together they must be fully self-contained without relying on any previous prompt.\n"
+                "- State the exact visible opening state and current location. Avoid relative wording "
+                "such as `the same room`, `continue the previous shot`, `as before`, or `still there`.\n"
+                "- Describe what the camera positively does. Never name an unwanted failure with "
+                "phrases such as `no cuts`, `never cut`, `no camera movement`, or `no angle change`.\n"
+                "- Bind retained identity and mutable appearance to <Subject N>. Use <Picture N> only "
+                "as the visual source defining that Subject, never as the retained entity.\n"
+                "- Each independent scene states every changing visual state required at its first "
+                "frame; prompt_prefix supplies invariant identity, wardrobe, environment and look."
+            )
         content = [{
             "type": "text",
             "text": (
@@ -3111,6 +3162,7 @@ class H3StoryDirector(io.ComfyNode):
                 f"Additional direction:\n{str(additional_direction or '').strip()}"
                 f"{adult_direction}\n\n"
                 f"{style_contract}"
+                f"{toolkit_direction}"
             ),
         }]
         for index, image in enumerate(pictures, 1):
@@ -3328,6 +3380,7 @@ class H3StoryDirector(io.ComfyNode):
             len(pictures),
             director_mode,
             director_profile,
+            bool(toolkit_prompt_rules),
         )
         validation += f" · profile {director_profile}"
         compiled_plan = json.loads(plan_json)
