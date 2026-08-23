@@ -885,21 +885,8 @@ def _story_schema(
                     + continuous_scene_contract
                 ),
             },
-            "visible_subjects": {
-                "type": "array",
-                "items": {"type": "integer", "minimum": 1, "maximum": 4},
-                "description": "Subject numbers physically visible in this scene, in entrance order.",
-            },
-            "excluded_subjects": {
-                "type": "array",
-                "items": {"type": "integer", "minimum": 1, "maximum": 4},
-                "description": (
-                    "Known persistent Subject numbers that must remain off-screen and not visible "
-                    "during this scene. Never list the same Subject in both arrays."
-                ),
-            },
         },
-        "required": ["id", "prompt", "visible_subjects", "excluded_subjects"],
+        "required": ["id", "prompt"],
         "additionalProperties": False,
     }
     if not is_still:
@@ -1001,59 +988,6 @@ def _story_schema(
                     "or instructions about how dialogue should be written."
                 ),
             },
-            "reference_roles": {
-                "type": "array",
-                "description": (
-                    "Optional semantic routing for connected pictures. Add one entry per useful "
-                    "role, because one Picture may legitimately provide more than one subject. "
-                    "Use active_scenes to prevent future characters or locations leaking into "
-                    "earlier scenes."
-                ),
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "picture": {"type": "integer", "minimum": 1, "maximum": 4},
-                        "role": {
-                            "type": "string",
-                            "enum": ["Auto", "Subject", "Location", "Prop", "Style"],
-                        },
-                        "assignment": {
-                            "type": "string",
-                            "description": "Natural-language description of exactly what this reference controls.",
-                        },
-                        "active_scenes": {
-                            "type": "array",
-                            "items": {"type": "integer", "minimum": 1},
-                        },
-                    },
-                    "required": ["picture", "role", "assignment", "active_scenes"],
-                    "additionalProperties": False,
-                },
-            },
-            "continuity_ledger": {
-                "type": "array",
-                "description": (
-                    "Compact exact-state ledger for mutable facts that must survive across "
-                    "specified scenes: wardrobe, hairstyle, body state, important props, "
-                    "location state, time of day or another user-critical visible fact."
-                ),
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "label": {"type": "string"},
-                        "exact_state": {
-                            "type": "string",
-                            "description": "Concrete visible state, never shorthand such as same outfit or unchanged.",
-                        },
-                        "active_scenes": {
-                            "type": "array",
-                            "items": {"type": "integer", "minimum": 1},
-                        },
-                    },
-                    "required": ["label", "exact_state", "active_scenes"],
-                    "additionalProperties": False,
-                },
-            },
             "shots": {
                 "type": "array",
                 "minItems": scene_count,
@@ -1061,10 +995,7 @@ def _story_schema(
                 "items": shot,
             },
         },
-        "required": [
-            "synopsis", "story_bible", "prompt_prefix",
-            "reference_roles", "continuity_ledger", "shots",
-        ],
+        "required": ["synopsis", "story_bible", "prompt_prefix", "shots"],
         "additionalProperties": False,
     }
     if director_profile == "Gemma" and not is_still:
@@ -1152,12 +1083,8 @@ def _normalize_h3_dialogue(value: str, language: str) -> str:
     spoken_language = str(language or "English").strip()
     if spoken_language == "No dialogue":
         return text
-
-    # Keep already-normalized dialogue untouched. Older saved plans and less
-    # reliable local models commonly emit `(S1): "line"`; accepting that form
-    # here preserves backward compatibility while giving H3 one stable output.
     pattern = re.compile(
-        r"\((S[1-4])\)\s*:\s*[\"“]([^\"”\r\n]+)[\"”]",
+        r"\((S[1-4])\)\s*:\s*[\"“]([^\"”]+)[\"”]",
         flags=re.IGNORECASE,
     )
     return pattern.sub(
@@ -1167,97 +1094,6 @@ def _normalize_h3_dialogue(value: str, language: str) -> str:
         ),
         text,
     )
-
-
-def _clean_scene_numbers(value, scene_count: int) -> list[int]:
-    if not isinstance(value, list):
-        return []
-    result = []
-    for item in value:
-        try:
-            number = int(item)
-        except (TypeError, ValueError):
-            continue
-        if 1 <= number <= scene_count and number not in result:
-            result.append(number)
-    return result
-
-
-def _compile_reference_controls(raw: dict, scene_count: int, picture_count: int):
-    """Compile model-authored reference roles without making photos own the scene.
-
-    These controls are deliberately data driven and independently implemented:
-    a reference can supply identity, a place, a prop, or a look, and temporally
-    scoped assignments never leak into the shared prefix before they are active.
-    """
-    shared = []
-    scoped = [[] for _ in range(scene_count)]
-    accepted = 0
-    for item in raw.get("reference_roles") or []:
-        if not isinstance(item, dict):
-            continue
-        try:
-            picture = int(item.get("picture"))
-        except (TypeError, ValueError):
-            continue
-        if not 1 <= picture <= picture_count:
-            continue
-        role = str(item.get("role") or "Auto").strip().lower()
-        assignment = str(item.get("assignment") or "").strip()
-        if not assignment:
-            continue
-        active = _clean_scene_numbers(item.get("active_scenes"), scene_count)
-        tag = f"<Picture {picture}>"
-        if role == "subject":
-            instruction = (
-                f"{tag} supplies only the identity and explicitly assigned appearance of "
-                f"{assignment}; ignore the source photo's background, framing, lighting, "
-                "weather and mood unless the user explicitly assigns one of them."
-            )
-        elif role == "location":
-            instruction = (
-                f"{tag} supplies the location and spatial layout for {assignment}; do not "
-                "treat incidental people in that reference as cast."
-            )
-        elif role == "style":
-            instruction = (
-                f"{tag} supplies only the visual style, color and texture for {assignment}; "
-                "do not copy its people, objects or location."
-            )
-        elif role == "prop":
-            instruction = (
-                f"{tag} supplies the exact prop or object {assignment}; ignore unrelated "
-                "people and background content."
-            )
-        else:
-            instruction = f"{tag} supplies only its explicitly assigned role: {assignment}."
-        targets = range(scene_count) if not active else (number - 1 for number in active)
-        if not active or len(active) == scene_count:
-            shared.append(instruction)
-        else:
-            for index in targets:
-                scoped[index].append(instruction)
-        accepted += 1
-    return shared, scoped, accepted
-
-
-def _compile_continuity_controls(raw: dict, scene_count: int):
-    """Turn a compact state ledger into exact per-scene continuity anchors."""
-    scoped = [[] for _ in range(scene_count)]
-    accepted = 0
-    for item in raw.get("continuity_ledger") or []:
-        if not isinstance(item, dict):
-            continue
-        label = str(item.get("label") or "").strip()
-        exact_state = str(item.get("exact_state") or "").strip()
-        active = _clean_scene_numbers(item.get("active_scenes"), scene_count)
-        if not label or not exact_state or not active:
-            continue
-        anchor = f"CONTINUITY LOCK — {label}: {exact_state}"
-        for number in active:
-            scoped[number - 1].append(anchor)
-        accepted += 1
-    return scoped, accepted
 
 
 def _ensure_dialogue_lipsync(value: str) -> str:
@@ -1953,15 +1789,6 @@ def _compile_story(
             f"The director returned {actual} scenes, but {scene_count} were requested. The plan was not accepted."
         )
 
-    reference_shared, reference_scoped, reference_role_count = (
-        _compile_reference_controls(raw, scene_count, picture_count)
-    )
-    continuity_scoped, continuity_lock_count = _compile_continuity_controls(
-        raw, scene_count
-    )
-    if reference_shared:
-        prompt_prefix = "\n\n".join((prompt_prefix, *reference_shared))
-
     scoped_subject_prefixes = ["" for _ in shots]
     routed_subject_units = 0
     if not storyboard_prompt_prefix:
@@ -2012,31 +1839,9 @@ def _compile_story(
             source_prompt = _dedupe_gemma_inline_dialogue(source_prompt)
         source_prompt = _normalize_speaker_labels(source_prompt)
         source_prompt = _normalize_visual_subject_labels(source_prompt)
-        scene_controls = []
         scoped_prefix = scoped_subject_prefixes[index - 1]
         if scoped_prefix:
-            scene_controls.append(scoped_prefix)
-        scene_controls.extend(reference_scoped[index - 1])
-        scene_controls.extend(continuity_scoped[index - 1])
-
-        visible = _clean_scene_numbers(shot.get("visible_subjects"), 4)
-        excluded = [
-            number for number in _clean_scene_numbers(shot.get("excluded_subjects"), 4)
-            if number not in visible
-        ]
-        if visible or excluded:
-            visible_text = ", ".join(f"<Subject {number}>" for number in visible)
-            exclusion_text = ", ".join(f"<Subject {number}>" for number in excluded)
-            cast_parts = []
-            if visible_text:
-                cast_parts.append(f"Only these persistent subjects are visible: {visible_text}.")
-            if exclusion_text:
-                cast_parts.append(
-                    f"These subjects remain off-screen, have not entered, and are not visible: {exclusion_text}."
-                )
-            scene_controls.append("CAST ISOLATION — " + " ".join(cast_parts))
-        if scene_controls:
-            source_prompt = "\n\n".join((*scene_controls, source_prompt))
+            source_prompt = "\n\n".join((scoped_prefix, source_prompt))
         prompt = _normalize_speaker_labels(_strip_dialogue_planning_rules(
             source_prompt
         ))
@@ -2085,10 +1890,6 @@ def _compile_story(
             f" · repaired {repaired_reference_count} omitted Picture "
             f"assignment{'s' if repaired_reference_count != 1 else ''}"
         )
-    if reference_role_count:
-        validation += f" · {reference_role_count} semantic reference role(s)"
-    if continuity_lock_count:
-        validation += f" · {continuity_lock_count} continuity lock(s) enforced"
     if toolkit_prompt_rules:
         findings = []
         combined_prompts = [
@@ -3145,8 +2946,8 @@ class H3StoryDirector(io.ComfyNode):
                 "or intentional ambience without music. Maintain coherent musical and vocal "
                 "continuity instead of changing modes randomly. "
                 f"{language_rule} Write every actual spoken line or intelligible sung lyric "
-                "as `(S1) says: <d>[Language] exact words</d>` using the matching speaker number "
-                "using the matching stable speaker label; never use square brackets and never ask MiniMax to invent "
+                "as `(S1) says: <d>[Language] exact words</d>` using the matching "
+                "stable speaker label; never use square brackets and never ask MiniMax to invent "
                 "unspecified words. Describe the actual music, ambience, Foley and effects "
                 "chosen for each scene rather than outputting the word Auto."
             )
@@ -3177,9 +2978,10 @@ class H3StoryDirector(io.ComfyNode):
             if dialogue_enabled:
                 speech_rules = (
                     f"Dialogue is in natural, idiomatic {language}; production directions remain "
-                    "in English. The Director must write every actual spoken line in quotation "
-                    "MiniMax `<d>` markup and assign it to one clearly visible speaker using "
-                    "`(S1) says: <d>[Language] exact words</d>` with the matching speaker number. Never use square brackets "
+                    "in English. The Director must write every actual spoken line using MiniMax "
+                    "`<d>` markup and assign it to one clearly visible speaker using exactly "
+                    "`(S1) says: <d>[Language] exact words</d>` with the matching speaker number. "
+                    "Never use square brackets "
                     "for speaker attribution. Describe tone and delivery outside the quotation. "
                     "Keep each exchange naturally performable within the scene, allow breathing "
                     "and pauses, keep the speaking face readable, and avoid overlapping or "
@@ -3341,25 +3143,6 @@ class H3StoryDirector(io.ComfyNode):
             "once; scene prompts contain only the opening state, changes, camera/sound events "
             "and final state that occur during their own screen time."
         )
-        reference_control_direction = (
-            "REFERENCE AND CONTINUITY CONTROL:\n"
-            "- Fill reference_roles for every connected Picture that affects generation. "
-            "Assign it as Subject, Location, Prop, Style or Auto and list only the scenes "
-            "where that role is active. Character photos provide identity and explicitly "
-            "requested appearance only; their incidental background, framing, lighting and "
-            "mood do not enter the target scene unless the user assigns them.\n"
-            "- Fill continuity_ledger with every exact mutable visual fact that must survive "
-            "across two or more scenes: current wardrobe, hairstyle, body state, important "
-            "prop, location state or time of day. Give its exact concrete state and active "
-            "scene numbers; never write `same`, `unchanged` or `as before`. Update the state "
-            "after an on-screen transformation instead of restoring the original reference.\n"
-            "- In every shot, fill visible_subjects and excluded_subjects. A future, departed "
-            "or temporarily absent person remains off-screen and not visible. Never place one "
-            "Subject in both lists and never create a duplicate or background copy.\n"
-            "- Spoken or sung words use stable speaker IDs and MiniMax dialogue markup: "
-            "`(S1) says: <d>[Language] exact words</d>`. The Subject tag owns visual identity; "
-            "the parenthesized S-number is only voice attribution."
-        )
         toolkit_direction = ""
         if bool(toolkit_prompt_rules):
             toolkit_direction = (
@@ -3398,7 +3181,6 @@ class H3StoryDirector(io.ComfyNode):
                 "inventing a new event. Non-final scenes may remain open for their "
                 "successor; the final scene may not. "
                 f"{duration_brief}\n\n"
-                f"{reference_control_direction}\n\n"
                 f"{story_direction}\n\n"
                 f"Additional direction:\n{str(additional_direction or '').strip()}"
                 f"{adult_direction}\n\n"

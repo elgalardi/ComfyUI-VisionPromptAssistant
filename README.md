@@ -94,24 +94,6 @@ MiniMax H3 begins loading. Silent audio is detected before loading the model.
 
 ## H3 Story Director
 
-The Director compiles provider output into one stable MiniMax H3 contract. Recent
-continuity controls include:
-
-- semantic Picture roles (`Subject`, `Location`, `Prop`, `Style`) scoped to the
-  scenes where each reference is actually active;
-- a deterministic continuity ledger for exact wardrobe, hairstyle, physical
-  state, important props, location state and time-of-day locks;
-- per-scene visible/excluded cast isolation to reduce early entrances and
-  duplicated background characters;
-- official H3 dialogue markup, for example
-  `(S1) says: <d>[English] Exact spoken words.</d>`, while keeping
-  `<Subject N>` exclusively responsible for visual identity.
-
-These mechanisms are independently implemented for this package. Their design
-was informed by public MiniMax H3 documentation and community experiments,
-including `dagthomas/comfyui_dagthomas`; no source code from that project is
-vendored here.
-
 ### Experimental H3 Toolkit prompt rules
 
 Enable `toolkit_prompt_rules` to request self-contained per-scene rendered prompts,
