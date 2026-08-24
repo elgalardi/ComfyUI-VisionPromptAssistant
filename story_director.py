@@ -53,6 +53,7 @@ AUDIO_CONTENT_LEGACY_ALIASES = {
 DIRECTOR_MODES = [
     "Continuous Story",
     "Cinematic Cuts",
+    "Image to Video",
     "Reference Edit",
     "Edit",
 ]
@@ -369,6 +370,15 @@ GENRES = [
     "Film Noir",
     "Sitcom",
     "Slasher Horror",
+    "Body Horror",
+    "Cosmic Horror",
+    "Creature Feature",
+    "Monster Transformation",
+    "Gothic Horror",
+    "Dark Fantasy",
+    "Surrealist Film",
+    "Cyberpunk",
+    "Post-Apocalyptic",
     "Superhero",
     "Western",
     "Martial Arts",
@@ -394,6 +404,14 @@ GENRES = [
     "Travel Film",
     "Educational / Explainer",
     "Video Podcast",
+    "Twitch Stream / Gaming Creator",
+    "Livestream Event",
+    "ASMR Creator Video",
+    "Reaction Video",
+    "Dance Challenge",
+    "Prank / Social Experiment",
+    "Livestream Shopping",
+    "Machinima / Virtual Creator",
     "Sensual Romance (Adults 18+)",
     "Erotic Drama (Adults 18+)",
     "Erotic Comedy (Adults 18+)",
@@ -411,6 +429,12 @@ GENRES = [
     "Fetish-Themed Adult Film (Adults 18+)",
     "BDSM-Themed Adult Film (Consenting Adults 18+)",
     "Adult Fantasy Roleplay (Consenting Adults 18+)",
+    "Voyeur / Hidden Camera Fantasy (Consenting Adults 18+)",
+    "Adult Webcam Show (Consenting Adults 18+)",
+    "Adult Livestream Creator (Consenting Adults 18+)",
+    "Erotic Cosplay (Consenting Adults 18+)",
+    "Adult ASMR Roleplay (Consenting Adults 18+)",
+    "Explicit POV Roleplay (Consenting Adults 18+)",
 ]
 MOTION_STYLES = {
     "Auto": (
@@ -549,6 +573,66 @@ MOTION_STYLES = {
     "Slow Observational Camera": (
         "Use patient documentary observation with long takes, restrained pans or reframing only "
         "when motivated, natural performance timing, and enough stillness for details to register."
+    ),
+    "SnorriCam / Body-Mounted Camera": (
+        "Mount the camera rigidly to the subject so their face or torso stays fixed while the "
+        "environment swings and surges around them. Keep attachment geometry and identity stable."
+    ),
+    "Bullet Time Arc": (
+        "Suspend one decisive action in extreme slow motion while the viewpoint travels around it, "
+        "revealing depth, pose, particles and environment from a coherent continuous arc."
+    ),
+    "Reverse Motion": (
+        "Design physically legible action that unfolds backward: fragments reassemble, spills return, "
+        "footsteps retract or gestures unwind, with consistent reverse causality and screen direction."
+    ),
+    "Freeze and Resume": (
+        "Move naturally into a motivated frozen instant, hold the entire scene as a stable tableau, "
+        "then resume from precisely the same pose and spatial state without morphing."
+    ),
+    "Seamless Loop Motion": (
+        "Choreograph movement so the final pose, camera placement, lighting and environmental state "
+        "naturally reconnect to the opening frame for an unobtrusive repeatable loop."
+    ),
+    "Dutch Roll Camera": (
+        "Use controlled rolling rotation around the lens axis with motivated recovery, preserving "
+        "subject readability and spatial geography while creating disorientation or instability."
+    ),
+    "Body-Sway POV": (
+        "Use an embodied first-person camera whose steps, breathing, balance and head turns produce "
+        "natural rhythmic sway, while hands and interactions remain spatially coherent."
+    ),
+    "Macro Probe Camera": (
+        "Move an extreme close-focus camera slowly across tactile surface details, maintaining precise "
+        "focus pulls, scale cues and a readable relationship to the complete subject."
+    ),
+    "Mechanical Robotic Motion": (
+        "Use exact segmented movement, hard starts and stops, repeated calibrated arcs and machine-like "
+        "timing while keeping joints, contact points and object mechanics physically consistent."
+    ),
+    "Creature Crawl Motion": (
+        "Use low grounded locomotion with coordinated limb placement, shifting weight, gripping contact "
+        "and predatory changes of direction while preserving coherent anatomy."
+    ),
+    "Elastic Exaggerated Motion": (
+        "Use stylized anticipation, stretch, overshoot and recoil with expressive arcs and readable poses, "
+        "then restore stable anatomy at the completion of every action beat."
+    ),
+    "Choreographed Dance Camera": (
+        "Synchronize precise full-body choreography with camera travel, musical accents, formation changes "
+        "and clean silhouette staging so steps and performers remain readable."
+    ),
+    "Parkour Pursuit": (
+        "Use athletic vaults, jumps, climbs and landings with clear anticipation and impact, accompanied by "
+        "a responsive pursuit camera that preserves route geography and body mechanics."
+    ),
+    "Intimate Micro-Motion": (
+        "Concentrate on breath, eye focus, fingertips, skin contact and minute facial responses with an "
+        "almost still camera, allowing subtle physical changes to carry the scene."
+    ),
+    "Staccato Music-Video Motion": (
+        "Use sharply punctuated poses, brief bursts of movement, snap reframing and rhythmic visual accents, "
+        "with clean rests between beats rather than uncontrolled jitter."
     ),
 }
 DEFAULT_SYSTEM_PROMPT = """You are a multimodal director and continuity supervisor for MiniMax H3 image and video productions. Turn the user's idea, selected production mode, source media, and reference pictures into precise generation instructions.
@@ -837,6 +921,7 @@ def _story_schema(
     secondary_visual_look: str = "None",
 ) -> dict:
     is_edit_mode = director_mode in {"Edit", "Reference Edit"}
+    is_i2v = director_mode == "Image to Video"
     is_still = is_edit_mode and not source_video_connected
     is_video_edit = is_edit_mode and source_video_connected
     is_continuous = director_mode == "Continuous Story"
@@ -873,14 +958,23 @@ def _story_schema(
                     "Complete static image generation/edit prompt for one finished frame. "
                     "No temporal sequence, camera movement, audio, or dialogue delivery."
                     if is_still else
-                    "Complete production prompt for this scene, including continuity, "
-                    "visible action, camera, lighting, dialogue when useful, and sound. "
-                    "Use <Subject N> for persistent visible identities and reserve (S1), "
-                    "(S2), (S3), and (S4) exclusively for dialogue or singing attribution. "
-                    "Mention exactly the Subjects visible in this scene, omit future or absent "
-                    "characters completely. Put globally persistent wardrobe/appearance "
-                    "overrides in prompt_prefix and repeat only changes or details needed to "
-                    "make the current action unambiguous."
+                    ((
+                        "Complete MiniMax H3 FL2VA motion prompt describing how the supplied "
+                        "first frame evolves through one shot. Treat the first frame as the literal "
+                        "opening frame and an optional second image as the literal final frame. "
+                        "Describe visible motion, camera evolution, environmental response and "
+                        "synchronized audio without redescribing or reinterpreting the source "
+                        "composition. Never emit Picture or Subject tags."
+                    ) if is_i2v else (
+                        "Complete production prompt for this scene, including continuity, "
+                        "visible action, camera, lighting, dialogue when useful, and sound. "
+                        "Use <Subject N> for persistent visible identities and reserve (S1), "
+                        "(S2), (S3), and (S4) exclusively for dialogue or singing attribution. "
+                        "Mention exactly the Subjects visible in this scene, omit future or absent "
+                        "characters completely. Put globally persistent wardrobe/appearance "
+                        "overrides in prompt_prefix and repeat only changes or details needed to "
+                        "make the current action unambiguous."
+                    ))
                     + compact_scene_contract
                     + continuous_scene_contract
                 ),
@@ -894,7 +988,7 @@ def _story_schema(
         # OpenRouter structured output and local OpenAI-compatible backends.
         shot["properties"]["prompt"]["minLength"] = max(160, min_words * 4)
         shot["properties"]["prompt"]["maxLength"] = max_words * 8
-    if director_profile == "Gemma" and not is_still:
+    if director_profile == "Gemma" and not is_still and not is_i2v:
         shot["properties"]["prompt"] = {
             "type": "string",
             "minLength": max(160, min_words * 4),
@@ -1544,6 +1638,27 @@ def _director_mode_rules(
             "- If clothing, appearance, pose, props or environment must change, distinguish the "
             "reference's initial state from the requested final state and complete the change on screen."
         )
+    if mode == "Image to Video":
+        return f"""{common}
+MANDATORY MODE — NATIVE IMAGE TO VIDEO (FL2VA):
+- Produce exactly one scene prompt for one uninterrupted I2V clip.
+- The first connected image is the literal first frame, not a loose identity reference and not
+  a Picture-tagged Ref2VA asset. If a second image is connected, it is the literal last frame.
+- Never output `<Picture N>`, `<Subject N>`, reference-assignment prose, contact-sheet language,
+  image-analysis methodology, or instructions to recreate the source frame.
+- Begin from the exact visible source state: identity, anatomy, wardrobe, pose, expression,
+  objects, composition, crop, camera position, lighting, shadows and background geometry.
+- Describe what starts moving immediately after that frame, using one physically achievable
+  progression. Name subject movement, body and object mechanics, camera motion, environmental
+  response and synchronized native audio. Preserve face, hands, clothing and scene geometry.
+- Do not spend prompt space inventorying static source details the model already receives.
+  Mention a source detail only when it must remain stable during motion or changes by request.
+- If an optional last frame exists, describe a plausible continuous path that arrives at its
+  exact composition and visible state. Do not request a cut, teleport, morph, dissolve or reset.
+- Follow the user's requested action literally. Do not invent an unrelated narrative, extra
+  characters, wardrobe changes, camera angles or scene changes.
+- End with a clear final motion state and allow natural settle time; do not leave the principal
+  requested action unfinished."""
     if mode == "Cinematic Cuts":
         return f"""{common}
 MANDATORY MODE — CINEMATIC CUTS:
@@ -2610,7 +2725,9 @@ class H3StoryDirector(io.ComfyNode):
                     default="Continuous Story",
                     tooltip=(
                         "Continuous Story preserves shot continuity. Cinematic Cuts "
-                        "starts independent camera setups. Reference Edit uses the input "
+                        "starts independent camera setups. Image to Video treats image_0 "
+                        "as the literal first frame and image_1 as an optional last frame. "
+                        "Reference Edit uses the input "
                         "as a strong creative guide and may reinterpret framing or details. "
                         "Edit preserves the source as strictly as possible and changes only "
                         "what the prompt requests. Both edit modes operate on still images "
@@ -2794,7 +2911,42 @@ class H3StoryDirector(io.ComfyNode):
         scene_count = int(scene_count)
         if not 1 <= scene_count <= 32:
             raise ValueError("scene_count must be between 1 and 32.")
+        if director_mode == "Image to Video":
+            scene_count = 1
+            if image_0 is None:
+                raise ValueError(
+                    "Image to Video requires image_0 as the literal first frame. "
+                    "image_1 is optional and becomes the literal last frame."
+                )
         story_idea = str(story_idea or "").strip()
+        reference_alias_rules = (
+            "REFERENCE ALIASES: The user may identify connected inputs as @image1, "
+            "@image2, @image3, @image4, image 1-4, or naturally as the first, second, "
+            "third, or fourth image. Interpret each expression as the corresponding "
+            "connected <Picture N>. Preserve the user's role assignment (for example, "
+            "`the woman in the first image`) and use the exact MiniMax <Picture N> tag "
+            "in the compiled generation prompt. Never confuse an image slot with a "
+            "character number."
+        )
+        for index, ordinal in enumerate(
+            ("first", "second", "third", "fourth"), 1
+        ):
+            if director_mode == "Image to Video":
+                destination = (
+                    "the supplied first frame" if index == 1
+                    else "the supplied last frame" if index == 2
+                    else f"image {index}"
+                )
+            else:
+                destination = f"<Picture {index}>"
+            for pattern in (
+                rf"@image\s*{index}\b",
+                rf"\bimage\s*{index}\b",
+                rf"\b(?:the\s+)?{ordinal}\s+(?:reference\s+)?image\b",
+            ):
+                story_idea = re.sub(
+                    pattern, destination, story_idea, flags=re.IGNORECASE
+                )
         if bool(bypass_director):
             if not story_idea:
                 raise ValueError(
@@ -2848,6 +3000,7 @@ class H3StoryDirector(io.ComfyNode):
         is_edit_mode = director_mode in {"Edit", "Reference Edit"}
         is_video_edit = is_edit_mode and source_video_connected
         is_still_mode = is_edit_mode and not source_video_connected
+        is_i2v_mode = director_mode == "Image to Video"
         genre = str(genre or "Auto").strip()
         secondary_genre = str(secondary_genre or "None").strip()
         auto_genre = genre in {"Auto", "Auto — Infer from References & Prompt"}
@@ -3191,6 +3344,7 @@ class H3StoryDirector(io.ComfyNode):
                 "successor; the final scene may not. "
                 f"{duration_brief}\n\n"
                 f"{story_direction}\n\n"
+                f"{reference_alias_rules}\n\n"
                 f"Additional direction:\n{str(additional_direction or '').strip()}"
                 f"{adult_direction}\n\n"
                 f"{style_contract}"
@@ -3302,7 +3456,7 @@ class H3StoryDirector(io.ComfyNode):
         except (KeyError, IndexError, TypeError) as error:
             raise RuntimeError("OpenRouter returned an unexpected response.") from error
         raw_story = _parse_json_response(content_text)
-        if director_profile == "Gemma" and not is_still_mode:
+        if director_profile == "Gemma" and not is_still_mode and not is_i2v_mode:
             worksheet_issues = _gemma_scene_issues(raw_story, scene_count)
             if worksheet_issues:
                 concise_issues = "; ".join(worksheet_issues[:12])
@@ -3404,12 +3558,36 @@ class H3StoryDirector(io.ComfyNode):
                     "[H3 Story Director] Restored the required <Video 1> tag "
                     "deterministically before compiling the plan."
                 )
+        if director_mode == "Image to Video":
+            def i2v_text(value):
+                text = str(value or "")
+                text = re.sub(
+                    r"<Subject\s+\d+>",
+                    "the corresponding subject in the supplied first frame",
+                    text,
+                    flags=re.IGNORECASE,
+                )
+                text = re.sub(
+                    r"<Picture\s+1>", "the supplied first frame", text,
+                    flags=re.IGNORECASE,
+                )
+                text = re.sub(
+                    r"<Picture\s+2>", "the supplied last frame", text,
+                    flags=re.IGNORECASE,
+                )
+                return re.sub(r"\s+", " ", text).strip()
+
+            raw_story["prompt_prefix"] = i2v_text(raw_story.get("prompt_prefix"))
+            for shot in raw_story.get("shots") or []:
+                if isinstance(shot, dict):
+                    shot["prompt"] = i2v_text(shot.get("prompt"))
+
         plan_json, story_bible, synopsis, validation, source_video_analysis = _compile_story(
             raw_story,
             scene_count,
             float(scene_duration_seconds),
             int(steps),
-            len(pictures),
+            0 if director_mode == "Image to Video" else len(pictures),
             director_mode,
             director_profile,
             bool(toolkit_prompt_rules),
