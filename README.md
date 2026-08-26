@@ -101,6 +101,27 @@ positive camera descriptions, Subject-bound retention (`<Subject N>` defined fro
 `<Picture N>`), and non-blocking lint findings in the validation output. It is off
 by default so existing workflows retain their established prompt contract.
 
+### Experimental Power mode
+
+Enable `power_prompt_rules` for the strictest Director workflow. Power creates a
+private production blueprint before writing scenes, maps every explicit user request
+to a scene, assigns one scoped job to every reference, limits action density to the
+available duration, and records an entry/exit state ledger for cast, pose, contact,
+wardrobe, props, geography, camera, lighting and audio. Continuous Story requires
+each scene to inherit the preceding exit state exactly; Cinematic Cuts may reset the
+camera while retaining the latest world state. It also enforces official Subject /
+Picture / speaker roles, H3 dialogue markup, sound/music separation and a final-scene
+payoff. A deterministic validator requests one complete automatic repair when the
+first structured plan is inconsistent, then rejects a second invalid plan before GPU
+generation. Power takes precedence if Toolkit is also enabled. It is experimental and
+may use more LLM tokens than the standard Director. Its private blueprint remains
+detailed, while the rendered H3 scenes use compact chronological prose: establish the
+location and reference identities once, describe visible actions in order, record each
+resulting state change where it occurs, and omit repeated contracts or planning labels.
+The shared prefix contains only immutable identity/style information. Every scene receives
+its own short positive context for its current wardrobe, environment, props, camera and
+audio state, so completed changes cannot be overwritten by an obsolete global description.
+
 **H3 Story Director** is a multimodal planner for MiniMax H3. It accepts an
 optional story idea, up to four character or subject images, and an optional
 source-video `IMAGE` frame batch from VHS Load Video. It uses an OpenRouter vision model with strict structured

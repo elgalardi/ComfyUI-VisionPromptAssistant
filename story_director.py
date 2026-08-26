@@ -637,7 +637,7 @@ MOTION_STYLES = {
 }
 DEFAULT_SYSTEM_PROMPT = """You are a multimodal director and continuity supervisor for MiniMax H3 image and video productions. Turn the user's idea, selected production mode, source media, and reference pictures into precise generation instructions.
 
-Treat each connected <Picture N> as a visual source, not automatically as one person. A Picture may contain several distinct people, and several persistent subjects may therefore originate from the same Picture. Define reusable visible identities with `<Subject 1>`, `<Subject 2>`, `<Subject 3>` and `<Subject 4>` in the shared prompt, explicitly grounding each referenced Subject in the correct `<Picture N>`. Subject and Picture numbers are independent. Use stable natural role descriptions for important characters without a connected image. Preserve identity, current wardrobe, props, geography, lighting logic, screen direction and relationships throughout the story.
+Treat each connected <Picture N> as a visual source, not automatically as one person. A Picture may contain several distinct people, and several persistent subjects may therefore originate from the same Picture. Define reusable visible identities with `<Subject 1>`, `<Subject 2>`, `<Subject 3>` and `<Subject 4>` in the shared prompt, explicitly grounding each referenced Subject in the correct `<Picture N>`. Subject and Picture numbers are independent. Use stable natural role descriptions for important characters without a connected image. Preserve identity, current wardrobe, props, geography, lighting logic, screen direction and relationships throughout the story only when the user has not explicitly replaced those mutable traits. A requested new wardrobe, world, period, environment, visual style or appearance overrides the conflicting source-image trait from the first frame.
 
 Follow the mandatory rules supplied for the selected Director Mode. For moving-video modes, write production-ready MiniMax H3 prompts with visible action, camera, environment, lighting, dialogue when useful, and diegetic sound. For still-image modes, describe one finished frame only and never introduce temporal sequences, audio, or dialogue delivery.
 
@@ -919,6 +919,7 @@ def _story_schema(
     secondary_motion_style: str = "None",
     visual_look: str = "Auto",
     secondary_visual_look: str = "None",
+    power_prompt_rules: bool = False,
 ) -> dict:
     is_edit_mode = director_mode in {"Edit", "Reference Edit"}
     is_i2v = director_mode == "Image to Video"
@@ -926,6 +927,15 @@ def _story_schema(
     is_video_edit = is_edit_mode and source_video_connected
     is_continuous = director_mode == "Continuous Story"
     min_words, max_words, max_beats = _scene_prompt_budget(scene_duration_seconds)
+    if power_prompt_rules and not is_still:
+        # Power keeps a detailed private blueprint, but H3 receives concise visual
+        # prose. Longer planning text does not make the diffusion prompt stronger.
+        if float(scene_duration_seconds) <= 6.0:
+            min_words, max_words, max_beats = 55, 105, 1
+        elif float(scene_duration_seconds) <= 10.0:
+            min_words, max_words, max_beats = 75, 145, 2
+        else:
+            min_words, max_words, max_beats = 95, 185, 3
     compact_scene_contract = (
         f" Target {min_words}-{max_words} English words for this "
         f"{float(scene_duration_seconds):g}-second scene and use no more than "
@@ -1044,6 +1054,74 @@ def _story_schema(
             ),
         }
         shot["required"].append("storyboard_prompt")
+    if power_prompt_rules and not is_still:
+        shot["properties"].update({
+            "scene_context": {
+                "type": "string",
+                "minLength": 60,
+                "description": (
+                    "Compact positive context prepended only to this scene: visible Subjects and "
+                    "their current wardrobe/exposure, exact location and geography, active props, "
+                    "lighting, camera setup and audio phase at the opening instant. State what is "
+                    "present directly; never mention source traits, discarded alternatives, negative "
+                    "instructions, validation, continuity rules or planning terminology."
+                ),
+            },
+            "entry_state": {
+                "type": "string",
+                "minLength": 80,
+                "description": (
+                    "Private continuity ledger at the first rendered instant: visible cast, "
+                    "body pose and contact, wardrobe and exposure state, held props and object "
+                    "state, location and geography, screen direction, camera setup, lighting, "
+                    "and current audio phase. For Continuous Story, copy the preceding scene's "
+                    "exit_state verbatim before adding no new event."
+                ),
+            },
+            "timeline_beats": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": max_beats,
+                "items": {"type": "string", "minLength": 24},
+                "description": (
+                    "Private chronological cause-to-effect beats that fit the scene duration. "
+                    "Each beat names the actor, physical action, direction/contact when relevant, "
+                    "observable result, and synchronized camera or sound change."
+                ),
+            },
+            "exit_state": {
+                "type": "string",
+                "minLength": 80,
+                "description": (
+                    "Private continuity ledger at the final rendered instant after every scene "
+                    "action: cast, pose/contact, wardrobe/exposure, props, location/geography, "
+                    "screen direction, camera, lighting, and audio phase. It must be concrete "
+                    "enough to become the next Continuous Story entry_state verbatim."
+                ),
+            },
+            "reference_contract": {
+                "type": "string",
+                "minLength": 30,
+                "description": (
+                    "Private scene-scoped reference ownership: which Subject/Picture/Video/Audio "
+                    "is active, exactly what each contributes, and what unrelated attributes it "
+                    "must not transfer. Omit assets not active in this scene."
+                ),
+            },
+            "power_check": {
+                "type": "string",
+                "minLength": 80,
+                "description": (
+                    "Private verification of literal user-intent coverage, feasible pacing, "
+                    "reference ownership, continuity or deliberate cut logic, camera readability, "
+                    "speaker/dialogue syntax, sound separation, and a complete final state."
+                ),
+            },
+        })
+        shot["required"].extend((
+            "scene_context", "entry_state", "timeline_beats", "exit_state",
+            "reference_contract", "power_check",
+        ))
     schema = {
         "type": "object",
         "properties": {
@@ -1140,6 +1218,112 @@ def _story_schema(
             ),
         }
         schema["required"].append("storyboard_prompt_prefix")
+    if power_prompt_rules:
+        schema["properties"]["power_blueprint"] = {
+            "type": "object",
+            "properties": {
+                "creative_objective": {
+                    "type": "string",
+                    "minLength": 50,
+                    "description": "The exact audience-visible purpose and payoff of the complete generation.",
+                },
+                "user_action_spine": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 12},
+                    "description": (
+                        "The user's visible actions and state changes in their original order, "
+                        "without stylistic rewriting, duplication or replacement."
+                    ),
+                },
+                "reference_ownership": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 20},
+                    "description": (
+                        "One affirmative ownership rule per connected asset: what it contributes, "
+                        "where it is active, and which unrelated traits are excluded from transfer."
+                    ),
+                },
+                "continuity_ledger": {
+                    "type": "string",
+                    "minLength": 100,
+                    "description": (
+                        "Immutable and mutable production state: cast identities, wardrobe changes, "
+                        "props, geography, screen direction, camera axis, lighting logic, action phase, "
+                        "audio phase, and the ending obligation."
+                    ),
+                },
+                "source_attribute_policy": {
+                    "type": "string",
+                    "minLength": 50,
+                    "description": (
+                        "Explicit boundary between source-reference identity and target design. "
+                        "State which source attributes remain authoritative and which source "
+                        "wardrobe, setting, lighting, pose, composition or style attributes are "
+                        "discarded because the user requested a new design."
+                    ),
+                },
+                "source_visual_inventory": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Private inventory of source-only wardrobe, setting, lighting, pose and "
+                        "capture traits that must not leak into a requested redesign."
+                    ),
+                },
+                "target_world_design": {
+                    "type": "string",
+                    "minLength": 50,
+                    "description": (
+                        "Concrete target environment and visual-world design: location, architecture, "
+                        "materials, geography, lighting, palette, medium and atmosphere. Translate any "
+                        "named universe or style into observable production details instead of leaving "
+                        "it as a label. Use N/A with a clear preservation reason only when the user "
+                        "requests no world, setting or style change."
+                    ),
+                },
+                "target_subject_designs": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 40},
+                    "description": (
+                        "One concrete target design per affected subject: role/Subject binding, exact "
+                        "new wardrobe pieces, materials, colors, footwear, accessories, grooming and "
+                        "other requested appearance changes. Never copy source clothing when the user "
+                        "requests new wardrobe. Empty only when no subject redesign is requested."
+                    ),
+                },
+                "design_change_map": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "One explicit source -> target replacement per affected subject and world. "
+                        "The target side must be visibly different and newly invented."
+                    ),
+                },
+                "coverage_map": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 20},
+                    "description": (
+                        "Every explicit user-requested visible action, transformation, dialogue, "
+                        "sound, style, and required ending mapped to the scene that executes it."
+                    ),
+                },
+            },
+            "required": [
+                "creative_objective", "user_action_spine", "reference_ownership",
+                "continuity_ledger", "source_attribute_policy", "source_visual_inventory",
+                "target_world_design", "target_subject_designs", "design_change_map", "coverage_map",
+            ],
+            "additionalProperties": False,
+        }
+        schema["required"].append("power_blueprint")
+        schema["properties"]["prompt_prefix"]["description"] = (
+            "Minimal shared prefix for Power mode. Include only immutable Subject-to-Picture "
+            "identity bindings and a concise persistent capture style. Do not put wardrobe, "
+            "location, pose, props, exposure, source-attribute policies, negative instructions "
+            "or mutable continuity state here; those belong in each shot's scene_context."
+        )
     if is_video_edit:
         schema["properties"]["source_video_analysis"] = {
             "type": "string",
@@ -1305,6 +1489,7 @@ def _director_style_contract(
     secondary_motion_style: str,
     visual_look: str,
     secondary_visual_look: str,
+    compact: bool = False,
 ) -> str:
     """Create a deterministic style lock for local models with aesthetic bias."""
     primary = str(genre or "Auto").strip()
@@ -1313,6 +1498,25 @@ def _director_style_contract(
     secondary_motion = str(secondary_motion_style or "None").strip()
     look = str(visual_look or "Auto").strip()
     secondary_look = str(secondary_visual_look or "None").strip()
+    if compact:
+        genre_text = (
+            "infer one concrete primary genre from the user request and target design"
+            if primary in {"Auto", "Auto — Infer from References & Prompt"} else
+            primary
+        )
+        if secondary not in {"", "None", "Auto", primary}:
+            genre_text += f", supported by {secondary}"
+        motion_text = motion if motion != "Auto" else "infer motion from the requested action"
+        if secondary_motion not in {"", "None", "Auto", motion}:
+            motion_text += f" with {secondary_motion} as a secondary treatment"
+        look_text = look if look != "Auto" else "infer one specific capture look"
+        if secondary_look not in {"", "None", "Auto", look}:
+            look_text += f" with {secondary_look} as a restrained finish"
+        return (
+            f"Production style: {genre_text}. Motion: {motion_text}. Visual look: {look_text}. "
+            "Express these choices through concrete genre-specific staging, camera, lighting, "
+            "pacing and sound."
+        )
     parts = [
         "MANDATORY STYLE CONTRACT FOR EVERY SCENE:",
         (
@@ -1736,7 +1940,10 @@ MANDATORY MODE — VIDEO REFERENCE EDIT:
         return f"""{common}
 MANDATORY MODE — PRECISION STILL IMAGE EDIT:
 - Treat the primary connected image as a locked source plate, not merely inspiration.
-- Apply only the exact change requested by the user. Preserve everything else as faithfully as
+- The result must read as the same source photograph after the complete requested edit, never
+  as an unrelated regenerated variation. The user may request one change or a coordinated set
+  of changes; apply all of them accurately while avoiding changes they did not request.
+- Apply the exact requested transformation. Preserve everything else as faithfully as
   the model permits: identity, facial structure, expression, pose, anatomy, hands, hairstyle
   except the requested attribute, wardrobe, objects, background, composition, crop, viewpoint,
   lens perspective, depth of field, lighting, shadows, color relationships and visual style.
@@ -1744,6 +1951,11 @@ MANDATORY MODE — PRECISION STILL IMAGE EDIT:
   element unless the user explicitly requests it. Do not introduce creative improvements.
 - State the requested delta clearly and state that all unrequested pixels and scene properties
   remain visually unchanged. Do not create a collage, comparison, split screen or before/after.
+- The requested transformation may freely alter any combination of subjects, appearance,
+  wardrobe, objects, environment, lighting, style, composition, or other visible properties.
+  Treat every explicitly requested change as authorized, but retain all properties outside that
+  requested scope. Additional connected pictures may supply identities or any visual material
+  explicitly requested by the user; they must not introduce unrelated content on their own.
 - Each prompt creates exactly one finished still image with no sequence, movement, duration,
   animation, audio, dialogue, captions or labels.
 - If {scene_count} outputs are requested, apply the same surgical edit consistently to exactly
@@ -1858,6 +2070,204 @@ def _gemma_scene_prompt(shot: dict) -> str:
     return "\n\n".join(part for part in parts if str(part).strip())
 
 
+def _sanitize_generic_reference_observations(value) -> str:
+    """Remove visual facts inferred from a replaceable input frame."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = re.sub(
+        r"AUTHORITATIVE USER VISUAL OVERRIDES\b.*?(?=MANDATORY STYLE CONTRACT\b|$)",
+        "",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    observation = re.compile(
+        r"\b(?:supplied|input|source)\s+(?:first|last)?\s*frame\b.*?"
+        r"\b(?:shows?|wears?|wearing|dressed|has|visible|appearance|hair|"
+        r"on the left|on the right)\b",
+        re.IGNORECASE,
+    )
+    parts = re.split(r"(?<=[.!?])\s+|\n+", text)
+    kept = [part.strip() for part in parts if part.strip() and not observation.search(part)]
+    text = "\n".join(kept).strip()
+
+    # A reusable action must not freeze garment details inferred from the
+    # currently connected image. Collapse colours, materials and garment types
+    # to neutral wardrobe language even when the model leaks them into a beat.
+    garment = (
+        r"(?:(?:leather|denim|cotton|silk|satin|lace|black|white|red|blue|green|"
+        r"gray|grey|pink|purple|brown|dark|light|cropped|oversized|tight|loose|"
+        r"hooded|ribbed|metallic|holographic|ultra-short|short|long)\s+)*"
+        r"(?:jacket|coat|hoodie|sweater|shirt|t-shirt|tee|top|blouse|dress|"
+        r"skirt|miniskirt|shorts|jeans|pants|trousers|leggings|underwear|bra|"
+        r"panties|stockings|socks|shoes|sneakers|boots)\b"
+    )
+    text = re.sub(garment, "clothes", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"\bclothes(?:\s*,\s*clothes)+(?:\s*,?\s*and\s+clothes)?\b|"
+        r"\bclothes\s+and\s+clothes\b",
+        "clothes",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text.strip()
+
+
+def _power_visual_redesign_requested(value: str) -> bool:
+    return bool(re.search(
+        r"\b(?:ambientad[oa]s?|universo|mundo|estilo|vestuarios?|bestuarios?|"
+        r"atuendos?|trajes?|outfits?|wardrobes?|costumes?|setting|environment|world|"
+        r"visual\s+(?:style|look)|(?:new|nuevo|capture)\s+look|look\s+(?:visual|de)|"
+        r"redesign|re-?dress|change\s+(?:their\s+)?clothes|cambi(?:a|ar)\s+(?:la\s+)?ropa|"
+        r"\bwears?\b|\bviste\b)",
+        str(value or ""),
+        flags=re.IGNORECASE,
+    ))
+
+
+def _power_plan_issues(
+    raw: dict,
+    scene_count: int,
+    director_mode: str,
+    is_still: bool = False,
+    user_request: str = "",
+) -> list[str]:
+    """Validate the private production controls used by experimental Power mode."""
+    issues = []
+    blueprint = raw.get("power_blueprint")
+    if not isinstance(blueprint, dict):
+        issues.append("power_blueprint is missing")
+    else:
+        action_spine = blueprint.get("user_action_spine")
+        if not isinstance(action_spine, list) or not action_spine:
+            issues.append("power_blueprint.user_action_spine is empty")
+        for key in (
+            "creative_objective", "continuity_ledger", "source_attribute_policy",
+            "target_world_design",
+        ):
+            if len(str(blueprint.get(key) or "").strip()) < 50:
+                issues.append(f"power_blueprint.{key} is incomplete")
+        if not isinstance(blueprint.get("coverage_map"), list) or not blueprint.get("coverage_map"):
+            issues.append("power_blueprint.coverage_map is empty")
+        if _power_visual_redesign_requested(user_request):
+            inventory = blueprint.get("source_visual_inventory")
+            if not isinstance(inventory, list) or not inventory:
+                issues.append("the visual redesign lacks a private source_visual_inventory")
+            designs = blueprint.get("target_subject_designs")
+            if not isinstance(designs, list) or not designs:
+                issues.append(
+                    "the user requested a visual redesign but target_subject_designs is empty"
+                )
+            world = str(blueprint.get("target_world_design") or "").strip()
+            if len(world) < 120:
+                issues.append(
+                    "the requested target world/look is not translated into a concrete design"
+                )
+            change_map = blueprint.get("design_change_map")
+            if not isinstance(change_map, list) or not change_map:
+                issues.append("the visual redesign lacks an explicit design_change_map")
+            # Its wording is intentionally not linted: synonyms and natural prose
+            # must never trigger another paid repair or block a usable plan.
+
+    shots = raw.get("shots")
+    if not isinstance(shots, list) or len(shots) != scene_count:
+        return issues + [f"expected {scene_count} complete Power scenes"]
+
+    previous_exit = ""
+    for index, shot in enumerate(shots, 1):
+        if not isinstance(shot, dict):
+            issues.append(f"scene {index} is not structured")
+            continue
+        if is_still:
+            if len(str(shot.get("prompt") or "").strip()) < 80:
+                issues.append(f"image {index} edit/generation prompt is too short")
+            continue
+        entry = str(shot.get("entry_state") or "").strip()
+        exit_state = str(shot.get("exit_state") or "").strip()
+        scene_context = str(shot.get("scene_context") or "").strip()
+        beats = shot.get("timeline_beats")
+        reference_contract = str(shot.get("reference_contract") or "").strip()
+        check = str(shot.get("power_check") or "").strip()
+        prompt = str(shot.get("prompt") or "").strip()
+        if len(scene_context) < 60:
+            issues.append(f"scene {index} scene_context is incomplete")
+        if re.search(
+            r"\b(?:ignore|discard|do not|don't|must not|instead of|source (?:image|wardrobe|"
+            r"setting|look)|reference (?:wardrobe|clothes|setting|look)|negative prompt)\b",
+            scene_context,
+            flags=re.IGNORECASE,
+        ):
+            issues.append(f"scene {index} scene_context contains negative/source instructions")
+        if len(entry) < 80:
+            issues.append(f"scene {index} entry_state is incomplete")
+        if len(exit_state) < 80:
+            issues.append(f"scene {index} exit_state is incomplete")
+        if not isinstance(beats, list) or not beats:
+            issues.append(f"scene {index} has no chronological timeline beats")
+        if len(reference_contract) < 30:
+            issues.append(f"scene {index} reference ownership is incomplete")
+        if len(check) < 80:
+            issues.append(f"scene {index} power_check is incomplete")
+        if len(prompt) < 160:
+            issues.append(f"scene {index} rendered prompt is too short")
+        if re.search(
+            r"\b(?:entry_state|exit_state|timeline_beats|power_check|coverage_map)\b",
+            prompt,
+            flags=re.IGNORECASE,
+        ):
+            issues.append(f"scene {index} leaked private worksheet labels into its prompt")
+        if prompt.count(";") > 2:
+            issues.append(f"scene {index} overuses semicolons instead of chronological prose")
+        if "<d>" in prompt and not re.search(
+            r"\(S\d+\).*?<d>\[", prompt, flags=re.IGNORECASE | re.DOTALL
+        ):
+            issues.append(f"scene {index} dialogue is not bound to a stable speaker")
+        if director_mode == "Continuous Story" and re.search(
+            r"\b(?:camera\s+cuts?|cut\s+to|hard\s+cut|new\s+camera\s+setup)\b",
+            prompt,
+            flags=re.IGNORECASE,
+        ):
+            issues.append(f"scene {index} introduces a cut inside Continuous Story")
+        if director_mode == "Continuous Story" and index > 1:
+            if entry != previous_exit:
+                issues.append(
+                    f"scene {index} entry_state does not exactly inherit scene {index - 1} exit_state"
+                )
+        previous_exit = exit_state
+
+    coverage = " ".join(
+        str(item) for item in ((blueprint or {}).get("coverage_map") or [])
+    ).lower()
+    if scene_count > 1 and not re.search(r"scene\s*1|scene_?01|shot\s*1", coverage):
+        issues.append("coverage_map does not assign requests to scenes")
+    return issues
+
+
+def _apply_power_target_design(raw: dict, user_request: str) -> None:
+    """Keep redesign policy private and expose only positive per-scene state."""
+    if not _power_visual_redesign_requested(user_request):
+        return
+    existing = str(raw.get("prompt_prefix") or "").strip()
+    pairs = []
+    for subject, picture in re.findall(
+        r"<Subject\s+([1-4])>[^\n.!?]{0,240}?<Picture\s+([1-4])>",
+        existing,
+        flags=re.IGNORECASE,
+    ):
+        pair = (int(subject), int(picture))
+        if pair not in pairs:
+            pairs.append(pair)
+    raw["persistent_visual_overrides"] = ""
+    identity_prefix = "\n".join(
+        f"<Subject {subject}> is the persistent visual identity grounded in <Picture {picture}>."
+        for subject, picture in pairs
+    )
+    raw["prompt_prefix"] = (
+        identity_prefix
+        or "Persistent identities are grounded in their connected Picture references."
+    )
+
+
 def _compile_story(
     raw: dict,
     scene_count: int,
@@ -1868,6 +2278,8 @@ def _compile_story(
     director_profile: str = "OpenRouter",
     toolkit_prompt_rules: bool = False,
     dialogue_language: str = "English",
+    generic_mode: bool = False,
+    power_prompt_rules: bool = False,
 ) -> tuple[str, str, str, str, str]:
     synopsis = str(raw.get("synopsis") or "").strip()
     story_bible = str(raw.get("story_bible") or "").strip()
@@ -1890,6 +2302,12 @@ def _compile_story(
     persistent_visual_overrides = str(
         raw.get("persistent_visual_overrides") or ""
     ).strip()
+    if generic_mode:
+        # A reusable plan must never freeze incidental traits inferred from the
+        # currently connected image. User-requested changes remain in the shot
+        # instructions, while the replacement image supplies its own wardrobe,
+        # hair, accessories and appearance at execution time.
+        persistent_visual_overrides = ""
     if persistent_visual_overrides:
         prompt_prefix = "\n\n".join((
             "AUTHORITATIVE USER VISUAL OVERRIDES — these mutable details replace "
@@ -1929,10 +2347,15 @@ def _compile_story(
     repaired_reference_count = len(missing_tags)
     if missing_tags:
         fallback_assignments = " ".join(
-            f"<Picture {index}> is an exact connected visual source. Use it only for "
-            "the person, object, place or style assigned to it by the user request and "
-            "story bible; preserve the relevant visible traits whenever that assignment "
-            "is active."
+            (
+                f"<Picture {index}> is the connected interchangeable visual source assigned "
+                "to this role; use the current image without describing its incidental visible traits."
+                if generic_mode else
+                f"<Picture {index}> is an exact connected visual source. Use it only for "
+                "the person, object, place or style assigned to it by the user request and "
+                "story bible; preserve the relevant visible traits whenever that assignment "
+                "is active."
+            )
             for index in range(1, picture_count + 1)
             if f"<Picture {index}>" in missing_tags
         )
@@ -1958,6 +2381,12 @@ def _compile_story(
             source_prompt = _dedupe_gemma_inline_dialogue(source_prompt)
         source_prompt = _normalize_speaker_labels(source_prompt)
         source_prompt = _normalize_visual_subject_labels(source_prompt)
+        if power_prompt_rules:
+            scene_context = _normalize_visual_subject_labels(
+                str(shot.get("scene_context") or "").strip()
+            )
+            if scene_context:
+                source_prompt = "\n\n".join((scene_context, source_prompt))
         scoped_prefix = scoped_subject_prefixes[index - 1]
         if scoped_prefix:
             source_prompt = "\n\n".join((scoped_prefix, source_prompt))
@@ -1968,11 +2397,38 @@ def _compile_story(
         prompt = _ensure_dialogue_lipsync(prompt)
         if index == len(shots):
             prompt = _ensure_final_scene_closure(prompt, director_mode)
+        if power_prompt_rules:
+            prompt = re.sub(
+                r"\s*\(\s*\d+\s+words?\s*\)\s*",
+                " ",
+                prompt,
+                flags=re.IGNORECASE,
+            )
+            prompt = re.sub(
+                r"(?i)\b(?:opening state|final state|continuity lock|"
+                r"final scene closure)\s*:\s*",
+                "",
+                prompt,
+            )
+            prompt = re.sub(r"[ \t]{2,}", " ", prompt).strip()
         if len(prompt) < 80:
             raise RuntimeError(
                 f"Scene {index} is too short to be a production-ready continuity prompt."
             )
         compiled_shot = {"id": shot_id, "prompt": prompt}
+        if power_prompt_rules:
+            compiled_shot["power_state"] = {
+                "context": str(shot.get("scene_context") or "").strip(),
+                "entry": str(shot.get("entry_state") or "").strip(),
+                "beats": [
+                    str(beat).strip() for beat in (shot.get("timeline_beats") or [])
+                    if str(beat).strip()
+                ],
+                "exit": str(shot.get("exit_state") or "").strip(),
+                "reference_contract": str(
+                    shot.get("reference_contract") or ""
+                ).strip(),
+            }
         storyboard_prompt = str(shot.get("storyboard_prompt") or "").strip()
         if storyboard_prompt:
             if len(storyboard_prompt) < 40:
@@ -1995,6 +2451,8 @@ def _compile_story(
         plan["storyboard_prompt_prefix"] = storyboard_prompt_prefix
     if source_video_analysis:
         plan["source_video_analysis"] = source_video_analysis
+    if power_prompt_rules:
+        plan["power_blueprint"] = raw.get("power_blueprint") or {}
     validation = (
         f"Valid: {director_mode} · {scene_count} scenes · {picture_count} references · "
         f"{float(duration_seconds):g}s requested per scene · {int(steps)} steps"
@@ -2034,6 +2492,8 @@ def _compile_story(
             if not findings else
             " · H3 Toolkit lint warnings: " + "; ".join(dict.fromkeys(findings))
         )
+    if power_prompt_rules:
+        validation += " · Power blueprint + state ledger validated"
     return (
         json.dumps(plan, ensure_ascii=False, indent=2),
         story_bible,
@@ -2784,6 +3244,31 @@ class H3StoryDirector(io.ComfyNode):
                         "positive camera wording, Subject-bound retention, and prompt lint."
                     ),
                 ),
+                io.Boolean.Input(
+                    "power_prompt_rules",
+                    display_name="Power Mode",
+                    default=False,
+                    optional=True,
+                    tooltip=(
+                        "Experimental maximum-direction mode. Adds an official H3 task/reference "
+                        "contract, a private creative blueprint, duration-aware action beats, "
+                        "scene entry/exit state ledgers, reference ownership and exclusions, "
+                        "audio/dialogue separation, deterministic validation, and one automatic "
+                        "repair pass when the production plan is inconsistent. Power takes "
+                        "precedence when Toolkit is also enabled."
+                    ),
+                ),
+                io.Boolean.Input(
+                    "generic_mode",
+                    display_name="Generic Mode",
+                    default=False,
+                    optional=True,
+                    tooltip=(
+                        "Create reusable prompts that bind generic roles such as the man, "
+                        "woman, object, or place from <Picture N>, without copying incidental "
+                        "facial, body, wardrobe, color, or background details from the image."
+                    ),
+                ),
             ],
             outputs=[
                 io.String.Output("plan_json"),
@@ -2853,6 +3338,8 @@ class H3StoryDirector(io.ComfyNode):
         source_video=None,
         bypass_director: bool = False,
         toolkit_prompt_rules: bool = False,
+        power_prompt_rules: bool = False,
+        generic_mode: bool = False,
         llm_model=None,
     ) -> io.NodeOutput:
         if language in {"EspaÃ±ol", "EspaÃƒÂ±ol"}:
@@ -3165,6 +3652,35 @@ class H3StoryDirector(io.ComfyNode):
         mode_rules = _director_mode_rules(
             director_mode, source_video_connected, scene_count, director_profile
         )
+        generic_rules = ""
+        if bool(generic_mode):
+            if director_mode == "Image to Video":
+                generic_rules = """
+EXPERIMENTAL GENERIC MODE — REUSABLE I2V PROMPT:
+- Build a reusable action and direction template whose start frame can be replaced later without rewriting the prompt.
+- Inspect the supplied first frame only enough to choose coarse functional roles such as the man, the woman, the person, the couple, the animal, the object, the vehicle, the product, or the location in the supplied first frame.
+- The planning model will not receive the replaceable frame. Never invent or infer its wardrobe, body, face, hair, accessories, props, setting, lighting, composition, or background. If the user does not state a visual fact, omit it completely and let the frame supply it at generation time.
+- Do not output `<Picture N>` or `<Subject N>` in native I2V mode. Refer naturally to `the man in the supplied first frame`, `the woman in the supplied first frame`, or another concise coarse role. If a role is ambiguous, use `the person` or `the subject`.
+- Do not copy or mention incidental source-frame traits such as facial structure, age, ethnicity, body measurements, hair style or color, clothing design or color, accessories, lighting, camera framing, or background unless the user's written request explicitly requires that detail.
+- In action beats, never name individual garments observed in the frame. Use neutral functional words such as `clothes`, `clothing`, or `footwear`. For example, write `removes the woman's clothes`, never `removes her leather jacket, black top, and pants`. This applies even when several garments are visibly distinguishable.
+- Do not turn an observed room into a permanent setting. Say `the current location`, `the room`, or omit the setting unless the user explicitly requests a location or the selected genre requires one.
+- User-written details remain authoritative. Include requested clothing, transformations, props, locations, actions, relationships, camera behavior, dialogue, sound, genre, motion, and visual look normally.
+- Describe motion from the literal supplied first-frame state while leaving appearance resolution to whichever frame is connected when the reusable prompt runs.
+""".strip()
+            else:
+                generic_rules = """
+EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
+- Build a reusable action and direction template whose connected images can be replaced later without rewriting the plan.
+- Inspect each connected Picture only enough to determine its coarse functional role: for example the man, the woman, the person, the couple, the animal, the object, the vehicle, the product, or the location from <Picture N>.
+- The planning model will receive only replaceable Picture slots, not their pixels. Never invent or infer wardrobe, body, face, hair, accessories, props, setting, lighting, composition, or background. If the user does not state a visual fact, omit it completely and let the connected Picture supply it at generation time.
+- Ground reusable identities with concise definitions such as `<Subject 1> is the man from <Picture 1>`. If gender or role is genuinely ambiguous, use `the person` or `the subject`; never guess a detailed identity.
+- Do not copy or mention incidental source-image traits such as facial structure, age, ethnicity, body measurements, hair style or color, clothing design or color, accessories, pose, expression, lighting, camera framing, or background unless the user's written request explicitly requires that detail.
+- In action beats, never name individual garments observed in a Picture. Use neutral functional words such as `clothes`, `clothing`, or `footwear`; for example `removes <Subject 2>'s clothes`, not a list of jacket, top, pants, colours, or materials.
+- Do not turn an observed room into a permanent setting. Say `the current location`, `the room`, or omit the setting unless the user explicitly requests a location or the selected genre requires one.
+- User-written details remain authoritative. Include requested clothing, transformations, props, locations, actions, relationships, camera behavior, dialogue, sound, genre, motion, and visual look normally.
+- Scene prompts must refer to visual participants by their generic natural role and `<Subject N>` binding, never by a detailed visual description inferred from an uploaded image.
+- Preserve role assignment and action continuity across scenes, but leave appearance resolution to whichever Picture is connected when the reusable plan runs.
+""".strip()
         visual_look_direction = (
             f"Visual Look: {visual_look}. {VISUAL_LOOKS[visual_look]}"
         )
@@ -3194,6 +3710,7 @@ class H3StoryDirector(io.ComfyNode):
             secondary_motion_style,
             visual_look,
             secondary_visual_look,
+            compact=bool(power_prompt_rules),
         )
         if director_profile == "Gemma":
             profile_genre_rule = (
@@ -3306,7 +3823,7 @@ class H3StoryDirector(io.ComfyNode):
             "and final state that occur during their own screen time."
         )
         toolkit_direction = ""
-        if bool(toolkit_prompt_rules):
+        if bool(toolkit_prompt_rules) and not bool(power_prompt_rules):
             toolkit_direction = (
                 "\n\nEXPERIMENTAL H3 TOOLKIT PROMPT CONTRACT:\n"
                 "- The rendered prompt for each scene is prompt_prefix plus that scene prompt; "
@@ -3319,6 +3836,106 @@ class H3StoryDirector(io.ComfyNode):
                 "as the visual source defining that Subject, never as the retained entity.\n"
                 "- Each independent scene states every changing visual state required at its first "
                 "frame; prompt_prefix supplies invariant identity, wardrobe, environment and look."
+            )
+        power_direction = ""
+        if bool(power_prompt_rules):
+            power_mode_behavior = (
+                "Treat all scenes as invisible time partitions of one uninterrupted audiovisual "
+                "take. Scene N entry_state must be copied verbatim from scene N-1 exit_state. "
+                "Carry pose, contact, wardrobe/exposure, props, geography, screen direction, "
+                "camera axis and velocity, lighting, action phase, music phase and ambience "
+                "without resets."
+                if director_mode == "Continuous Story" else
+                "Treat each scene as a deliberate new camera setup while preserving the latest "
+                "world state, identity, wardrobe/exposure, props, relationships and causal story "
+                "facts. A cut may change framing, angle, lens, axis or location only when that "
+                "change adds visible narrative information."
+                if director_mode == "Cinematic Cuts" else
+                "Honor the selected edit/keyframe mode exactly. Separate source-plate properties "
+                "that stay authoritative from the explicit requested delta, and never let an "
+                "auxiliary reference overwrite unrelated source motion, composition or identity."
+            )
+            power_direction = (
+                "\n\nEXPERIMENTAL POWER DIRECTOR CONTRACT:\n"
+                "- First complete power_blueprint privately. Convert every explicit user request "
+                "into one coverage_map item assigned to the exact scene that visibly executes it; "
+                "mood never substitutes for an action, transformation, dialogue or ending.\n"
+                "- Copy the user's requested visible actions and state changes into user_action_spine "
+                "in their original order before adding creative detail. This spine is authoritative: "
+                "do not replace, soften, summarize, reorder or perform the same beat again in a later "
+                "scene. Distribute it across scenes as one advancing sequence. When more scenes are "
+                "requested than the user supplied beats, invent a compatible next consequence or "
+                "resolution instead of repeating the preceding action.\n"
+                "- Give each connected reference one primary production job and a scene scope. "
+                "Define reusable visible identity as <Subject N> grounded in <Picture N>. Use "
+                "<Picture N> for the concrete file and (Sx) only for a vocal source. State what "
+                "each asset contributes and which unrelated identity, wardrobe, pose, setting, "
+                "lighting, motion, camera or audio traits must not transfer.\n"
+                "- Distinguish SOURCE IDENTITY from TARGET DESIGN before writing prompts. When the "
+                "user requests a new universe, setting, look, style, wardrobe, outfit or appearance, "
+                "the connected Picture supplies identity only unless the user explicitly preserves "
+                "another trait. Discard conflicting source clothing, environment, lighting, pose, "
+                "composition and capture style. Never copy those source traits into "
+                "persistent_visual_overrides.\n"
+                "- Before designing, fill source_visual_inventory privately with the visible source "
+                "wardrobe, environment, lighting, pose and capture style. Then fill design_change_map "
+                "with explicit `source trait -> newly invented target trait` replacements for the "
+                "world and every affected subject. The two sides must be visibly different; merely "
+                "renaming, re-describing or declaring the source clothes to be the target costume is "
+                "a failed redesign. Never expose source_visual_inventory in rendered prompts.\n"
+                "- Translate every requested named universe, period or aesthetic into a concrete "
+                "target_world_design: architecture, landscape/geography, materials, set dressing, "
+                "lighting logic, palette, rendering/capture medium and atmosphere. A franchise or "
+                "style name alone is not a design and must never appear as the only environment rule.\n"
+                "- When new wardrobe is requested, target_subject_designs must define every affected "
+                "subject separately with exact garment pieces, silhouette, layers, materials, colors, "
+                "footwear and accessories appropriate to the target world. These designs replace the "
+                "reference wardrobe from the first rendered instant and remain authoritative until a "
+                "later visible wardrobe change. Never write `current wardrobe`, `same clothes`, or "
+                "`preserve wardrobe` in place of the actual new design.\n"
+                "- Keep complete cast knowledge in the private blueprint, but expose a Subject or "
+                "reference in a rendered scene only while it is actually visible or audible. Future "
+                "characters, locations, props and events must not leak into earlier prompts.\n"
+                "- Build each scene from entry_state -> chronological cause/effect timeline_beats -> "
+                "exit_state. Fit one dominant action beat per roughly 1-3 seconds and prefer fewer "
+                "fully readable actions over compressed choreography. Every action names actor, "
+                "affected subject/object, physical mechanics, direction/contact where relevant, "
+                "observable result and the resulting body/object state.\n"
+                "- Use chronological conjunctions such as `as`, `while`, and `then` to distinguish "
+                "simultaneous motion from sequential action. Prefer ordinary sentences and commas; "
+                "avoid semicolon-heavy instruction chains that fragment model attention.\n"
+                f"- {power_mode_behavior}\n"
+                "- Direct composition, subject position, foreground/midground/background geography, "
+                "camera path, amplitude and speed in natural positive prose. Preserve eyelines and "
+                "screen direction. Use a cut only for new narrative information, never as decoration.\n"
+                "- Treat user-requested wardrobe, appearance and prop changes as mutable state. Once "
+                "changed on screen, the newest completed state supersedes the obsolete Picture state "
+                "until another visible change occurs.\n"
+                "- Use official speech form `<Subject N> (S1) says: <d>[Language] exact words</d>` "
+                "when a referenced subject speaks. Keep delivery outside <d>, keep speaker IDs stable, "
+                "show readable mouth movement, and fit the line plus a natural breath/pause inside the "
+                "available duration. Do not repeat dialogue or translate it.\n"
+                "- Put synchronized physical sound with its visible event. Keep ambience/non-verbal "
+                "sound conceptually separate from audience-only non-diegetic music; preserve their "
+                "phase and level across Continuous Story boundaries.\n"
+                "- Make prompt_prefix compact and invariant. Each scene prompt must be a literal, "
+                "self-contained production instruction, not a plot summary, adjective stack, worksheet, "
+                "negative-prompt list or explanation. End every scene in a concrete renderable state; "
+                "the final scene visibly resolves the user's promised outcome.\n"
+                "- RENDERED POWER PROMPT STYLE: keep the complex reasoning in power_blueprint and "
+                "write the final H3 prompt as compact chronological prose. In the first sentence, "
+                "establish the concrete location and bind each visible identity once as `<Subject N> "
+                "grounded in <Picture N>`, including its target wardrobe only on first appearance or "
+                "when that wardrobe changes. Then describe only what visibly happens, in physical order, "
+                "using short direct sentences joined by `as`, `while`, and `then`. State the resulting "
+                "pose, exposure, prop and location state exactly where it changes so the next scene can "
+                "inherit it. Do not repeat static clothing, scenery, style, consent, camera, lighting or "
+                "music in every paragraph when prompt_prefix already establishes it. Add camera and sound "
+                "only when requested or materially useful. Never print word counts, planning commentary, "
+                "contracts, checks, summaries, labels such as opening state, or ornamental filler.\n"
+                "- power_check must silently verify user-intent coverage, exact reference ownership, "
+                "duration feasibility, continuity/cut logic, physical coherence, camera readability, "
+                "dialogue markup, sound separation and final closure before returning JSON."
             )
         content = [{
             "type": "text",
@@ -3352,6 +3969,20 @@ class H3StoryDirector(io.ComfyNode):
             ),
         }]
         for index, image in enumerate(pictures, 1):
+            if bool(generic_mode):
+                # Generic Mode must be reusable with a different image. Sending
+                # pixels to the planner inevitably leaks wardrobe, location and
+                # lighting into the supposedly generic prompt, so expose only a
+                # replaceable slot. MiniMax still receives the real image later.
+                if director_mode != "Image to Video":
+                    content.append({
+                        "type": "text",
+                        "text": (
+                            f"A replaceable visual slot exists as <Picture {index}>. "
+                            "Use the exact tag, but do not infer any unseen visual detail."
+                        ),
+                    })
+                continue
             content.append({
                 "type": "text",
                 "text": f"The next reference is <Picture {index}>. Use this exact tag.",
@@ -3409,6 +4040,8 @@ class H3StoryDirector(io.ComfyNode):
                         str(system_prompt or "").strip(),
                         mode_rules,
                         profile_rules,
+                        generic_rules,
+                        power_direction,
                     )).strip(),
                 },
                 {"role": "user", "content": content},
@@ -3441,6 +4074,7 @@ class H3StoryDirector(io.ComfyNode):
                         secondary_motion_style=secondary_motion_style,
                         visual_look=visual_look,
                         secondary_visual_look=secondary_visual_look,
+                        power_prompt_rules=bool(power_prompt_rules),
                     ),
                 },
             },
@@ -3456,6 +4090,63 @@ class H3StoryDirector(io.ComfyNode):
         except (KeyError, IndexError, TypeError) as error:
             raise RuntimeError("OpenRouter returned an unexpected response.") from error
         raw_story = _parse_json_response(content_text)
+        if bool(power_prompt_rules):
+            power_issues = _power_plan_issues(
+                raw_story, scene_count, director_mode, is_still_mode, story_idea
+            )
+            if power_issues:
+                concise_issues = "; ".join(power_issues[:16])
+                print(
+                    "[H3 Story Director] Power validation found an inconsistent production "
+                    "plan; requesting one automatic full repair: " + concise_issues
+                )
+                correction_payload = {
+                    **payload,
+                    "temperature": min(float(temperature), 0.25),
+                    "messages": [
+                        *payload["messages"],
+                        {"role": "assistant", "content": content_text},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Return a COMPLETE replacement JSON plan from the beginning; do "
+                                "not patch, explain, abbreviate or continue the previous response. "
+                                "The Power production audit rejected it for these exact reasons: "
+                                + concise_issues + ". Preserve every explicit user request, selected "
+                                "mode, genre, motion, look, dialogue setting, reference assignment, "
+                                "scene count and duration. Rebuild power_blueprint first, then every "
+                                "scene. In Continuous Story, copy each preceding exit_state verbatim "
+                                "as the next entry_state. Make timeline beats physically achievable, "
+                                "make the rendered prompt chronological and production-ready, scope "
+                                "references only where active, and finish with a concrete exit state."
+                            ),
+                        },
+                    ],
+                }
+                corrected_result = (
+                    _external_llm_request(llm_model, correction_payload)
+                    if uses_external_llm else
+                    _openrouter_request(api_key, correction_payload, int(timeout_seconds))
+                )
+                try:
+                    corrected_text = corrected_result["choices"][0]["message"]["content"]
+                except (KeyError, IndexError, TypeError) as error:
+                    raise RuntimeError(
+                        "Power Director received an unexpected response during automatic repair."
+                    ) from error
+                corrected_story = _parse_json_response(corrected_text)
+                remaining = _power_plan_issues(
+                    corrected_story, scene_count, director_mode, is_still_mode,
+                    story_idea,
+                )
+                if remaining:
+                    raise RuntimeError(
+                        "Power Director rejected two inconsistent production plans to avoid "
+                        "wasting a video generation. Remaining problems: "
+                        + "; ".join(remaining[:16])
+                    )
+                raw_story = corrected_story
+                result = corrected_result
         if director_profile == "Gemma" and not is_still_mode and not is_i2v_mode:
             worksheet_issues = _gemma_scene_issues(raw_story, scene_count)
             if worksheet_issues:
@@ -3514,6 +4205,8 @@ class H3StoryDirector(io.ComfyNode):
                     )
                 raw_story = corrected_story
                 result = corrected_result
+        if bool(power_prompt_rules):
+            _apply_power_target_design(raw_story, story_idea)
         if style_contract:
             # Keep the selected format authoritative for MiniMax as well as for
             # either planning backend. This deterministic prefix prevents model
@@ -3558,6 +4251,39 @@ class H3StoryDirector(io.ComfyNode):
                     "[H3 Story Director] Restored the required <Video 1> tag "
                     "deterministically before compiling the plan."
                 )
+        if bool(generic_mode):
+            raw_story["persistent_visual_overrides"] = ""
+            generic_style_contract = style_contract.replace(
+                "request and references", "user request"
+            ).replace("request, and references", "user request")
+            if director_mode == "Image to Video":
+                reference_contract = (
+                    "The supplied first frame is replaceable and exclusively defines all "
+                    "identity, anatomy, appearance, clothes, accessories, props, location, "
+                    "lighting, composition and background. Do not describe any of those "
+                    "visual facts unless the user explicitly wrote them."
+                )
+            else:
+                reference_contract = " ".join(
+                    f"<Picture {index}> is a replaceable visual reference slot; it exclusively "
+                    "defines its subject's identity, appearance, clothes and visual context."
+                    for index in range(1, len(pictures) + 1)
+                )
+            # Never trust a vision model's shared paragraph in Generic Mode:
+            # construct it from user controls and neutral slot contracts only.
+            raw_story["prompt_prefix"] = "\n\n".join(
+                part for part in (
+                    generic_style_contract,
+                    reference_contract,
+                    adult_direction.strip(),
+                ) if part
+            )
+            for shot in raw_story.get("shots") or []:
+                if isinstance(shot, dict):
+                    shot["prompt"] = _sanitize_generic_reference_observations(
+                        shot.get("prompt")
+                    )
+
         if director_mode == "Image to Video":
             def i2v_text(value):
                 text = str(value or "")
@@ -3590,10 +4316,16 @@ class H3StoryDirector(io.ComfyNode):
             0 if director_mode == "Image to Video" else len(pictures),
             director_mode,
             director_profile,
-            bool(toolkit_prompt_rules),
+            bool(toolkit_prompt_rules) and not bool(power_prompt_rules),
             language,
+            bool(generic_mode),
+            bool(power_prompt_rules),
         )
         validation += f" · profile {director_profile}"
+        if bool(power_prompt_rules):
+            validation += " · Power mode"
+        if bool(generic_mode):
+            validation += " · generic reusable references"
         compiled_plan = json.loads(plan_json)
         scene_prompt = "\n\n".join((
             str(compiled_plan["prompt_prefix"]).strip(),
