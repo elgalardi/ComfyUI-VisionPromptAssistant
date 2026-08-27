@@ -919,6 +919,8 @@ def _story_schema(
     secondary_motion_style: str = "None",
     visual_look: str = "Auto",
     secondary_visual_look: str = "None",
+    toolkit_prompt_rules: bool = False,
+    split_global: bool = False,
     power_prompt_rules: bool = False,
 ) -> dict:
     is_edit_mode = director_mode in {"Edit", "Reference Edit"}
@@ -998,6 +1000,39 @@ def _story_schema(
         # OpenRouter structured output and local OpenAI-compatible backends.
         shot["properties"]["prompt"]["minLength"] = max(160, min_words * 4)
         shot["properties"]["prompt"]["maxLength"] = max_words * 8
+    if (toolkit_prompt_rules or split_global) and not is_still:
+        shot["properties"]["visible_cast"] = {
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 12,
+            "uniqueItems": True,
+            "items": {"type": "string", "minLength": 3},
+            "description": (
+                "Exact exhaustive list of physical people visibly present in this "
+                "scene, including background people. Use `<Subject N>` for every "
+                "referenced identity and a short stable natural role for an invented "
+                "person. List each physical individual exactly once. Do not list a "
+                "Picture, body part, reflection, screen image, prop, or off-screen voice "
+                "as another person. Return [] only when no person is visible."
+            ),
+        }
+        shot["required"].append("visible_cast")
+    if split_global and not is_still:
+        shot["properties"]["scene_global"] = {
+            "type": "string",
+            "minLength": 80,
+            "description": (
+                "Positive scene-specific global state prepended only to this scene. "
+                "Define exactly the visible Subjects and their Picture grounding, current "
+                "wardrobe or exposure, current location and geography, active props, selected "
+                "production format, motion treatment, visual look, lighting, camera baseline, "
+                "music/ambience phase and consent/age rule when applicable. Carry completed "
+                "state changes from the preceding scene and omit future people, places, props "
+                "and events. Use concrete renderable facts, not planning language or negative "
+                "instructions."
+            ),
+        }
+        shot["required"].append("scene_global")
     if director_profile == "Gemma" and not is_still and not is_i2v:
         shot["properties"]["prompt"] = {
             "type": "string",
@@ -1170,6 +1205,11 @@ def _story_schema(
         "required": ["synopsis", "story_bible", "prompt_prefix", "shots"],
         "additionalProperties": False,
     }
+    if split_global:
+        schema["properties"]["prompt_prefix"]["description"] = (
+            "Return an empty string. Split Global places all renderable shared and "
+            "continuity state inside each scene_global instead of one shared prefix."
+        )
     if director_profile == "Gemma" and not is_still:
         schema["properties"]["required_actions"] = {
             "type": "array",
@@ -1479,6 +1519,34 @@ def _route_scoped_subject_prefix(
         "\n".join(shared).strip(),
         ["\n".join(items).strip() for items in scoped],
         routed,
+    )
+
+
+def _toolkit_visible_cast_lock(value) -> str:
+    """Render one short positive occupancy statement for MiniMax H3."""
+    if not isinstance(value, list):
+        return ""
+    cast = []
+    seen = set()
+    for item in value:
+        role = _normalize_visual_subject_labels(str(item or "").strip())
+        role = re.sub(r"\s+", " ", role).strip(" ,.;")
+        key = role.casefold()
+        if not role or key in seen:
+            continue
+        seen.add(key)
+        cast.append(role)
+    if not cast:
+        return "The frame contains no visible people."
+    if len(cast) == 1:
+        return (
+            f"Exactly one physical person is visible in this scene: {cast[0]}. "
+            "This identity occupies one body."
+        )
+    names = ", ".join(cast[:-1]) + f" and {cast[-1]}"
+    return (
+        f"Exactly {len(cast)} physical people are visible in this scene: {names}. "
+        "Each listed identity occupies one distinct body."
     )
 
 
@@ -2280,6 +2348,7 @@ def _compile_story(
     dialogue_language: str = "English",
     generic_mode: bool = False,
     power_prompt_rules: bool = False,
+    split_global: bool = False,
 ) -> tuple[str, str, str, str, str]:
     synopsis = str(raw.get("synopsis") or "").strip()
     story_bible = str(raw.get("story_bible") or "").strip()
@@ -2308,7 +2377,7 @@ def _compile_story(
         # instructions, while the replacement image supplies its own wardrobe,
         # hair, accessories and appearance at execution time.
         persistent_visual_overrides = ""
-    if persistent_visual_overrides:
+    if persistent_visual_overrides and not split_global:
         prompt_prefix = "\n\n".join((
             "AUTHORITATIVE USER VISUAL OVERRIDES — these mutable details replace "
             "conflicting clothing, appearance and prop details in reference images:\n"
@@ -2318,7 +2387,8 @@ def _compile_story(
     storyboard_prompt_prefix = str(raw.get("storyboard_prompt_prefix") or "").strip()
     source_video_analysis = str(raw.get("source_video_analysis") or "").strip()
     shots = raw.get("shots")
-    if not synopsis or not story_bible or not prompt_prefix:
+    if (not synopsis or not story_bible
+            or (not prompt_prefix and not split_global)):
         raise RuntimeError("The director response is missing its synopsis, story bible, or shared prompt.")
     if not isinstance(shots, list) or len(shots) != scene_count:
         actual = len(shots) if isinstance(shots, list) else 0
@@ -2336,7 +2406,10 @@ def _compile_story(
     reference_assignment_prefix = storyboard_prompt_prefix or "\n".join((
         prompt_prefix,
         *scoped_subject_prefixes,
-        *(str(shot.get("prompt") or "") for shot in shots
+        *("\n".join((
+            str(shot.get("scene_global") or ""),
+            str(shot.get("prompt") or ""),
+        )) for shot in shots
           if isinstance(shot, dict)),
     ))
     missing_tags = [
@@ -2381,6 +2454,19 @@ def _compile_story(
             source_prompt = _dedupe_gemma_inline_dialogue(source_prompt)
         source_prompt = _normalize_speaker_labels(source_prompt)
         source_prompt = _normalize_visual_subject_labels(source_prompt)
+        if (toolkit_prompt_rules or split_global) and not power_prompt_rules:
+            cast_lock = _toolkit_visible_cast_lock(shot.get("visible_cast"))
+            if cast_lock:
+                source_prompt = "\n\n".join((cast_lock, source_prompt))
+        if split_global:
+            scene_global = _normalize_visual_subject_labels(
+                str(shot.get("scene_global") or "").strip()
+            )
+            if len(scene_global) < 80:
+                raise RuntimeError(
+                    f"Scene {index} Split Global state is missing or too short."
+                )
+            source_prompt = "\n\n".join((scene_global, source_prompt))
         if power_prompt_rules:
             scene_context = _normalize_visual_subject_labels(
                 str(shot.get("scene_context") or "").strip()
@@ -2494,6 +2580,8 @@ def _compile_story(
         )
     if power_prompt_rules:
         validation += " · Power blueprint + state ledger validated"
+    if split_global:
+        validation += " · Split Global scene-scoped continuity"
     return (
         json.dumps(plan, ensure_ascii=False, indent=2),
         story_bible,
@@ -3245,17 +3333,15 @@ class H3StoryDirector(io.ComfyNode):
                     ),
                 ),
                 io.Boolean.Input(
-                    "power_prompt_rules",
-                    display_name="Power Mode",
+                    "split_global",
+                    display_name="Split Global",
                     default=False,
                     optional=True,
                     tooltip=(
-                        "Experimental maximum-direction mode. Adds an official H3 task/reference "
-                        "contract, a private creative blueprint, duration-aware action beats, "
-                        "scene entry/exit state ledgers, reference ownership and exclusions, "
-                        "audio/dialogue separation, deterministic validation, and one automatic "
-                        "repair pass when the production plan is inconsistent. Power takes "
-                        "precedence when Toolkit is also enabled."
+                        "Experimental scene-scoped continuity. Replaces one heavy shared global "
+                        "prompt with a dedicated positive global state for every scene, carrying "
+                        "the latest cast, wardrobe, location, props, look, camera and audio while "
+                        "keeping future elements out. Works with or without Toolkit."
                     ),
                 ),
                 io.Boolean.Input(
@@ -3338,10 +3424,15 @@ class H3StoryDirector(io.ComfyNode):
         source_video=None,
         bypass_director: bool = False,
         toolkit_prompt_rules: bool = False,
-        power_prompt_rules: bool = False,
+        split_global: bool = False,
         generic_mode: bool = False,
         llm_model=None,
+        power_prompt_rules: bool = False,
     ) -> io.NodeOutput:
+        # Power Mode was retired in favor of the orthogonal Split Global
+        # contract. Accept the legacy keyword so old API workflows still load,
+        # but never activate its former blueprint behavior.
+        power_prompt_rules = False
         if language in {"EspaÃ±ol", "EspaÃƒÂ±ol"}:
             language = "Español"
         language = str(language or "").strip() or "No dialogue"
@@ -3710,7 +3801,7 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
             secondary_motion_style,
             visual_look,
             secondary_visual_look,
-            compact=bool(power_prompt_rules),
+            compact=bool(split_global or toolkit_prompt_rules),
         )
         if director_profile == "Gemma":
             profile_genre_rule = (
@@ -3818,12 +3909,18 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
             f"{_scene_prompt_budget(scene_duration_seconds)[1]} word production brief with no "
             f"more than {_scene_prompt_budget(scene_duration_seconds)[2]} main action "
             f"beat{'s' if _scene_prompt_budget(scene_duration_seconds)[2] != 1 else ''}. "
-            "Put invariant identity, wardrobe, setting, look and sound rules in prompt_prefix "
-            "once; scene prompts contain only the opening state, changes, camera/sound events "
-            "and final state that occur during their own screen time."
+            + (
+                "Put the current identity, wardrobe, setting, look, camera and sound state "
+                "inside that scene's scene_global; its prompt contains the visible action and "
+                "result occurring during that screen time."
+                if bool(split_global) else
+                "Put invariant identity, wardrobe, setting, look and sound rules in prompt_prefix "
+                "once; scene prompts contain only the opening state, changes, camera/sound events "
+                "and final state that occur during their own screen time."
+            )
         )
         toolkit_direction = ""
-        if bool(toolkit_prompt_rules) and not bool(power_prompt_rules):
+        if bool(toolkit_prompt_rules):
             toolkit_direction = (
                 "\n\nEXPERIMENTAL H3 TOOLKIT PROMPT CONTRACT:\n"
                 "- The rendered prompt for each scene is prompt_prefix plus that scene prompt; "
@@ -3834,8 +3931,32 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                 "phrases such as `no cuts`, `never cut`, `no camera movement`, or `no angle change`.\n"
                 "- Bind retained identity and mutable appearance to <Subject N>. Use <Picture N> only "
                 "as the visual source defining that Subject, never as the retained entity.\n"
+                "- Fill visible_cast with every physical person actually visible in that scene, "
+                "including unnamed or background people, exactly once. One Subject means one body; "
+                "a reflection, screen image or body part is not an additional cast member.\n"
                 "- Each independent scene states every changing visual state required at its first "
                 "frame; prompt_prefix supplies invariant identity, wardrobe, environment and look."
+            )
+        split_direction = ""
+        if bool(split_global):
+            split_direction = (
+                "\n\nEXPERIMENTAL SPLIT GLOBAL CONTRACT:\n"
+                "- Return prompt_prefix as an empty string. Every scene owns its complete "
+                "positive scene_global and receives only that state plus its action prompt.\n"
+                "- scene_global must state the exact visible cast and Subject/Picture bindings, "
+                "current wardrobe or exposure, exact location/geography, active props, selected "
+                "genre format, motion treatment, visual look, lighting, camera baseline and "
+                "current music/ambience phase.\n"
+                "- Scene 1 establishes the requested initial state. Every later scene_global "
+                "inherits the latest completed physical state from the preceding scene, then "
+                "updates only facts that have visibly changed.\n"
+                "- Keep future characters, locations, props, wardrobe changes and events out of "
+                "earlier scene_global values. A person appears only in scenes whose visible_cast "
+                "lists that physical individual.\n"
+                "- Use direct renderable facts only. Do not print continuity terminology, source "
+                "alternatives, negative prompts, validation rules or explanations.\n"
+                "- Split Global is independent from Toolkit. When Toolkit is enabled, also obey "
+                "its prompt-form and cast-cardinality rules."
             )
         power_direction = ""
         if bool(power_prompt_rules):
@@ -4041,6 +4162,7 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                         mode_rules,
                         profile_rules,
                         generic_rules,
+                        split_direction,
                         power_direction,
                     )).strip(),
                 },
@@ -4074,6 +4196,8 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                         secondary_motion_style=secondary_motion_style,
                         visual_look=visual_look,
                         secondary_visual_look=secondary_visual_look,
+                        toolkit_prompt_rules=bool(toolkit_prompt_rules),
+                        split_global=bool(split_global),
                         power_prompt_rules=bool(power_prompt_rules),
                     ),
                 },
@@ -4207,7 +4331,19 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                 result = corrected_result
         if bool(power_prompt_rules):
             _apply_power_target_design(raw_story, story_idea)
-        if style_contract:
+        if style_contract and bool(split_global):
+            # The deterministic user controls remain authoritative, but in
+            # Split Global they belong to each scene rather than one dominant
+            # shared prefix.
+            for shot in raw_story.get("shots") or []:
+                if not isinstance(shot, dict):
+                    continue
+                current = str(shot.get("scene_global") or "").strip()
+                shot["scene_global"] = "\n".join(
+                    part for part in (style_contract, current) if part
+                )
+            raw_story["prompt_prefix"] = ""
+        elif style_contract:
             # Keep the selected format authoritative for MiniMax as well as for
             # either planning backend. This deterministic prefix prevents model
             # preferences from silently replacing the user's controls.
@@ -4271,18 +4407,29 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                 )
             # Never trust a vision model's shared paragraph in Generic Mode:
             # construct it from user controls and neutral slot contracts only.
-            raw_story["prompt_prefix"] = "\n\n".join(
-                part for part in (
-                    generic_style_contract,
-                    reference_contract,
-                    adult_direction.strip(),
-                ) if part
-            )
+            if bool(split_global):
+                raw_story["prompt_prefix"] = ""
+            else:
+                raw_story["prompt_prefix"] = "\n\n".join(
+                    part for part in (
+                        generic_style_contract,
+                        reference_contract,
+                        adult_direction.strip(),
+                    ) if part
+                )
             for shot in raw_story.get("shots") or []:
                 if isinstance(shot, dict):
                     shot["prompt"] = _sanitize_generic_reference_observations(
                         shot.get("prompt")
                     )
+                    if bool(split_global):
+                        shot["scene_global"] = "\n".join(
+                            part for part in (
+                                reference_contract,
+                                str(shot.get("scene_global") or "").strip(),
+                                adult_direction.strip(),
+                            ) if part
+                        )
 
         if director_mode == "Image to Video":
             def i2v_text(value):
@@ -4307,6 +4454,10 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
             for shot in raw_story.get("shots") or []:
                 if isinstance(shot, dict):
                     shot["prompt"] = i2v_text(shot.get("prompt"))
+                    if "scene_global" in shot:
+                        shot["scene_global"] = i2v_text(
+                            shot.get("scene_global")
+                        )
 
         plan_json, story_bible, synopsis, validation, source_video_analysis = _compile_story(
             raw_story,
@@ -4316,21 +4467,24 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
             0 if director_mode == "Image to Video" else len(pictures),
             director_mode,
             director_profile,
-            bool(toolkit_prompt_rules) and not bool(power_prompt_rules),
+            bool(toolkit_prompt_rules),
             language,
             bool(generic_mode),
             bool(power_prompt_rules),
+            bool(split_global),
         )
         validation += f" · profile {director_profile}"
-        if bool(power_prompt_rules):
-            validation += " · Power mode"
+        if bool(split_global):
+            validation += " · Split Global"
         if bool(generic_mode):
             validation += " · generic reusable references"
         compiled_plan = json.loads(plan_json)
-        scene_prompt = "\n\n".join((
-            str(compiled_plan["prompt_prefix"]).strip(),
-            str(compiled_plan["shots"][0]["prompt"]).strip(),
-        ))
+        scene_prompt = "\n\n".join(
+            part for part in (
+                str(compiled_plan["prompt_prefix"]).strip(),
+                str(compiled_plan["shots"][0]["prompt"]).strip(),
+            ) if part
+        )
         if is_video_edit and "<Video 1>" not in scene_prompt:
             raise RuntimeError(
                 "Internal Video Edit normalization failed to preserve <Video 1>."
