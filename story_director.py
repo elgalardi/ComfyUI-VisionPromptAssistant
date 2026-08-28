@@ -7,6 +7,7 @@ import json
 import math
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -21,6 +22,8 @@ from PIL import Image, ImageDraw, ImageFont
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits"
 DEFAULT_MODEL = "x-ai/grok-4.20"
+_DIRECTOR_HOLD_CACHE = {}
+_DIRECTOR_HOLD_LOCK = threading.Lock()
 DIRECTOR_PROFILES = ["OpenRouter", "Gemma"]
 DIALOGUE_OPTIONS = [
     "No dialogue",
@@ -922,6 +925,7 @@ def _story_schema(
     toolkit_prompt_rules: bool = False,
     split_global: bool = False,
     power_prompt_rules: bool = False,
+    mood_assets_connected: bool = False,
 ) -> dict:
     is_edit_mode = director_mode in {"Edit", "Reference Edit"}
     is_i2v = director_mode == "Image to Video"
@@ -995,7 +999,63 @@ def _story_schema(
         "required": ["id", "prompt"],
         "additionalProperties": False,
     }
-    if not is_still:
+    if not is_still and not is_i2v and director_profile != "Gemma":
+        shot["properties"]["compact_state"] = {
+            "type": "object",
+            "properties": {
+                "opening": {
+                    "type": "string",
+                    "minLength": 24,
+                    "maxLength": 320,
+                    "description": (
+                        "Private compact state at the first visible instant: present cast, "
+                        "current pose/contact, latest changed wardrobe or exposure, held props, "
+                        "and exact location only where needed. For Continuous Story inherit the "
+                        "preceding closing state without resetting completed changes. Use direct "
+                        "positive visual facts, not labels, rules or explanations."
+                    ),
+                },
+                "action": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": max(520, max_words * 7),
+                    "description": (
+                        "The scene's chronological visible action in compact natural English. "
+                        "Name actor, physical mechanics, affected person or object, observable "
+                        "result, camera behavior, lighting changes, synchronized physical sound "
+                        "and any correctly attributed dialogue needed for this scene. Fit "
+                        f"no more than {max_beats} main action beat"
+                        f"{'s' if max_beats != 1 else ''} into the available duration."
+                    ),
+                },
+                "closing": {
+                    "type": "string",
+                    "minLength": 24,
+                    "maxLength": 320,
+                    "description": (
+                        "Private compact state after all action finishes: final pose/contact, "
+                        "latest wardrobe or exposure, props, position, camera and active sound "
+                        "phase only where changed. This is the authoritative opening state for "
+                        "the next Continuous Story scene. End the last scene on a resolved beat."
+                    ),
+                },
+            },
+            "required": ["opening", "action", "closing"],
+            "additionalProperties": False,
+            "description": (
+                "Compact internal continuity handoff. It is compiled into the final H3 prompt "
+                "and is not exposed as planning metadata. Keep it literal and non-redundant."
+            ),
+        }
+        shot["required"].append("compact_state")
+        # The compact state is the renderable scene source. Keeping a second
+        # free-form prompt makes capable models repeat the entire action and can
+        # contradict the inherited closing state at a masked seam.
+        shot["properties"].pop("prompt", None)
+        shot["required"] = [
+            name for name in shot["required"] if name != "prompt"
+        ]
+    if not is_still and "prompt" in shot["properties"]:
         # Character limits make the duration budget machine-readable for both
         # OpenRouter structured output and local OpenAI-compatible backends.
         shot["properties"]["prompt"]["minLength"] = max(160, min_words * 4)
@@ -1364,6 +1424,20 @@ def _story_schema(
             "location, pose, props, exposure, source-attribute policies, negative instructions "
             "or mutable continuity state here; those belong in each shot's scene_context."
         )
+    if mood_assets_connected:
+        schema["properties"]["mood_analysis"] = {
+            "type": "string",
+            "minLength": 80,
+            "description": (
+                "Concise private mood-board interpretation. Map each supplied <Mood N> "
+                "or <Mood Video> only to the attributes explicitly requested by the user, "
+                "such as wardrobe, pose, action, staging, environment, composition, camera, "
+                "lighting, color, texture or pacing. State what is borrowed and what remains "
+                "owned by the production Pictures. Mood assets never establish identity and "
+                "their tags must never appear in prompt_prefix or any scene prompt."
+            ),
+        }
+        schema["required"].append("mood_analysis")
     if is_video_edit:
         schema["properties"]["source_video_analysis"] = {
             "type": "string",
@@ -2242,6 +2316,7 @@ def _power_plan_issues(
         return issues + [f"expected {scene_count} complete Power scenes"]
 
     previous_exit = ""
+    previous_compact_closing = ""
     for index, shot in enumerate(shots, 1):
         if not isinstance(shot, dict):
             issues.append(f"scene {index} is not structured")
@@ -2440,6 +2515,10 @@ def _compile_story(
             prompt_prefix = "\n\n".join((prompt_prefix, fallback_assignments))
 
     compiled_shots = []
+    # OpenRouter may optionally return the compact opening/action/closing
+    # contract. Keep the previous closing local to this compilation so every
+    # profile and schema path starts from a defined state.
+    previous_compact_closing = ""
     seen_ids = set()
     for index, shot in enumerate(shots, 1):
         if not isinstance(shot, dict):
@@ -2450,6 +2529,18 @@ def _compile_story(
         seen_ids.add(shot_id)
         generated_prompt = _gemma_scene_prompt(shot) if director_profile == "Gemma" else ""
         source_prompt = shot.get("prompt") or generated_prompt
+        compact_state = shot.get("compact_state")
+        if director_profile != "Gemma" and isinstance(compact_state, dict):
+            opening = str(compact_state.get("opening") or "").strip()
+            action = str(compact_state.get("action") or "").strip()
+            closing = str(compact_state.get("closing") or "").strip()
+            if opening and action and closing:
+                if director_mode == "Continuous Story" and previous_compact_closing:
+                    # Continuity is deterministic in the compiler: do not trust a
+                    # second LLM-authored paraphrase to preserve the exact state.
+                    opening = previous_compact_closing
+                source_prompt = " ".join((opening, action, closing))
+                previous_compact_closing = closing
         if director_profile == "Gemma":
             source_prompt = _dedupe_gemma_inline_dialogue(source_prompt)
         source_prompt = _normalize_speaker_labels(source_prompt)
@@ -3134,6 +3225,28 @@ class H3StoryDirector(io.ComfyNode):
                 io.Image.Input("image_1", optional=True),
                 io.Image.Input("image_2", optional=True),
                 io.Image.Input("image_3", optional=True),
+                io.Image.Input(
+                    "mood_image_1", optional=True,
+                    tooltip=(
+                        "Private Director mood reference. Address it as @mood1. It can "
+                        "inspire requested wardrobe, pose, setting, composition or look, "
+                        "but never becomes a MiniMax Picture or transfers identity."
+                    ),
+                ),
+                io.Image.Input("mood_image_2", optional=True,
+                               tooltip="Private Director mood reference: @mood2."),
+                io.Image.Input("mood_image_3", optional=True,
+                               tooltip="Private Director mood reference: @mood3."),
+                io.Image.Input("mood_image_4", optional=True,
+                               tooltip="Private Director mood reference: @mood4."),
+                io.Image.Input(
+                    "mood_video", optional=True,
+                    tooltip=(
+                        "Private IMAGE frame batch from VHS Load Video. Address it as "
+                        "@moodvideo to borrow requested action, pose progression, camera "
+                        "movement or pacing without making it a MiniMax video reference."
+                    ),
+                ),
                 io.Int.Input(
                     "scene_count",
                     default=5,
@@ -3355,6 +3468,28 @@ class H3StoryDirector(io.ComfyNode):
                         "facial, body, wardrobe, color, or background details from the image."
                     ),
                 ),
+                io.Boolean.Input(
+                    "compact_mode",
+                    display_name="Compact Mode",
+                    default=False,
+                    optional=True,
+                    tooltip=(
+                        "Ask the LLM for a shorter production plan and cap its effective "
+                        "output budget. It preserves actions, references, continuity, dialogue "
+                        "and ending state while removing repetition to reduce token cost."
+                    ),
+                ),
+                io.Boolean.Input(
+                    "hold_plan",
+                    display_name="Hold Plan",
+                    default=False,
+                    optional=True,
+                    tooltip=(
+                        "Reuse this node's last successful plan and prompts exactly, without "
+                        "calling OpenRouter or the connected LLM again. Image, prompt and "
+                        "setting changes are ignored until Hold Plan is disabled."
+                    ),
+                ),
             ],
             outputs=[
                 io.String.Output("plan_json"),
@@ -3385,7 +3520,15 @@ class H3StoryDirector(io.ComfyNode):
                         "mode; empty in other modes."
                     ),
                 ),
+                io.String.Output(
+                    "mood_analysis",
+                    tooltip=(
+                        "Private interpretation of connected mood images/video. Mood tags "
+                        "are resolved into prose and never passed to MiniMax."
+                    ),
+                ),
             ],
+            hidden=[io.Hidden.unique_id],
         )
 
     @classmethod
@@ -3421,11 +3564,18 @@ class H3StoryDirector(io.ComfyNode):
         image_1=None,
         image_2=None,
         image_3=None,
+        mood_image_1=None,
+        mood_image_2=None,
+        mood_image_3=None,
+        mood_image_4=None,
+        mood_video=None,
         source_video=None,
         bypass_director: bool = False,
         toolkit_prompt_rules: bool = False,
         split_global: bool = False,
         generic_mode: bool = False,
+        compact_mode: bool = False,
+        hold_plan: bool = False,
         llm_model=None,
         power_prompt_rules: bool = False,
     ) -> io.NodeOutput:
@@ -3433,6 +3583,35 @@ class H3StoryDirector(io.ComfyNode):
         # contract. Accept the legacy keyword so old API workflows still load,
         # but never activate its former blueprint behavior.
         power_prompt_rules = False
+        node_unique_id = str(
+            getattr(getattr(cls, "hidden", None), "unique_id", "") or "default"
+        )
+        hold_cache_key = f"{cls.__name__}:{node_unique_id}"
+        if bool(hold_plan):
+            with _DIRECTOR_HOLD_LOCK:
+                held = _DIRECTOR_HOLD_CACHE.get(hold_cache_key)
+            if held is not None:
+                held_validation = f"{held['validation']} · HOLD"
+                held_preview = (
+                    f"{held['synopsis']}\n\n{held_validation}\n\n"
+                    f"--- HELD PLAN JSON ---\n{held['plan_json']}"
+                )
+                plan_output = (
+                    ExecutionBlocker(None) if draft_only else held["plan_json"]
+                )
+                return io.NodeOutput(
+                    plan_output,
+                    held["story_bible"],
+                    held["synopsis"],
+                    held_validation,
+                    "Held plan · LLM not called",
+                    "Credits unchanged",
+                    held["scene_prompt"],
+                    held["mode_prompt"],
+                    held["source_video_analysis"],
+                    held.get("mood_analysis", ""),
+                    ui=ui.PreviewText(held_preview),
+                )
         if language in {"EspaÃ±ol", "EspaÃƒÂ±ol"}:
             language = "Español"
         language = str(language or "").strip() or "No dialogue"
@@ -3525,6 +3704,19 @@ class H3StoryDirector(io.ComfyNode):
                 story_idea = re.sub(
                     pattern, destination, story_idea, flags=re.IGNORECASE
                 )
+        for index in range(1, 5):
+            for pattern in (
+                rf"@mood\s*{index}\b",
+                rf"\bmood\s*(?:image\s*)?{index}\b",
+            ):
+                story_idea = re.sub(
+                    pattern, f"<Mood {index}>", story_idea,
+                    flags=re.IGNORECASE,
+                )
+        story_idea = re.sub(
+            r"@mood\s*(?:video)?\b|\bmood\s+video\b",
+            "<Mood Video>", story_idea, flags=re.IGNORECASE,
+        )
         if bool(bypass_director):
             if not story_idea:
                 raise ValueError(
@@ -3551,6 +3743,20 @@ class H3StoryDirector(io.ComfyNode):
                 f"Bypassed OpenRouter · direct prompt · {scene_count} "
                 f"scene{'s' if scene_count != 1 else ''} · {int(steps)} steps"
             )
+            bypass_record = {
+                "plan_json": plan_json,
+                "story_bible": "Prompt Assistant bypassed.",
+                "synopsis": story_idea,
+                "validation": validation,
+                "usage_stats": "OpenRouter not used",
+                "credits_remaining": "Credits unchanged",
+                "scene_prompt": story_idea,
+                "mode_prompt": story_idea,
+                "source_video_analysis": "",
+                "mood_analysis": "",
+            }
+            with _DIRECTOR_HOLD_LOCK:
+                _DIRECTOR_HOLD_CACHE[hold_cache_key] = bypass_record
             return io.NodeOutput(
                 plan_json,
                 "Prompt Assistant bypassed.",
@@ -3560,6 +3766,7 @@ class H3StoryDirector(io.ComfyNode):
                 "Credits unchanged",
                 story_idea,
                 story_idea,
+                "",
                 "",
                 ui=ui.PreviewText(f"{validation}\n\n{story_idea}"),
             )
@@ -3574,6 +3781,12 @@ class H3StoryDirector(io.ComfyNode):
             image for image in (image_0, image_1, image_2, image_3)
             if image is not None
         ]
+        mood_images = [
+            (index, image) for index, image in enumerate(
+                (mood_image_1, mood_image_2, mood_image_3, mood_image_4), 1
+            ) if image is not None
+        ]
+        mood_assets_connected = bool(mood_images or mood_video is not None)
         source_video_connected = source_video is not None
         is_edit_mode = director_mode in {"Edit", "Reference Edit"}
         is_video_edit = is_edit_mode and source_video_connected
@@ -3919,6 +4132,21 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                 "and final state that occur during their own screen time."
             )
         )
+        compact_state_direction = ""
+        if (not is_still_mode and director_mode != "Image to Video"
+                and director_profile != "Gemma"):
+            compact_state_direction = (
+                "\n\nCOMPACT INTERNAL SCENE STATE:\n"
+                "- Fill compact_state before writing each scene prompt. Keep opening and closing "
+                "short, literal and limited to mutable physical facts required for continuity.\n"
+                "- For Continuous Story, scene N opening inherits scene N-1 closing exactly in "
+                "meaning. Preserve completed wardrobe, exposure, prop, pose, contact and location "
+                "changes; never reset them from a reference image.\n"
+                "- Put chronological visible mechanics, materially useful camera and lighting, "
+                "synchronized sound and correctly attributed dialogue in compact_state.action.\n"
+                "- Do not print field names, continuity terminology, checks or explanations. The "
+                "compiler converts these private fields into one ordinary H3 scene prompt."
+            )
         toolkit_direction = ""
         if bool(toolkit_prompt_rules):
             toolkit_direction = (
@@ -3957,6 +4185,24 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                 "alternatives, negative prompts, validation rules or explanations.\n"
                 "- Split Global is independent from Toolkit. When Toolkit is enabled, also obey "
                 "its prompt-form and cast-cardinality rules."
+            )
+        compact_direction = ""
+        if bool(compact_mode):
+            compact_direction = (
+                "\n\nCOMPACT OUTPUT MODE — TOKEN-EFFICIENT PRODUCTION PLAN:\n"
+                "- Return the complete required JSON schema, but use concise direct English. "
+                "Never omit a requested scene, required field, explicit user action, active "
+                "reference, continuity change, dialogue line, sound cue or final state.\n"
+                "- Keep synopsis to one or two short sentences and story_bible to only the "
+                "stable cast, identity bindings and continuity facts needed by later scenes.\n"
+                "- State invariant production facts once in prompt_prefix or scene_global. "
+                "Do not repeat genre labels, wardrobe, location, lighting, camera baseline or "
+                "reference definitions inside every scene unless they change there.\n"
+                "- Each scene is one compact chronological production paragraph: opening "
+                "state, visible action mechanics, essential camera/audio/dialogue, and concrete "
+                "closing state. Remove commentary, rationale, coverage prose and synonyms.\n"
+                "- Prefer specific verbs and nouns over decorative adjectives. Compact means "
+                "less repetition, never less semantic fidelity or an unfinished action."
             )
         power_direction = ""
         if bool(power_prompt_rules):
@@ -4087,6 +4333,7 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                 f"{adult_direction}\n\n"
                 f"{style_contract}"
                 f"{toolkit_direction}"
+                f"{compact_state_direction}"
             ),
         }]
         for index, image in enumerate(pictures, 1):
@@ -4114,6 +4361,70 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                     "url": _image_data_url(image, int(image_max_dimension))
                 },
             })
+
+        mood_rules = ""
+        if mood_assets_connected:
+            mood_rules = (
+                "PRIVATE MOOD-BOARD CONTRACT:\n"
+                "- <Mood 1> through <Mood 4> and <Mood Video> are visible only to the "
+                "Director. They are not MiniMax references and must never appear in "
+                "prompt_prefix, scene_global, a scene prompt, synopsis or story bible.\n"
+                "- Resolve every requested mood attribute into explicit natural English "
+                "generation prose. Never write `from the mood image`, `as in the reference`, "
+                "an @mood alias or a <Mood ...> tag in generation text.\n"
+                "- Mood assets never transfer facial identity, body identity or character "
+                "ownership. Production identity remains exclusively attached to <Picture N>.\n"
+                "- Borrow only the attribute the user requests. An outfit request borrows "
+                "garment design, materials, colors and fit; a pose request borrows body "
+                "arrangement; an action/video request borrows chronological motion and camera.\n"
+                "- Record the resolved borrowing decisions in mood_analysis."
+            )
+            for mood_index, mood_image in mood_images:
+                content.append({
+                    "type": "text",
+                    "text": (
+                        f"The next private Director-only mood reference is <Mood {mood_index}>. "
+                        "Inspect it only for attributes explicitly assigned by the user. It "
+                        "does not define identity and its tag cannot enter generation prompts."
+                    ),
+                })
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": _image_data_url(mood_image, min(
+                            int(image_max_dimension), 640
+                        ))
+                    },
+                })
+            if mood_video is not None:
+                mood_samples, mood_video_note = _frame_batch_sample_data_urls(
+                    mood_video,
+                    min(int(video_sample_frames), 10),
+                    min(int(image_max_dimension), 640),
+                )
+                content.append({
+                    "type": "text",
+                    "text": (
+                        "The following chronological observations form private <Mood Video>. "
+                        "Infer only user-requested action, pose progression, interaction, camera "
+                        "movement, rhythm or staging. Do not copy identity automatically and do "
+                        "not expose this tag or the observation method in generation text. "
+                        f"{mood_video_note}"
+                    ),
+                })
+                for order, (_frame_index, percentage, image_url) in enumerate(
+                    mood_samples, 1
+                ):
+                    content.append({
+                        "type": "text",
+                        "text": (
+                            f"Private mood-video observation {order}/{len(mood_samples)} "
+                            f"({percentage:.1f}% through its motion)."
+                        ),
+                    })
+                    content.append({
+                        "type": "image_url", "image_url": {"url": image_url},
+                    })
 
         video_analysis_note = ""
         if is_video_edit:
@@ -4163,12 +4474,20 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                         profile_rules,
                         generic_rules,
                         split_direction,
+                        compact_direction,
                         power_direction,
+                        mood_rules,
                     )).strip(),
                 },
                 {"role": "user", "content": content},
             ],
-            "max_tokens": int(max_tokens),
+            "max_tokens": (
+                min(
+                    int(max_tokens),
+                    max(2200, 1800 + (int(scene_count) * 550)),
+                )
+                if bool(compact_mode) else int(max_tokens)
+            ),
             "temperature": float(temperature),
             "seed": int(seed),
             "reasoning": {"enabled": bool(reasoning)},
@@ -4199,6 +4518,7 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                         toolkit_prompt_rules=bool(toolkit_prompt_rules),
                         split_global=bool(split_global),
                         power_prompt_rules=bool(power_prompt_rules),
+                        mood_assets_connected=mood_assets_connected,
                     ),
                 },
             },
@@ -4331,6 +4651,27 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                 result = corrected_result
         if bool(power_prompt_rules):
             _apply_power_target_design(raw_story, story_idea)
+        mood_analysis = str(raw_story.get("mood_analysis") or "").strip()
+        if mood_assets_connected:
+            generation_mood_text = "\n".join((
+                str(raw_story.get("prompt_prefix") or ""),
+                str(raw_story.get("story_bible") or ""),
+                str(raw_story.get("synopsis") or ""),
+                *("\n".join((
+                    str(shot.get("scene_global") or ""),
+                    str(shot.get("prompt") or ""),
+                )) for shot in (raw_story.get("shots") or [])
+                  if isinstance(shot, dict)),
+            ))
+            leaked = re.search(
+                r"(?:@mood\s*(?:video|[1-4])|<Mood\s+(?:Video|[1-4])>)",
+                generation_mood_text, flags=re.IGNORECASE,
+            )
+            if leaked:
+                raise RuntimeError(
+                    "The Director left a private mood-board tag in generation text "
+                    f"({leaked.group(0)}). Retry so it resolves the reference into prose."
+                )
         if style_contract and bool(split_global):
             # The deterministic user controls remain authoritative, but in
             # Split Global they belong to each scene rather than one dominant
@@ -4474,6 +4815,8 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
             bool(split_global),
         )
         validation += f" · profile {director_profile}"
+        if bool(compact_mode):
+            validation += " · Compact"
         if bool(split_global):
             validation += " · Split Global"
         if bool(generic_mode):
@@ -4505,6 +4848,20 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
         )
         preview = f"{synopsis}\n\n{validation}\n\n--- PLAN JSON ---\n{plan_json}"
         plan_output = ExecutionBlocker(None) if draft_only else plan_json
+        cache_record = {
+            "plan_json": plan_json,
+            "story_bible": story_bible,
+            "synopsis": synopsis,
+            "validation": validation,
+            "usage_stats": usage_stats,
+            "credits_remaining": credits,
+            "scene_prompt": scene_prompt,
+            "mode_prompt": scene_prompt,
+            "source_video_analysis": source_video_analysis,
+            "mood_analysis": mood_analysis,
+        }
+        with _DIRECTOR_HOLD_LOCK:
+            _DIRECTOR_HOLD_CACHE[hold_cache_key] = cache_record
         return io.NodeOutput(
             plan_output,
             story_bible,
@@ -4515,6 +4872,7 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
             scene_prompt,
             scene_prompt,
             source_video_analysis,
+            mood_analysis,
             ui=ui.PreviewText(preview),
         )
 
@@ -4761,3 +5119,4 @@ MANDATORY FL2VA KEYFRAME STORYBOARD DIRECTION:
 __all__ = [
     "H3StoryDirector",
 ]
+
