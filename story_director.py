@@ -24,6 +24,79 @@ OPENROUTER_CREDITS_URL = "https://openrouter.ai/api/v1/credits"
 DEFAULT_MODEL = "x-ai/grok-4.20"
 _DIRECTOR_HOLD_CACHE = {}
 _DIRECTOR_HOLD_LOCK = threading.Lock()
+_DIRECTOR_HOLD_CACHE_LOADED = False
+
+
+def _director_hold_cache_path() -> str:
+    """Return a local, non-repository path for persistent held plans."""
+    try:
+        import folder_paths
+
+        user_directory = folder_paths.get_user_directory()
+    except Exception:
+        user_directory = os.path.join(os.path.dirname(__file__), ".runtime")
+    cache_directory = os.path.join(
+        user_directory, "vision_prompt_assistant", "director_hold"
+    )
+    os.makedirs(cache_directory, exist_ok=True)
+    return os.path.join(cache_directory, "plans.json")
+
+
+def _load_director_hold_cache_locked() -> None:
+    global _DIRECTOR_HOLD_CACHE_LOADED
+    if _DIRECTOR_HOLD_CACHE_LOADED:
+        return
+    _DIRECTOR_HOLD_CACHE_LOADED = True
+    path = _director_hold_cache_path()
+    if not os.path.isfile(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            saved = json.load(handle)
+        if isinstance(saved, dict):
+            _DIRECTOR_HOLD_CACHE.update(
+                (str(key), value)
+                for key, value in saved.items()
+                if isinstance(value, dict)
+            )
+    except Exception as error:
+        print(
+            "[H3 Story Director] Could not load the persistent Hold cache: "
+            f"{error}"
+        )
+
+
+def _save_director_hold_cache_locked() -> None:
+    path = _director_hold_cache_path()
+    temporary_path = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(temporary_path, "w", encoding="utf-8") as handle:
+            json.dump(_DIRECTOR_HOLD_CACHE, handle, ensure_ascii=False, indent=2)
+        os.replace(temporary_path, path)
+    except Exception as error:
+        try:
+            if os.path.exists(temporary_path):
+                os.remove(temporary_path)
+        except OSError:
+            pass
+        print(
+            "[H3 Story Director] Could not save the persistent Hold cache: "
+            f"{error}"
+        )
+
+
+def _get_held_director_plan(cache_key: str):
+    with _DIRECTOR_HOLD_LOCK:
+        _load_director_hold_cache_locked()
+        held = _DIRECTOR_HOLD_CACHE.get(cache_key)
+        return dict(held) if isinstance(held, dict) else None
+
+
+def _set_held_director_plan(cache_key: str, record: dict) -> None:
+    with _DIRECTOR_HOLD_LOCK:
+        _load_director_hold_cache_locked()
+        _DIRECTOR_HOLD_CACHE[cache_key] = dict(record)
+        _save_director_hold_cache_locked()
 DIRECTOR_PROFILES = ["OpenRouter", "Gemma"]
 DIALOGUE_OPTIONS = [
     "No dialogue",
@@ -3720,18 +3793,16 @@ class H3StoryDirector(io.ComfyNode):
         hold_plan: bool = False,
         llm_model=None,
         power_prompt_rules: bool = False,
+        unique_id=None,
     ) -> io.NodeOutput:
         # Power Mode was retired in favor of the orthogonal Split Global
         # contract. Accept the legacy keyword so old API workflows still load,
         # but never activate its former blueprint behavior.
         power_prompt_rules = False
-        node_unique_id = str(
-            getattr(getattr(cls, "hidden", None), "unique_id", "") or "default"
-        )
+        node_unique_id = str(unique_id or "default")
         hold_cache_key = f"{cls.__name__}:{node_unique_id}"
         if bool(hold_plan):
-            with _DIRECTOR_HOLD_LOCK:
-                held = _DIRECTOR_HOLD_CACHE.get(hold_cache_key)
+            held = _get_held_director_plan(hold_cache_key)
             if held is not None:
                 held_validation = f"{held['validation']} · HOLD"
                 held_preview = (
@@ -3897,8 +3968,7 @@ class H3StoryDirector(io.ComfyNode):
                 "source_video_analysis": "",
                 "mood_analysis": "",
             }
-            with _DIRECTOR_HOLD_LOCK:
-                _DIRECTOR_HOLD_CACHE[hold_cache_key] = bypass_record
+            _set_held_director_plan(hold_cache_key, bypass_record)
             return io.NodeOutput(
                 plan_json,
                 "Prompt Assistant bypassed.",
@@ -5193,8 +5263,7 @@ DIRECT PROMPT LIST OUTPUT MODE:
             "source_video_analysis": source_video_analysis,
             "mood_analysis": mood_analysis,
         }
-        with _DIRECTOR_HOLD_LOCK:
-            _DIRECTOR_HOLD_CACHE[hold_cache_key] = cache_record
+        _set_held_director_plan(hold_cache_key, cache_record)
         return io.NodeOutput(
             plan_output,
             story_bible,
