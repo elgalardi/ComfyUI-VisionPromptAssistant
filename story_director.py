@@ -1742,6 +1742,148 @@ def _parse_json_response(text: str) -> dict:
     return value
 
 
+def _parse_direct_prompt_lines(text: str, scene_count: int) -> list[str]:
+    """Normalize a schema-free Director answer into one prompt block per scene."""
+    value = str(text or "").strip()
+    value = re.sub(r"^```(?:text|markdown)?\s*", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*```$", "", value)
+    expected = int(scene_count)
+    tagged_separator = r"<<<H3_SCENE(?:_\d+)?>>>"
+
+    # Accept both the requested between-scene token and the numbered visual
+    # headers emitted by some models (and by our own readable output).
+    if re.search(tagged_separator, value, flags=re.IGNORECASE):
+        chunks = re.split(tagged_separator, value, flags=re.IGNORECASE)
+    else:
+        marked = re.split(
+            r"(?:^|\n)\s*(?:#{1,4}\s*)?SCENE\s+\d+\s*[:.\-—]*\s*",
+            value,
+            flags=re.IGNORECASE,
+        )
+        if len(marked) > 1:
+            chunks = marked[1:]
+        else:
+            # Structured H3 blocks are also an unambiguous boundary when a
+            # provider forgets the requested separator between complete scenes.
+            roots = list(re.finditer(
+                r"(?im)^\s*(?:\*\*)?(?:subject_definitions|"
+                r"integrated_multimodal_description)\s*:(?:\*\*)?",
+                value,
+            ))
+            if len(roots) > 1:
+                chunks = [
+                    value[root.start():(
+                        roots[index + 1].start()
+                        if index + 1 < len(roots) else len(value)
+                    )]
+                    for index, root in enumerate(roots)
+                ]
+            else:
+                # One requested scene may freely contain paragraphs. For old
+                # line-list responses, split only when the count is exact.
+                lines = [line for line in value.splitlines() if line.strip()]
+                chunks = lines if expected > 1 and len(lines) == expected else [value]
+    prompts = []
+    for chunk in chunks:
+        cleaned = re.sub(
+            r"^\s*(?:[-*]\s*)?(?:(?:SCENE\s*)?\d+\s*[:.)\-—]\s*)?",
+            "", str(chunk), flags=re.IGNORECASE,
+        )
+        # Preserve the official H3 section layout inside each scene while
+        # normalizing noisy spacing produced by chat models.
+        cleaned = "\n".join(
+            re.sub(r"[ \t]+", " ", line).strip()
+            for line in cleaned.splitlines()
+        ).strip()
+        cleaned = cleaned.replace(r"\<", "<").replace(r"\>", ">")
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        if cleaned:
+            prompts.append(cleaned)
+    if len(prompts) != expected:
+        raise RuntimeError(
+            f"Direct Prompt Director returned {len(prompts)} usable prompts; "
+            f"exactly {expected} were requested. The response is incomplete or "
+            "its scene separators are missing."
+        )
+    return prompts
+
+
+def _parse_direct_prompt_response(content, scene_count: int) -> list[str]:
+    """Read the minimal structured transport, with legacy text fallback."""
+    expected = int(scene_count)
+    value = content
+    if isinstance(value, str):
+        stripped = value.strip()
+        try:
+            value = json.loads(stripped)
+        except json.JSONDecodeError:
+            return _parse_direct_prompt_lines(stripped, expected)
+    if isinstance(value, dict) and isinstance(value.get("scene_prompts"), list):
+        raw_prompts = value["scene_prompts"]
+        if len(raw_prompts) != expected:
+            raise RuntimeError(
+                f"Direct Prompt Director returned {len(raw_prompts)} scene_prompts; "
+                f"exactly {expected} were requested."
+            )
+        prompts = []
+        for index, prompt in enumerate(raw_prompts, 1):
+            if not isinstance(prompt, str) or not prompt.strip():
+                raise RuntimeError(
+                    f"Direct Prompt Director scene_prompts[{index - 1}] is empty."
+                )
+            prompts.append(_parse_direct_prompt_lines(prompt, 1)[0])
+        return prompts
+    return _parse_direct_prompt_lines(str(content or ""), expected)
+
+
+def _format_direct_prompt_block(prompts: list[str]) -> str:
+    """Render readable scene blocks without leaking headers into generation."""
+    return "\n\n".join(
+        f"<<<H3_SCENE_{index:02d}>>>\n{prompt}"
+        for index, prompt in enumerate(prompts, 1)
+    )
+
+
+def _format_direct_chain_payload(prompts: list[str], duration: float,
+                                 steps: int, seed: int,
+                                 director_mode: str) -> str:
+    """Carry chain settings through the same type-safe STRING connection."""
+    metadata = json.dumps({
+        "scene_duration_seconds": float(duration),
+        "steps": int(steps),
+        "base_seed": int(seed),
+        "director_mode": str(director_mode),
+    }, ensure_ascii=False, separators=(",", ":"))
+    return f"<<<H3_CHAIN_META {metadata}>>>\n" + _format_direct_prompt_block(prompts)
+
+
+def _extract_direct_chain_metadata(value: str) -> tuple[dict, str]:
+    """Remove optional internal metadata before prompts reach MiniMax."""
+    text = str(value or "").strip()
+    match = re.match(r"^<<<H3_CHAIN_META\s+(\{[^\n]*\})>>>\s*", text)
+    if not match:
+        return {}, text
+    try:
+        metadata = json.loads(match.group(1))
+    except json.JSONDecodeError as error:
+        raise ValueError("Direct prompt chain metadata is invalid.") from error
+    return metadata, text[match.end():].strip()
+
+
+def _split_direct_prompt_block(value: str) -> list[str]:
+    """Read numbered scene blocks, legacy delimiters, or old line lists."""
+    _metadata, text = _extract_direct_chain_metadata(value)
+    numbered_header = r"(?:^|\n)\s*<<<H3_SCENE_\d+>>>\s*(?:\n|$)"
+    if re.search(numbered_header, text, flags=re.IGNORECASE):
+        chunks = re.split(numbered_header, text, flags=re.IGNORECASE)[1:]
+    elif "<<<H3_SCENE>>>" in text:
+        chunks = text.split("<<<H3_SCENE>>>")
+    else:
+        # Backward compatibility with the first experimental workflows.
+        chunks = text.splitlines()
+    return [chunk.strip() for chunk in chunks if chunk.strip()]
+
+
 _DIALOGUE_META_PATTERNS = (
     r"\bDialogue is enabled in [^.]+\.",
     r"\bDialogue is disabled\.[^.]*\.",
@@ -4463,6 +4605,11 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
                     "image_url": {"url": image_url},
                 })
 
+        # Optional metadata must have a stable value in every execution route.
+        # The direct-prompt variant intentionally skips the JSON story object
+        # from which the standard Director normally reads mood_analysis.
+        mood_analysis = ""
+
         payload = {
             "model": str(model or DEFAULT_MODEL).strip(),
             "messages": [
@@ -4524,6 +4671,116 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
             },
             "provider": {"require_parameters": True},
         }
+        if bool(getattr(cls, "PROMPT_LIST_MODE", False)):
+            duration = float(scene_duration_seconds)
+            if duration <= 6.0:
+                action_budget = (
+                    "one primary action with one immediately visible reaction; "
+                    "do not begin a second major action"
+                )
+            elif duration <= 10.0:
+                action_budget = (
+                    "at most two causally connected action phases with visible completion"
+                )
+            else:
+                action_budget = (
+                    "at most three causally connected action phases with readable transitions"
+                )
+            if pictures:
+                required_prompt_structure = """
+Each prompt must use these exact MiniMax H3 full-reference fields in this order:
+subject_definitions:
+summary:
+retention_analysis:
+detailed_description:
+overall_soundscape:
+non_diegetic_music:
+
+Keep subject_definitions compact: one stable <Subject N> line per visible reusable
+entity, citing the source <Picture N>. In retention_analysis use only the official
+visual relationship values fully_preserved, partially_preserved, attribute_transfer,
+or weak_reference. Use <Picture N> as a concrete frame/composition anchor only when
+it truly serves that role; visual identity belongs to <Subject N>.
+""".strip()
+            else:
+                required_prompt_structure = """
+Each prompt must use these exact MiniMax H3 base fields in this order:
+integrated_multimodal_description:
+overall_soundscape:
+non_diegetic_music:
+""".strip()
+            direct_contract = f"""
+DIRECT PROMPT LIST OUTPUT MODE:
+- Direct the same production with the selected mode, references, genre, motion,
+  visual look, dialogue, audio, mood assets and user instructions.
+- Return exactly {int(scene_count)} complete MiniMax H3 generation prompts.
+- Return only one JSON object with one key named scene_prompts. Its value must be
+  an array containing exactly {int(scene_count)} complete prompt strings.
+- Do not add commentary, a synopsis, story bible, scene numbers, durations, seeds
+  or technical plan metadata inside those strings.
+- Inside every prompt follow this required structure exactly:
+  {required_prompt_structure}
+- Make every prompt self-contained: establish currently visible subjects and exact
+  <Picture N>/<Subject N> assignments, inherited mutable state, chronological visible
+  action, camera, lighting, synchronized sound and permitted dialogue.
+- A speaking referenced character must be written as `<Subject N> (Sx) says:
+  <d>[Language] exact words</d>`. Keep the same speaker ID across scenes. Put only
+  the language and literal spoken words inside <d>; never write `(Sx) says` without
+  first identifying the visible subject.
+- Put ambience, physical effects and non-verbal vocal sounds only in
+  overall_soundscape. Put audience-only score only in non_diegetic_music; use N/A
+  when no score is requested. Do not duplicate these layers in detailed_description.
+- Do not repeat a heavy shared global block. Carry only state needed by that scene.
+  Never introduce a future person, costume, prop or location early.
+- Continuous Story prompts are consecutive partitions of one uninterrupted take:
+  prompt N+1 begins at the exact physical and audiovisual state where N ends.
+  Cinematic Cuts may change shot setup while preserving current narrative state.
+- For Continuous Story scene 2 and later, treat the previous scene's final state as
+  the opening state carried by masked_av. Use <Picture N> only to preserve immutable
+  identity; never reset pose, framing, wardrobe, nudity, prop state, location, lighting
+  phase or subject placement back to the original Picture. State current inherited
+  mutable details directly and continue the unfinished motion without replaying it.
+- Across a Continuous Story boundary, preserve screen direction, contact points,
+  body orientation, camera velocity, ambient room tone, music phase and active speech.
+  Do not announce a new shot, repeat an establishing description, restart music, or
+  make subjects re-enter unless the user explicitly requests that event.
+- For approximately {duration:g} seconds, permit {action_budget}. Prefer complete,
+  observable motion over an overloaded plot summary. Finish on one concrete visible
+  and audible state that the next scene can inherit.
+- Populate scene_prompts in chronological order and return no keys beyond it.
+""".strip()
+            payload["messages"][0]["content"] = "\n\n".join((
+                str(payload["messages"][0]["content"]).strip(), direct_contract,
+            ))
+            if isinstance(payload["messages"][1].get("content"), list):
+                payload["messages"][1]["content"].append({
+                    "type": "text",
+                    "text": (
+                        f"Final output reminder: populate scene_prompts with exactly "
+                        f"{int(scene_count)} complete chronological prompt strings."
+                    ),
+                })
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "minimax_h3_direct_scene_prompts",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "scene_prompts": {
+                                "type": "array",
+                                "minItems": int(scene_count),
+                                "maxItems": int(scene_count),
+                                "items": {"type": "string", "minLength": 1},
+                            },
+                        },
+                        "required": ["scene_prompts"],
+                        "additionalProperties": False,
+                    },
+                },
+            }
+            payload["provider"] = {"require_parameters": True}
         result = (
             _external_llm_request(llm_model, payload)
             if uses_external_llm else
@@ -4533,6 +4790,82 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
             content_text = result["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as error:
             raise RuntimeError("OpenRouter returned an unexpected response.") from error
+        if bool(getattr(cls, "PROMPT_LIST_MODE", False)):
+            try:
+                direct_prompts = _parse_direct_prompt_response(
+                    content_text, scene_count
+                )
+            except RuntimeError as first_error:
+                print(
+                    "[H3 Direct Prompt Director] Scene-block mismatch detected; "
+                    "requesting one automatic format repair."
+                )
+                repair_payload = {
+                    **payload,
+                    "temperature": min(float(temperature), 0.2),
+                    "messages": [
+                        *payload["messages"],
+                        {"role": "assistant", "content": content_text},
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Return a COMPLETE replacement matching the required "
+                                f"scene_prompts JSON schema with exactly {int(scene_count)} "
+                                "complete chronological prompt strings. Preserve the "
+                                "intended content and complete every missing scene."
+                            ),
+                        },
+                    ],
+                }
+                repair_result = (
+                    _external_llm_request(llm_model, repair_payload)
+                    if uses_external_llm else
+                    _openrouter_request(
+                        api_key, repair_payload, int(timeout_seconds)
+                    )
+                )
+                try:
+                    repaired_text = repair_result["choices"][0]["message"]["content"]
+                    direct_prompts = _parse_direct_prompt_response(
+                        repaired_text, scene_count
+                    )
+                    result = repair_result
+                    content_text = repaired_text
+                except (KeyError, IndexError, TypeError, RuntimeError) as second_error:
+                    raise RuntimeError(
+                        "Direct Prompt Director could not obtain the requested "
+                        f"{int(scene_count)} complete scene blocks after one automatic "
+                        f"format repair. First response: {first_error} Repair response: "
+                        f"{second_error}"
+                    ) from second_error
+            usage = result.get("usage") or {}
+            usage_stats = (
+                f"input: {usage.get('prompt_tokens', '?')} · "
+                f"output: {usage.get('completion_tokens', '?')} · "
+                f"total: {usage.get('total_tokens', '?')}"
+                if usage else "External LLM · usage not reported"
+            )
+            credits = (
+                "External LLM · credits not available" if uses_external_llm else
+                _credits(api_key, min(30, int(timeout_seconds)))
+            )
+            validation = (
+                f"Direct prompts ready · {len(direct_prompts)} scenes · "
+                f"{director_mode} · profile {director_profile} · no JSON plan"
+            )
+            preview = "\n\n".join(
+                f"SCENE {index:02d}\n{prompt}"
+                for index, prompt in enumerate(direct_prompts, 1)
+            )
+            return io.NodeOutput(
+                _format_direct_chain_payload(
+                    direct_prompts, scene_duration_seconds, steps, seed,
+                    director_mode,
+                ),
+                direct_prompts[0], len(direct_prompts),
+                validation, usage_stats, credits, mood_analysis,
+                ui=ui.PreviewText(preview),
+            )
         raw_story = _parse_json_response(content_text)
         if bool(power_prompt_rules):
             power_issues = _power_plan_issues(
@@ -4877,6 +5210,165 @@ EXPERIMENTAL GENERIC MODE — REUSABLE REFERENCE PROMPTS:
         )
 
 
+class H3DirectPromptDirector(H3StoryDirector):
+    """Schema-free Director that returns one tagged prompt block per scene."""
+
+    PROMPT_LIST_MODE = True
+
+    @classmethod
+    def define_schema(cls):
+        schema = super().define_schema()
+        schema.node_id = "H3DirectPromptDirector"
+        schema.display_name = "H3 Director — Direct Scene Prompts (Experimental)"
+        schema.search_aliases = [
+            "h3 prompt list director", "direct scene prompts", "no json director",
+        ]
+        schema.description = (
+            "Experimental multimodal Director that keeps the normal creative and "
+            "continuity reasoning but returns one tagged MiniMax H3 prompt block per scene, "
+            "without building or exposing a JSON chain plan."
+        )
+        schema.inputs = [
+            item for item in schema.inputs
+            if item.id not in {"draft_only", "bypass_director", "hold_plan"}
+        ]
+        schema.outputs = [
+            io.String.Output("prompt_lines", tooltip="Connect to Simple H3 Prompt Lines to List."),
+            io.String.Output("first_prompt"),
+            io.Int.Output("prompt_count"),
+            io.String.Output("validation"),
+            io.String.Output("usage_stats"),
+            io.String.Output("credits_remaining"),
+            io.String.Output("mood_analysis"),
+        ]
+        return schema
+
+    @classmethod
+    def execute(cls, **kwargs) -> io.NodeOutput:
+        kwargs.update(draft_only=False, bypass_director=False, hold_plan=False)
+        return H3StoryDirector.execute.__func__(cls, **kwargs)
+
+
+class SimpleH3PromptLinesToList(io.ComfyNode):
+    """Convert tagged prompt blocks into a native ComfyUI STRING list."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="SimpleH3PromptLinesToList",
+            display_name="Simple H3 Prompt Lines → List",
+            category="text/minimax_h3",
+            search_aliases=["CR Prompt List", "prompt list", "scene prompt list"],
+            description=(
+                "Dependency-free prompt-list node. Each <<<H3_SCENE_NN>>> block "
+                "becomes one independently executable STRING prompt. Legacy "
+                "one-prompt-per-line input remains supported."
+            ),
+            inputs=[
+                io.String.Input("prompt_lines", multiline=True, dynamic_prompts=False),
+                io.String.Input("prepend_text", default=""),
+                io.String.Input("append_text", default=""),
+                io.Int.Input("start_index", default=0, min=0, max=9999),
+                io.Int.Input("max_prompts", default=32, min=1, max=9999),
+            ],
+            outputs=[
+                io.String.Output("prompt", is_output_list=True),
+                io.String.Output("body_text", is_output_list=True),
+                io.Int.Output("count"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, prompt_lines: str, prepend_text: str, append_text: str,
+                start_index: int, max_prompts: int) -> io.NodeOutput:
+        rows = _split_direct_prompt_block(prompt_lines)
+        start = min(max(0, int(start_index)), len(rows))
+        selected = rows[start:start + max(1, int(max_prompts))]
+        if not selected:
+            raise ValueError("Simple H3 Prompt Lines → List found no usable prompt lines.")
+        prompts = [f"{prepend_text}{line}{append_text}" for line in selected]
+        return io.NodeOutput(prompts, selected, len(selected))
+
+
+class H3DirectPromptsToChainJSON(io.ComfyNode):
+    """Build a deterministic sequential-chain plan from direct prompt blocks."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3DirectPromptsToChainJSON",
+            display_name="Direct Prompts → Masked Chain",
+            category="text/minimax_h3",
+            search_aliases=[
+                "direct prompts masked av", "prompt list chain plan",
+                "sequential h3 prompts",
+            ],
+            description=(
+                "Creates a minimal internal chain JSON from the experimental "
+                "Director's tagged prompts. It does not call an LLM or rewrite "
+                "the prompts. Connect plan_json to Simple H3 Chain Plan and use "
+                "Simple H3 Context in masked_av for sequential continuity."
+            ),
+            inputs=[
+                io.String.Input(
+                    "direct_prompts", force_input=True,
+                    tooltip="Connect H3 Director — Direct Scene Prompts prompt_lines.",
+                ),
+            ],
+            outputs=[
+                io.String.Output(
+                    "plan_json",
+                    tooltip="Connect to Simple H3 Chain Plan plan_json_input.",
+                ),
+                io.Int.Output("scene_count"),
+                io.String.Output("preview"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, direct_prompts: str) -> io.NodeOutput:
+        metadata, _clean_blocks = _extract_direct_chain_metadata(direct_prompts)
+        prompts = _split_direct_prompt_block(direct_prompts)
+        if not prompts:
+            raise ValueError("Direct Prompts → Masked Chain JSON found no scenes.")
+        duration = float(metadata.get("scene_duration_seconds", 5.0))
+        if not math.isfinite(duration) or duration <= 0:
+            raise ValueError("scene_duration_seconds must be finite and positive.")
+        step_count = int(metadata.get("steps", 6))
+        if step_count < 1:
+            raise ValueError("steps must be at least 1.")
+        seed = int(metadata.get("base_seed", 0)) & 0xFFFFFFFFFFFFFFFF
+        director_mode = str(metadata.get("director_mode", "Continuous Story"))
+        shots = []
+        for index, prompt in enumerate(prompts, 1):
+            # Stable, well-spaced uint64 seeds without changing prompt content.
+            scene_seed = (
+                seed + ((index - 1) * 0x9E3779B97F4A7C15)
+            ) & 0xFFFFFFFFFFFFFFFF
+            shots.append({
+                "id": f"scene_{index:02d}",
+                "prompt": prompt,
+                "duration_seconds": duration,
+                "steps": step_count,
+                "seed": scene_seed,
+            })
+        plan = {
+            "format": "simple_h3_direct_prompts_v1",
+            "director_mode": str(director_mode),
+            "defaults": {
+                "duration_seconds": duration,
+                "steps": step_count,
+            },
+            "shots": shots,
+        }
+        plan_json = json.dumps(plan, ensure_ascii=False, indent=2)
+        preview = _format_direct_prompt_block(prompts)
+        return io.NodeOutput(
+            plan_json, len(shots), preview,
+            ui=ui.PreviewText(preview),
+        )
+
+
 class H3StoryDirectorLLMAPI(H3StoryDirector):
     """H3 Director variant driven by a wired YALLM-compatible LLMMODEL."""
 
@@ -5118,5 +5610,7 @@ MANDATORY FL2VA KEYFRAME STORYBOARD DIRECTION:
 
 __all__ = [
     "H3StoryDirector",
+    "H3DirectPromptDirector",
+    "SimpleH3PromptLinesToList",
 ]
 

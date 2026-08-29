@@ -18,6 +18,9 @@ from typing_extensions import override
 from .story_director import (
     H3LLMModelAPI,
     H3OllamaModel,
+    H3DirectPromptDirector,
+    SimpleH3PromptLinesToList,
+    H3DirectPromptsToChainJSON,
     H3StoryDirector,
     H3StoryDirectorLLMAPI,
 )
@@ -681,6 +684,9 @@ class LocalVisionPromptExtension(ComfyExtension):
             H3OllamaModel,
             H3StoryDirector,
             H3StoryDirectorLLMAPI,
+            H3DirectPromptDirector,
+            SimpleH3PromptLinesToList,
+            H3DirectPromptsToChainJSON,
             LocalWhisperTranscribe,
             PreviewVisionPrompt,
             H3EditDuration24FPS,
