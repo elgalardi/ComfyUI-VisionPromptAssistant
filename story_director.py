@@ -3804,27 +3804,45 @@ class H3StoryDirector(io.ComfyNode):
         if bool(hold_plan):
             held = _get_held_director_plan(hold_cache_key)
             if held is not None:
-                held_validation = f"{held['validation']} · HOLD"
-                held_preview = (
-                    f"{held['synopsis']}\n\n{held_validation}\n\n"
-                    f"--- HELD PLAN JSON ---\n{held['plan_json']}"
-                )
-                plan_output = (
-                    ExecutionBlocker(None) if draft_only else held["plan_json"]
-                )
-                return io.NodeOutput(
-                    plan_output,
-                    held["story_bible"],
-                    held["synopsis"],
-                    held_validation,
-                    "Held plan · LLM not called",
-                    "Credits unchanged",
-                    held["scene_prompt"],
-                    held["mode_prompt"],
-                    held["source_video_analysis"],
-                    held.get("mood_analysis", ""),
-                    ui=ui.PreviewText(held_preview),
-                )
+                if bool(getattr(cls, "PROMPT_LIST_MODE", False)):
+                    if held.get("cache_kind") == "direct_scene_prompts":
+                        held_validation = f"{held['validation']} · HOLD"
+                        return io.NodeOutput(
+                            held["prompt_lines"],
+                            held["first_prompt"],
+                            int(held["prompt_count"]),
+                            held_validation,
+                            "Held prompts · LLM not called",
+                            "Credits unchanged",
+                            held.get("mood_analysis", ""),
+                            ui=ui.PreviewText(held["preview"]),
+                        )
+                    print(
+                        "[H3 Direct Prompt Director] Ignoring an incompatible "
+                        "legacy Hold record for this node."
+                    )
+                else:
+                    held_validation = f"{held['validation']} · HOLD"
+                    held_preview = (
+                        f"{held['synopsis']}\n\n{held_validation}\n\n"
+                        f"--- HELD PLAN JSON ---\n{held['plan_json']}"
+                    )
+                    plan_output = (
+                        ExecutionBlocker(None) if draft_only else held["plan_json"]
+                    )
+                    return io.NodeOutput(
+                        plan_output,
+                        held["story_bible"],
+                        held["synopsis"],
+                        held_validation,
+                        "Held plan · LLM not called",
+                        "Credits unchanged",
+                        held["scene_prompt"],
+                        held["mode_prompt"],
+                        held["source_video_analysis"],
+                        held.get("mood_analysis", ""),
+                        ui=ui.PreviewText(held_preview),
+                    )
         if language in {"EspaÃ±ol", "EspaÃƒÂ±ol"}:
             language = "Español"
         language = str(language or "").strip() or "No dialogue"
@@ -4927,11 +4945,23 @@ DIRECT PROMPT LIST OUTPUT MODE:
                 f"SCENE {index:02d}\n{prompt}"
                 for index, prompt in enumerate(direct_prompts, 1)
             )
+            prompt_lines = _format_direct_chain_payload(
+                direct_prompts, scene_duration_seconds, steps, seed,
+                director_mode,
+            )
+            _set_held_director_plan(hold_cache_key, {
+                "cache_kind": "direct_scene_prompts",
+                "prompt_lines": prompt_lines,
+                "first_prompt": direct_prompts[0],
+                "prompt_count": len(direct_prompts),
+                "validation": validation,
+                "usage_stats": usage_stats,
+                "credits_remaining": credits,
+                "mood_analysis": mood_analysis,
+                "preview": preview,
+            })
             return io.NodeOutput(
-                _format_direct_chain_payload(
-                    direct_prompts, scene_duration_seconds, steps, seed,
-                    director_mode,
-                ),
+                prompt_lines,
                 direct_prompts[0], len(direct_prompts),
                 validation, usage_stats, credits, mood_analysis,
                 ui=ui.PreviewText(preview),
@@ -5299,7 +5329,7 @@ class H3DirectPromptDirector(H3StoryDirector):
         )
         schema.inputs = [
             item for item in schema.inputs
-            if item.id not in {"draft_only", "bypass_director", "hold_plan"}
+            if item.id not in {"draft_only", "bypass_director"}
         ]
         schema.outputs = [
             io.String.Output("prompt_lines", tooltip="Connect to Simple H3 Prompt Lines to List."),
@@ -5314,7 +5344,7 @@ class H3DirectPromptDirector(H3StoryDirector):
 
     @classmethod
     def execute(cls, **kwargs) -> io.NodeOutput:
-        kwargs.update(draft_only=False, bypass_director=False, hold_plan=False)
+        kwargs.update(draft_only=False, bypass_director=False)
         return H3StoryDirector.execute.__func__(cls, **kwargs)
 
 
