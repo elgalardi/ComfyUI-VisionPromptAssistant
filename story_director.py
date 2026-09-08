@@ -1215,10 +1215,26 @@ def _story_schema(
         shot["properties"]["storyboard_prompt"] = {
             "type": "string",
             "description": (
-                "A single static establishing frame for this scene. Describe exact "
-                "subjects, persistent wardrobe and props, environment, composition, "
-                "shot size, angle, lens, focus and lighting. No motion sequence, "
-                "audio, dialogue delivery, captions, labels or multiple moments."
+                "One decisive static first frame for this scene, representing a "
+                "different chronological action phase and dramatic purpose from every "
+                "adjacent panel. State the exact visible action state, expressions, "
+                "subjects, current wardrobe and props, environment, shot scale, camera "
+                "side, height, angle, lens character, foreground/midground/background "
+                "staging, subject arrangement, eyelines, focal priority and lighting. "
+                "Adjacent prompts may not describe the same pose/action with only a "
+                "small crop or angle change. Across adjacent panels, change at least four "
+                "of these: shot scale, camera axis, camera height, lens character, subject "
+                "arrangement, and foreground-depth pattern. Build deliberate coverage with "
+                "establishing geography, relationship coverage, action inserts/details, "
+                "reversals and a visually strongest payoff as appropriate; never default "
+                "repeatedly to centered eye-level medium two-shots. Treat clothing requested by the user "
+                "as a deliberate new restyle; never claim that new clothing came from a Picture reference "
+                "unless it is actually visible there. The selected genre must visibly control acting, body "
+                "language, interpersonal distance, touch, gaze, emotional intensity and camera relationship, "
+                "not merely color, lighting or texture. For an OnlyFans-style creator genre, direct confident "
+                "seductive creator energy, charged mutual attraction and passionate physical proximity appropriate "
+                "to the current story beat instead of generic cheerful posing. Describe one opening instant only. No motion sequence, audio, dialogue "
+                "delivery, captions, labels or multiple moments."
             ),
         }
         shot["required"].append("storyboard_prompt")
@@ -1387,7 +1403,10 @@ def _story_schema(
             "type": "string",
             "description": (
                 "Shared instructions used only while generating storyboard stills. "
-                "Assign the connected original <Picture N> references and persistent visual rules."
+                "Assign the connected original <Picture N> references and preserve "
+                "identity plus genuinely persistent requested visual rules. Reference "
+                "pose, framing, camera, expression and background are not persistent "
+                "and must never be locked unless the user explicitly requests them."
             ),
         }
         schema["required"].append("storyboard_prompt_prefix")
@@ -3105,9 +3124,8 @@ class H3OllamaModelConnection:
         self.context_length = int(context_length)
         self.timeout_seconds = int(timeout_seconds)
 
-    def h3_chat_completion(self, payload: dict) -> dict:
-        chat_url = _ollama_chat_url(self.server_url)
-        request_payload = {
+    def build_request_payload(self, payload: dict) -> dict:
+        return {
             "model": self.model,
             "messages": _ollama_messages(payload["messages"]),
             "stream": False,
@@ -3121,6 +3139,10 @@ class H3OllamaModelConnection:
                 "seed": int(payload.get("seed", 0)),
             },
         }
+
+    def h3_chat_completion(self, payload: dict) -> dict:
+        chat_url = _ollama_chat_url(self.server_url)
+        request_payload = self.build_request_payload(payload)
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -3986,7 +4008,8 @@ class H3StoryDirector(io.ComfyNode):
                 "source_video_analysis": "",
                 "mood_analysis": "",
             }
-            _set_held_director_plan(hold_cache_key, bypass_record)
+            # Bypass is commonly used for local wiring/validation checks. It must
+            # never replace a paid Director plan stored by Hold.
             return io.NodeOutput(
                 plan_json,
                 "Prompt Assistant bypassed.",
@@ -5255,6 +5278,26 @@ DIRECT PROMPT LIST OUTPUT MODE:
         if bool(generic_mode):
             validation += " · generic reusable references"
         compiled_plan = json.loads(plan_json)
+        compiled_plan["direction_contract"] = {
+            "user_intent": str(story_idea or "").strip(),
+            "synopsis": str(synopsis or "").strip(),
+            "story_bible": str(story_bible or "").strip(),
+            "director_mode": str(director_mode or "").strip(),
+            "genre": str(genre or "Auto").strip(),
+            "secondary_genre": str(secondary_genre or "None").strip(),
+            "language": str(language or "Auto").strip(),
+            "motion_style": str(motion_style or "Auto").strip(),
+            "secondary_motion_style": str(
+                secondary_motion_style or "Auto"
+            ).strip(),
+            "visual_look": str(visual_look or "Auto").strip(),
+            "secondary_visual_look": str(
+                secondary_visual_look or "None"
+            ).strip(),
+            "audio_content": str(audio_content or "Auto").strip(),
+            "additional_direction": str(additional_direction or "").strip(),
+        }
+        plan_json = json.dumps(compiled_plan, ensure_ascii=False, indent=2)
         scene_prompt = "\n\n".join(
             part for part in (
                 str(compiled_plan["prompt_prefix"]).strip(),
@@ -5346,6 +5389,2440 @@ class H3DirectPromptDirector(H3StoryDirector):
     def execute(cls, **kwargs) -> io.NodeOutput:
         kwargs.update(draft_only=False, bypass_director=False)
         return H3StoryDirector.execute.__func__(cls, **kwargs)
+
+
+class LTX25EditAnythingDirector(io.ComfyNode):
+    """Multimodal OpenRouter prompt writer for the Edit Anything IC-LoRA."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="LTX25EditAnythingDirector",
+            display_name="LTX 2.5 Director — Edit Anything",
+            category="text/ltx25",
+            search_aliases=[
+                "edit anything director", "ltx edit prompt", "openrouter video edit",
+            ],
+            description=(
+                "Inspects three representative input-video frames and an optional target "
+                "reference, then writes one training-aligned Edit Anything prompt through "
+                "OpenRouter. Hold reuses the last successful prompt without spending credits."
+            ),
+            inputs=[
+                io.String.Input(
+                    "api_key", default="", placeholder="sk-or-v1-...",
+                    extra_dict={"password": True},
+                ),
+                io.String.Input("model", default=DEFAULT_MODEL),
+                io.Image.Input(
+                    "video_frames",
+                    tooltip="Batch containing the first, middle and last sampled video frames.",
+                ),
+                io.String.Input(
+                    "edit_request", multiline=True, dynamic_prompts=False,
+                    default="Replace the background with the environment shown in the reference image.",
+                ),
+                io.Image.Input(
+                    "reference_image", optional=True,
+                    tooltip=(
+                        "Optional visual target. The Director describes it textually and the "
+                        "workflow also supplies it to LTX as identity/reference conditioning."
+                    ),
+                ),
+                io.Int.Input("max_tokens", default=768, min=256, max=2048),
+                io.Float.Input("temperature", default=0.2, min=0.0, max=1.0, step=0.05),
+                io.Boolean.Input("reasoning", default=False),
+                io.Int.Input(
+                    "seed", default=0, min=0, max=0xFFFFFFFF,
+                    control_after_generate=True,
+                ),
+                io.Int.Input(
+                    "image_max_dimension", default=1024, min=512, max=2048,
+                    step=64, advanced=True,
+                ),
+                io.Int.Input(
+                    "timeout_seconds", default=300, min=30, max=900, advanced=True,
+                ),
+                io.Boolean.Input(
+                    "hold_prompt", display_name="Hold Edit Prompt", default=False,
+                    tooltip="Reuse the last successful prompt. No OpenRouter call is made.",
+                ),
+            ],
+            outputs=[
+                io.String.Output("edit_prompt"),
+                io.String.Output("validation"),
+                io.String.Output("usage_stats"),
+                io.String.Output("credits_remaining"),
+            ],
+            hidden=[io.Hidden.unique_id],
+        )
+
+    @classmethod
+    def execute(
+        cls, api_key: str, model: str, video_frames, edit_request: str,
+        max_tokens: int, temperature: float, reasoning: bool, seed: int,
+        image_max_dimension: int, timeout_seconds: int,
+        hold_prompt: bool = False, reference_image=None, unique_id=None,
+    ) -> io.NodeOutput:
+        request_text = str(edit_request or "").strip()
+        if not request_text:
+            raise ValueError("Edit Anything Director requires an edit_request.")
+        if video_frames is None or not hasattr(video_frames, "shape"):
+            raise ValueError("Edit Anything Director requires sampled input-video frames.")
+        frame_count = int(video_frames.shape[0])
+        if frame_count < 1:
+            raise ValueError("The sampled input-video frame batch is empty.")
+
+        cache_key = f"{cls.__name__}:{str(unique_id or 'default')}"
+        if bool(hold_prompt):
+            held = _get_held_director_plan(cache_key)
+            if held and held.get("cache_kind") == "ltx25_edit_anything_prompt":
+                return io.NodeOutput(
+                    held["edit_prompt"], held["validation"] + " · HOLD",
+                    "Held prompt · OpenRouter not called", "Credits unchanged",
+                    ui=ui.PreviewText(held["edit_prompt"]),
+                )
+
+        key = str(api_key or os.environ.get("OPENROUTER_API_KEY", "")).strip()
+        if not key:
+            raise ValueError(
+                "An OpenRouter API key is required in the node or the "
+                "OPENROUTER_API_KEY environment variable."
+            )
+
+        has_reference = (
+            reference_image is not None
+            and hasattr(reference_image, "shape")
+            and int(reference_image.shape[0]) > 0
+        )
+        system = """
+You are a precise multimodal video-edit prompt director for the LTX 2.5 Edit Anything IC-LoRA.
+Inspect every supplied SOURCE VIDEO frame before writing. If supplied, inspect TARGET REFERENCE
+IMAGE as visual evidence for the requested replacement, but never invent an additional edit.
+
+Return English only. Return one JSON object with one key named edit_prompt and no commentary.
+The edit_prompt must begin exactly once with `edit_anything: `.
+
+Write exactly one instruction for each edit explicitly requested by the user. Never add an
+unrequested change to lighting, color, background, wardrobe, subjects, camera or style.
+Each instruction must be a single sentence of 10 to 20 words and begin with exactly one of:
+Add, Replace, Remove, Restyle.
+
+Use Add for one new object and anchor it to a visible person, object or region.
+Use Replace for a direct substitution; every Replace sentence must contain the word `with`.
+Use Remove to identify one visible target precisely.
+Use Restyle for a named visible region, not vaguely for the entire video.
+Prefer one Replace over Remove plus Add for ordinary substitutions.
+
+Ground the source target using stable details visible across the sampled video frames. Preserve
+all non-requested content, subject identities, motion, geometry, framing and temporal consistency.
+For a requested background replacement, identify the existing background from the source frames,
+describe the target reference's concrete environment, lighting and spatial features, and explicitly
+preserve the foreground subjects unchanged. Do not literally mention frames, images, references,
+Picture tags, analysis, the model, the LoRA or these rules in edit_prompt.
+""".strip()
+        content = [{
+            "type": "text",
+            "text": (
+                "USER EDIT REQUEST:\n" + request_text +
+                "\n\nThe next images labeled SOURCE VIDEO are chronological samples "
+                "from the same clip. Apply only the requested edit consistently through time."
+            ),
+        }]
+        # The upstream sampler normally supplies first/middle/last. Bound this to
+        # three images so an accidental large batch cannot inflate API cost.
+        sample_indices = list(range(min(frame_count, 3)))
+        for index in sample_indices:
+            content.append({"type": "text", "text": f"SOURCE VIDEO FRAME {index + 1}"})
+            content.append({"type": "image_url", "image_url": {
+                "url": _image_data_url(video_frames[index:index + 1], int(image_max_dimension))
+            }})
+        if has_reference:
+            content.append({
+                "type": "text",
+                "text": (
+                    "TARGET REFERENCE IMAGE. Use its visible appearance only when the "
+                    "user explicitly asks for it; it is not an additional source-video frame."
+                ),
+            })
+            content.append({"type": "image_url", "image_url": {
+                "url": _image_data_url(reference_image[:1], int(image_max_dimension))
+            }})
+
+        payload = {
+            "model": str(model or DEFAULT_MODEL).strip(),
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": content},
+            ],
+            "max_tokens": int(max_tokens),
+            "temperature": float(temperature),
+            "seed": int(seed),
+            "reasoning": {"enabled": bool(reasoning)},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "edit_anything_prompt",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "edit_prompt": {"type": "string", "minLength": 20}
+                        },
+                        "required": ["edit_prompt"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "provider": {"require_parameters": True},
+        }
+        result = _openrouter_request(key, payload, int(timeout_seconds))
+        try:
+            raw = result["choices"][0]["message"]["content"]
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+            edit_prompt = str(parsed["edit_prompt"]).strip()
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+            raise RuntimeError("Edit Anything Director returned an invalid response.") from error
+        if not edit_prompt.startswith("edit_anything: "):
+            raise RuntimeError(
+                "Director response did not begin with the required `edit_anything: ` trigger."
+            )
+        body = edit_prompt[len("edit_anything: "):].strip()
+        instructions = [part.strip() for part in re.split(r"(?<=[.!?])\s+", body) if part.strip()]
+        warnings = []
+        for index, instruction in enumerate(instructions, 1):
+            if not re.match(r"^(Add|Replace|Remove|Restyle)\b", instruction):
+                warnings.append(f"instruction {index} has an invalid opening verb")
+            words = re.findall(r"\b[\w'-]+\b", instruction)
+            if not 10 <= len(words) <= 20:
+                warnings.append(f"instruction {index} has {len(words)} words")
+            if instruction.startswith("Replace") and not re.search(r"\bwith\b", instruction):
+                warnings.append(f"instruction {index} Replace lacks `with`")
+        validation = (
+            f"Edit Anything prompt ready · {len(sample_indices)} video samples · "
+            f"target reference {'included' if has_reference else 'not supplied'} · "
+            + ("format valid" if not warnings else "warnings: " + "; ".join(warnings))
+        )
+        usage = result.get("usage") or {}
+        usage_stats = (
+            f"input: {usage.get('prompt_tokens', '?')} · "
+            f"output: {usage.get('completion_tokens', '?')} · "
+            f"total: {usage.get('total_tokens', '?')}"
+        )
+        credits = _credits(key, min(30, int(timeout_seconds)))
+        _set_held_director_plan(cache_key, {
+            "cache_kind": "ltx25_edit_anything_prompt",
+            "edit_prompt": edit_prompt,
+            "validation": validation,
+        })
+        return io.NodeOutput(
+            edit_prompt, validation, usage_stats, credits,
+            ui=ui.PreviewText(edit_prompt),
+        )
+
+
+class H3DirectVideoEditDirector(io.ComfyNode):
+    """Reusable multimodal OpenRouter prompt writer for direct H3 edits."""
+
+    DEFAULT_SYSTEM_PROMPT = """
+You are a precise multimodal prompt director for one-pass native MiniMax H3 video editing.
+Inspect every connected VIDEO SOURCE and PICTURE REFERENCE before writing.
+Return English only as one JSON object with one key named edit_prompt and no commentary.
+
+The prompt must begin exactly with `[video editing]` when no target reference is supplied, or
+`[video editing + reference generation]` when a target reference is supplied.
+
+Use <Video 1> as the locked source video and temporal blueprint unless the user explicitly
+assigns a different role. <Video 2>, when connected, is a secondary visual or temporal source:
+use it only for the role explicitly assigned by the user. Connected <Picture 1> through
+<Picture 4> are independent visual sources. Use each one only for the exact person, object,
+place, material, wardrobe or style assigned to it by the user request.
+
+<Mood Image 1> and <Mood Video 1>, when connected, are non-literal art-direction sources.
+Use them to infer only atmosphere, palette, lighting character, texture language, environmental
+density and visual energy requested by the user. Do not copy their people, identities, exact
+objects, actions, geography or composition. When asked to invent a new background from mood,
+design a genuinely new coherent environment that expresses those mood traits while matching
+<Video 1>'s perspective, camera motion, occlusions and physical lighting.
+
+First resolve the user's explicit source-to-target mapping. Never blend connected references
+together merely because they are available. Never import an unassigned subject, background,
+wardrobe, action, composition or lighting property from any reference. When the request is
+ambiguous, choose the narrowest edit that preserves the maximum amount of <Video 1>.
+Write one compact self-contained edit prompt, normally three or four short paragraphs:
+1. Declare the role of every connected source that is actually used.
+2. State only the requested replacement or modification.
+3. State the specific reference traits that must transfer consistently.
+4. Preserve every non-requested property of <Video 1> unchanged.
+
+Never infer or add production genre, motion style, visual look, new camera direction, shot
+description, opening state, closing state, story bible, subject definitions, extra action,
+dialogue, sound design or negative-prompt list. Do not narrate what already happens in the source.
+Do not repeat the same instruction. Do not invent edits.
+
+For identity replacement, maintain exactly one physical body for the edited person and transfer
+only the requested identity/appearance traits through every source pose, angle and occlusion.
+For background replacement, preserve all foreground content and reconstruct only the referenced
+environment with coherent perspective, scale, parallax, depth, occlusion, lighting, reflections
+and contact shadows. The original audio is handled externally and need not be described.
+""".strip()
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3DirectVideoEditDirector",
+            display_name="H3 Director — Direct Video Edit (OpenRouter)",
+            category="text/minimax_h3",
+            search_aliases=[
+                "h3 edit anything director", "direct h3 video edit",
+                "openrouter h3 edit prompt",
+            ],
+            description=(
+                "Multisource Edit-Anything-style Director for native H3 edits. "
+                "It inspects samples from as many as two videos and four target "
+                "pictures, resolves their explicit roles, and returns one direct "
+                "prompt without a story plan."
+            ),
+            inputs=[
+                io.String.Input(
+                    "api_key", default="", placeholder="sk-or-v1-...",
+                    extra_dict={"password": True},
+                ),
+                io.String.Input("model", default=DEFAULT_MODEL),
+                io.Image.Input(
+                    "source_video",
+                    tooltip="Complete IMAGE frame batch from VHS Load Video.",
+                ),
+                io.String.Input(
+                    "edit_request", multiline=True, dynamic_prompts=False,
+                    default=(
+                        "Replace only the original background of <Video 1> with the "
+                        "environment from <Picture 1>, preserving everything else exactly."
+                    ),
+                ),
+                io.Image.Input(
+                    "reference_image", display_name="reference_image_1", optional=True,
+                    tooltip="Optional <Picture 1>. Existing workflows remain compatible.",
+                ),
+                io.Image.Input("reference_image_2", optional=True),
+                io.Image.Input("reference_image_3", optional=True),
+                io.Image.Input("reference_image_4", optional=True),
+                io.Image.Input(
+                    "source_video_2", optional=True,
+                    tooltip="Optional complete IMAGE frame batch used as <Video 2>.",
+                ),
+                io.Image.Input(
+                    "mood_image", optional=True,
+                    tooltip=(
+                        "Optional <Mood Image 1>: non-literal atmosphere, palette, "
+                        "lighting, texture and visual-energy reference."
+                    ),
+                ),
+                io.Image.Input(
+                    "mood_video", optional=True,
+                    tooltip=(
+                        "Optional <Mood Video 1> frame batch. It supplies non-literal "
+                        "moving art direction, not subjects or exact scenery."
+                    ),
+                ),
+                io.Combo.Input(
+                    "video_samples", options=["3", "5", "10"], default="3",
+                    tooltip=(
+                        "Number of uniformly distributed frames inspected from each "
+                        "connected video. More samples improve cut awareness but cost more."
+                    ),
+                ),
+                io.String.Input(
+                    "system_prompt", multiline=True, dynamic_prompts=False,
+                    default=cls.DEFAULT_SYSTEM_PROMPT,
+                    tooltip="Editable H3 direct-edit contract sent to OpenRouter.",
+                ),
+                io.Int.Input("max_tokens", default=1024, min=256, max=3072),
+                io.Float.Input("temperature", default=0.15, min=0.0, max=1.0, step=0.05),
+                io.Boolean.Input("reasoning", default=False),
+                io.Int.Input(
+                    "seed", default=0, min=0, max=0xFFFFFFFF,
+                    control_after_generate=True,
+                ),
+                io.Int.Input(
+                    "image_max_dimension", default=1024, min=512, max=2048,
+                    step=64, advanced=True,
+                ),
+                io.Int.Input(
+                    "timeout_seconds", default=300, min=30, max=900, advanced=True,
+                ),
+                io.Boolean.Input(
+                    "hold_prompt", display_name="Hold Edit Prompt", default=False,
+                    tooltip="Reuse the last successful prompt without calling OpenRouter.",
+                ),
+            ],
+            outputs=[
+                io.String.Output("edit_prompt"),
+                io.String.Output("validation"),
+                io.String.Output("usage_stats"),
+                io.String.Output("credits_remaining"),
+            ],
+            hidden=[io.Hidden.unique_id],
+        )
+
+    @classmethod
+    def execute(
+        cls, api_key: str, model: str, source_video, edit_request: str,
+        video_samples: str, system_prompt: str, max_tokens: int, temperature: float,
+        reasoning: bool, seed: int, image_max_dimension: int,
+        timeout_seconds: int, hold_prompt: bool = False,
+        reference_image=None, reference_image_2=None, reference_image_3=None,
+        reference_image_4=None, source_video_2=None, mood_image=None,
+        mood_video=None, unique_id=None,
+    ) -> io.NodeOutput:
+        request_text = str(edit_request or "").strip()
+        if not request_text:
+            raise ValueError("H3 Direct Video Edit Director requires an edit_request.")
+        if source_video is None or not hasattr(source_video, "shape"):
+            raise ValueError("H3 Direct Video Edit Director requires source_video frames.")
+        frame_count = int(source_video.shape[0])
+        if frame_count < 1:
+            raise ValueError("The source_video frame batch is empty.")
+        reference_candidates = (
+            reference_image, reference_image_2, reference_image_3, reference_image_4,
+        )
+        references = [
+            (index, image)
+            for index, image in enumerate(reference_candidates, 1)
+            if image is not None and hasattr(image, "shape") and int(image.shape[0]) > 0
+        ]
+        has_reference = bool(references)
+        has_video_2 = (
+            source_video_2 is not None
+            and hasattr(source_video_2, "shape")
+            and int(source_video_2.shape[0]) > 0
+        )
+        has_mood_image = (
+            mood_image is not None
+            and hasattr(mood_image, "shape")
+            and int(mood_image.shape[0]) > 0
+        )
+        has_mood_video = (
+            mood_video is not None
+            and hasattr(mood_video, "shape")
+            and int(mood_video.shape[0]) > 0
+        )
+        cache_key = f"{cls.__name__}:{str(unique_id or 'default')}"
+        if bool(hold_prompt):
+            held = _get_held_director_plan(cache_key)
+            if held and held.get("cache_kind") == "h3_direct_video_edit_prompt":
+                return io.NodeOutput(
+                    held["edit_prompt"], held["validation"] + " · HOLD",
+                    "Held prompt · OpenRouter not called", "Credits unchanged",
+                    ui=ui.PreviewText(held["edit_prompt"]),
+                )
+
+        key = str(api_key or os.environ.get("OPENROUTER_API_KEY", "")).strip()
+        if not key:
+            raise ValueError(
+                "An OpenRouter API key is required in the node or the "
+                "OPENROUTER_API_KEY environment variable."
+            )
+        system = str(system_prompt or cls.DEFAULT_SYSTEM_PROMPT).strip()
+        requested_samples = int(str(video_samples or "3"))
+
+        def uniform_indices(count: int) -> list[int]:
+            if count <= 1:
+                return [0]
+            sample_count = min(requested_samples, count)
+            return sorted(set(
+                round(index * (count - 1) / (sample_count - 1))
+                for index in range(sample_count)
+            ))
+
+        indices = uniform_indices(frame_count)
+        content = [{
+            "type": "text",
+            "text": (
+                "USER EDIT REQUEST:\n" + request_text +
+                "\n\nThe following SOURCE VIDEO frames are chronological samples "
+                "from the same <Video 1>."
+            ),
+        }]
+        for order, index in enumerate(indices, 1):
+            content.append({"type": "text", "text": f"SOURCE VIDEO SAMPLE {order}"})
+            content.append({"type": "image_url", "image_url": {
+                "url": _image_data_url(
+                    source_video[index:index + 1], int(image_max_dimension)
+                )
+            }})
+        video_sample_counts = [len(indices)]
+        if has_video_2:
+            video_2_count = int(source_video_2.shape[0])
+            indices_2 = uniform_indices(video_2_count)
+            content.append({
+                "type": "text",
+                "text": (
+                    "SECONDARY VIDEO SOURCE <Video 2>. Use it only when and exactly "
+                    "as assigned by the user edit request."
+                ),
+            })
+            for order, index in enumerate(indices_2, 1):
+                content.append({"type": "text", "text": f"<Video 2> SAMPLE {order}"})
+                content.append({"type": "image_url", "image_url": {
+                    "url": _image_data_url(
+                        source_video_2[index:index + 1], int(image_max_dimension)
+                    )
+                }})
+            video_sample_counts.append(len(indices_2))
+        if has_mood_video:
+            mood_video_count = int(mood_video.shape[0])
+            mood_indices = uniform_indices(mood_video_count)
+            content.append({
+                "type": "text",
+                "text": (
+                    "NON-LITERAL ART-DIRECTION SOURCE <Mood Video 1>. Extract only "
+                    "mood, palette, lighting character, texture language, environmental "
+                    "density and visual energy. Never copy its people, identities, exact "
+                    "objects, actions, geography or composition."
+                ),
+            })
+            for order, index in enumerate(mood_indices, 1):
+                content.append({
+                    "type": "text", "text": f"<Mood Video 1> SAMPLE {order}"
+                })
+                content.append({"type": "image_url", "image_url": {
+                    "url": _image_data_url(
+                        mood_video[index:index + 1], int(image_max_dimension)
+                    )
+                }})
+            video_sample_counts.append(len(mood_indices))
+        for picture_index, image in references:
+            content.append({
+                "type": "text",
+                "text": (
+                    f"TARGET REFERENCE <Picture {picture_index}>. Use it only for the exact visual "
+                    "assignment made in the user request."
+                ),
+            })
+            content.append({"type": "image_url", "image_url": {
+                "url": _image_data_url(image[:1], int(image_max_dimension))
+            }})
+        if has_mood_image:
+            content.append({
+                "type": "text",
+                "text": (
+                    "NON-LITERAL ART-DIRECTION SOURCE <Mood Image 1>. Extract only "
+                    "atmosphere, palette, lighting character, texture language, "
+                    "environmental density and visual energy. Invent new content rather "
+                    "than copying its people, exact objects, geography or composition."
+                ),
+            })
+            content.append({"type": "image_url", "image_url": {
+                "url": _image_data_url(mood_image[:1], int(image_max_dimension))
+            }})
+        payload = {
+            "model": str(model or DEFAULT_MODEL).strip(),
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": content},
+            ],
+            "max_tokens": int(max_tokens),
+            "temperature": float(temperature),
+            "seed": int(seed),
+            "reasoning": {"enabled": bool(reasoning)},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "h3_direct_video_edit_prompt",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "edit_prompt": {"type": "string", "minLength": 30}
+                        },
+                        "required": ["edit_prompt"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "provider": {"require_parameters": True},
+        }
+        result = _openrouter_request(key, payload, int(timeout_seconds))
+        try:
+            raw = result["choices"][0]["message"]["content"]
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+            edit_prompt = str(parsed["edit_prompt"]).strip()
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+            raise RuntimeError("H3 Direct Video Edit Director returned an invalid response.") from error
+        required_header = (
+            "[video editing + reference generation]"
+            if has_reference else "[video editing]"
+        )
+        if not edit_prompt.startswith(required_header):
+            edit_prompt = re.sub(
+                r"^\s*\[(?:video\s+editing(?:\s*\+\s*reference\s+generation)?|reference\s+generation|image\s+editing(?:\s*\+\s*reference\s+generation)?)\]\s*",
+                "",
+                edit_prompt,
+                count=1,
+                flags=re.IGNORECASE,
+            ).strip()
+            edit_prompt = f"{required_header}\n\n{edit_prompt}"
+        if "<Video 1>" not in edit_prompt:
+            raise RuntimeError("Director response lost the required <Video 1> tag.")
+        request_lower = request_text.lower()
+        if has_video_2 and "<video 2>" in request_lower and "<Video 2>" not in edit_prompt:
+            raise RuntimeError("Director response lost explicitly requested <Video 2>.")
+        for picture_index, _image in references:
+            tag = f"<Picture {picture_index}>"
+            if tag.lower() in request_lower and tag not in edit_prompt:
+                raise RuntimeError(f"Director response lost explicitly requested {tag}.")
+        if has_mood_image and "mood" in request_lower and "<Mood Image 1>" not in edit_prompt:
+            raise RuntimeError("Director response lost explicitly requested <Mood Image 1>.")
+        if has_mood_video and "mood" in request_lower and "<Mood Video 1>" not in edit_prompt:
+            raise RuntimeError("Director response lost explicitly requested <Mood Video 1>.")
+        forbidden = []
+        for label, pattern in (
+            ("production-style inference", r"\bProduction style\s*:"),
+            ("motion inference", r"\bMotion\s*:\s*infer"),
+            ("visual-look inference", r"\bVisual look\s*:\s*infer"),
+            ("story bible", r"\bstory bible\b"),
+            ("subject-definition scaffold", r"\bsubject_definitions\b"),
+        ):
+            if re.search(pattern, edit_prompt, flags=re.IGNORECASE):
+                forbidden.append(label)
+        validation = (
+            f"Direct H3 edit prompt ready · {sum(video_sample_counts)} video samples "
+            f"from {len(video_sample_counts)} source(s) · {len(references)} picture reference(s) · "
+            f"mood image {'yes' if has_mood_image else 'no'} · "
+            f"mood video {'yes' if has_mood_video else 'no'} · "
+            + ("compact contract clean" if not forbidden else "warnings: " + ", ".join(forbidden))
+        )
+        usage = result.get("usage") or {}
+        usage_stats = (
+            f"input: {usage.get('prompt_tokens', '?')} · "
+            f"output: {usage.get('completion_tokens', '?')} · "
+            f"total: {usage.get('total_tokens', '?')}"
+        )
+        credits = _credits(key, min(30, int(timeout_seconds)))
+        _set_held_director_plan(cache_key, {
+            "cache_kind": "h3_direct_video_edit_prompt",
+            "edit_prompt": edit_prompt,
+            "validation": validation,
+        })
+        return io.NodeOutput(
+            edit_prompt, validation, usage_stats, credits,
+            ui=ui.PreviewText(edit_prompt),
+        )
+
+
+class LTX25FirstFrameDirector(io.ComfyNode):
+    """Literal, compact first-frame description for LTX 2.5 image-to-video."""
+
+    SYSTEM_PROMPT = """
+You are a literal visual prompt writer for LTX 2.5 image-to-video. Inspect the supplied FIRST FRAME
+and return English only as one JSON object with exactly one key named `prompt`.
+
+Write one compact paragraph of 60 to 130 words describing only what is visibly established in the
+image. Describe the main visual subject, exact subject count when relevant, environment, foreground
+and background depth planes, composition, framing, viewpoint, lens/depth-of-field character,
+materials, lighting direction, color palette and atmosphere. Preserve the image's spatial layout.
+
+Do not write an edit instruction. Do not mention an input image, first frame, reference, prompt,
+model or analysis. Do not invent unseen people, objects, wardrobe, actions, dialogue, plot, camera
+cuts or a new location. Never turn ambiguous shapes into people. If no person is visibly present,
+describe the shot positively as an unoccupied environmental or architectural shot and make the
+environment itself the only visual subject. Add only restrained, physically plausible ambient
+motion already supported by visible elements, such as subtle foliage, haze, reflections or light;
+otherwise keep the composition and camera stable. Do not append a negative prompt or headers.
+""".strip()
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="LTX25FirstFrameDirector",
+            display_name="LTX 2.5 Director — Compact First Frame",
+            category="text/ltx25",
+            search_aliases=["ltx first frame prompt", "ltx image description"],
+            description=(
+                "Inspects one first frame and writes a literal compact LTX 2.5 I2V prompt. "
+                "It does not perform edits or invent additional shots."
+            ),
+            inputs=[
+                io.Image.Input("first_frame"),
+                io.Custom("LLMMODEL").Input("llm"),
+                io.Int.Input("max_tokens", default=420, min=192, max=1024),
+                io.Float.Input("temperature", default=0.1, min=0.0, max=0.6, step=0.05),
+                io.Int.Input("seed", default=0, min=0, max=0xFFFFFFFF,
+                             control_after_generate=True),
+                io.Int.Input("image_max_dimension", default=1024, min=512, max=2048,
+                             step=64, advanced=True),
+            ],
+            outputs=[
+                io.String.Output("prompt"),
+                io.String.Output("validation"),
+                io.String.Output("usage_stats"),
+                io.String.Output("raw_response"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, first_frame, llm, max_tokens=420, temperature=0.1,
+                seed=0, image_max_dimension=1024):
+        if first_frame is None or not hasattr(first_frame, "shape") or int(first_frame.shape[0]) < 1:
+            raise ValueError("LTX 2.5 First Frame Director requires one image.")
+        if llm is None:
+            raise ValueError("Connect an OpenRouter, Ollama or compatible LLMMODEL provider.")
+
+        payload = {
+            "model": str(getattr(llm, "model", "") or ""),
+            "messages": [
+                {"role": "system", "content": cls.SYSTEM_PROMPT},
+                {"role": "user", "content": [
+                    {"type": "text", "text": "FIRST FRAME — describe its visible shot literally."},
+                    {"type": "image_url", "image_url": {
+                        "url": _image_data_url(first_frame[:1], int(image_max_dimension))
+                    }},
+                ]},
+            ],
+            "max_tokens": int(max_tokens),
+            "temperature": float(temperature),
+            "seed": int(seed),
+            "reasoning": {"enabled": False},
+            "response_format": {"type": "json_schema", "json_schema": {
+                "name": "ltx25_first_frame_prompt",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {"prompt": {"type": "string", "minLength": 40}},
+                    "required": ["prompt"],
+                    "additionalProperties": False,
+                },
+            }},
+            "provider": {"require_parameters": True},
+        }
+        result = _external_llm_request(llm, payload)
+        try:
+            raw = result["choices"][0]["message"]["content"]
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+            prompt = str(parsed["prompt"]).strip()
+            if len(prompt) < 40:
+                raise ValueError("description too short")
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise RuntimeError("LTX 2.5 First Frame Director returned an invalid response.") from error
+
+        usage = result.get("usage", {}) if isinstance(result, dict) else {}
+        usage_stats = (
+            f"input: {usage.get('prompt_tokens', '?')} · "
+            f"output: {usage.get('completion_tokens', '?')}"
+        )
+        raw_response = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
+        validation = "OK · literal first-frame description · LTX 2.5 I2V"
+        return io.NodeOutput(prompt, validation, usage_stats, raw_response,
+                             ui=ui.PreviewText(prompt))
+
+
+class H3CompactDirectionControls(io.ComfyNode):
+    """Optional, local-only direction hints for the compact director."""
+
+    @classmethod
+    def define_schema(cls):
+        def choices(values):
+            return ["none", *[value for value in values
+                             if str(value).lower() != "none"]]
+
+        return io.Schema(
+            node_id="H3CompactDirectionControls",
+            display_name="H3 Compact Director — Direction Controls",
+            category="text/minimax_h3",
+            inputs=[
+                io.Combo.Input("genre_1", options=choices(GENRES), default="none"),
+                io.Combo.Input("genre_2", options=choices(GENRES), default="none"),
+                io.Combo.Input("motion_style_1", options=choices(MOTION_STYLES), default="none"),
+                io.Combo.Input("motion_style_2", options=choices(MOTION_STYLES), default="none"),
+                io.Combo.Input("look_1", options=choices(VISUAL_LOOKS), default="none"),
+                io.Combo.Input("look_2", options=choices(VISUAL_LOOKS), default="none"),
+                io.Combo.Input(
+                    "dialogue", options=choices(DIALOGUE_OPTIONS), default="none",
+                    tooltip="none leaves dialogue unchanged; No dialogue explicitly requests silence from speakers.",
+                ),
+            ],
+            outputs=[io.String.Output("direction_context")],
+        )
+
+    @classmethod
+    def execute(cls, genre_1="none", genre_2="none", motion_style_1="none",
+                motion_style_2="none", look_1="none", look_2="none",
+                dialogue="none"):
+        lines = []
+        for label, values in (
+            ("Genre", (genre_1, genre_2)),
+            ("Motion style", (motion_style_1, motion_style_2)),
+            ("Visual look", (look_1, look_2)),
+            ("Dialogue", (dialogue,)),
+        ):
+            active = list(dict.fromkeys(
+                str(value).strip() for value in values
+                if str(value or "").strip().lower() not in ("", "none")
+            ))
+            if active:
+                lines.append(label + ": " + " + ".join(active))
+        return io.NodeOutput("\n".join(lines))
+
+
+class H3CompactMultimodalEditDirector(io.ComfyNode):
+    """Compact, source-optional multimodal director for precise H3 edits."""
+
+    DEFAULT_SYSTEM_PROMPT = """
+You are a precise multimodal edit director for MiniMax H3. Inspect the actual pixels of every
+connected source before writing. Return English only as one JSON object with exactly four keys:
+`edit_type`, `source_roles`, `visual_evidence`, and `edit_prompt`. `edit_type` classifies the
+requested operation. `source_roles` briefly binds each used tag to one role. `visual_evidence`
+lists only concrete visible traits needed for the edit. `edit_prompt` integrates that evidence
+into the final compact instruction. Do not include a bracketed mode header; the node adds it.
+
+Resolve the user's source-to-target mapping first. Use only connected sources and only for their
+assigned roles. <Picture 1> through <Picture 4> are literal visual references. <Video 1> and
+<Video 2> may be source plates or temporal references. <Mood Image 1> and <Mood Video 1> are
+flexible direction references. Never blend sources merely because they are connected and never
+transfer an unrequested person, object, setting, wardrobe, action or style.
+
+Write one compact, self-contained edit instruction. Name every source actually used, state the
+exact requested change, describe the concrete visible traits that must transfer, and preserve all
+unrequested content. Prefer specific visual language over generic phrases such as `same person`,
+`complete environment`, `matching outfit`, or `use the reference`. If the request conflicts with
+visible source evidence, obey the explicit request while preserving everything it does not change.
+
+Apply the relevant rules:
+- Background or environment: preserve foreground subjects and performance; match perspective,
+  scale, parallax, depth, occlusion, reflections, contact shadows, practical-light direction,
+  color temperature and depth of field.
+- Identity or person: transfer observed face, hair and distinctive assigned traits onto exactly
+  one existing body; preserve pose, anatomy, action, timing, gaze, expression and occlusions unless
+  the user requests otherwise.
+- Wardrobe: state garment type, cut, fit, material, color, pattern and accessories; preserve the
+  wearer, body mechanics and temporal consistency.
+- Object replacement: preserve placement, grip/contact, scale, perspective, material response,
+  shadows, reflections and occlusion order.
+- Pose, action or motion: preserve identity and scene while matching the assigned body configuration,
+  direction, weight, rhythm and camera-relative movement without duplicating limbs or subjects.
+- Style, mood or relighting: transfer only the requested palette, contrast, texture, lighting,
+  lens or motion qualities; do not import unrelated content.
+
+For video, treat the assigned source plate as the temporal blueprint and preserve chronology,
+camera path, cuts, timing, speed, audio-visible synchronization and continuity unless explicitly
+changed. For image-only editing, preserve composition, viewpoint and geometry unless explicitly
+changed. Do not invent extra shots, actions, story, dialogue, negative prompts or production notes.
+""".strip()
+
+    DEEP_EDIT_RULES = """
+
+DEEP EDIT MODE — H3 CONTEXT-IR STYLE
+Perform a private, evidence-led edit analysis before writing. The JSON fields are the audit trail;
+the final edit_prompt must still be economical, executable prose rather than an explanation.
+
+REQUEST PRECEDENCE IS ABSOLUTE:
+- Treat every explicit requested modification as part of one cumulative edit set, including later
+  clauses, corrections, additions, slang and misspellings. A phrase such as `replace only the
+  background` limits that particular background operation; it does not cancel a later explicit
+  request to also change the character, body, wardrobe, state, action, camera or look.
+- Preservation applies only after subtracting the cumulative edit set. Preserve every attribute
+  the user did not request to change, but never preserve, restate as locked, or protect an attribute
+  that the user explicitly changes. For example, a request to remove or replace clothing means the
+  original clothing must not appear in the preservation list, even when the same request also says
+  to preserve the person or foreground.
+- Specific instructions override broad invariants. `Preserve the woman` normally means preserve her
+  identity, performance, pose and timing; it does not mean preserve her clothing, hairstyle, body,
+  or appearance when one of those is separately requested to change.
+- Before returning, verify that every requested operation appears positively and unambiguously in
+  edit_prompt. Remove any sentence such as `do not alter the subject`, `preserve all foreground`, or
+  `change nothing else` if its scope would contradict even one requested change. Rewrite it with
+  explicit exceptions instead: preserve the listed unaffected properties while applying all named
+  changes.
+
+1. Build an explicit source inventory. Bind each connected tag to exactly one requested function:
+locked source plate, identity/character, body or proportions, wardrobe, object, environment,
+lighting/look, pose/action, camera language, interaction choreography, or temporal reference.
+Unused sources stay unused. A mood source is not automatically a background.
+2. Convert the request into ordered change-and-preserve pairs. For every change identify the target
+instance, replacement source, spatial/temporal scope, traits to transfer, traits to retain, and the
+physical integration needed. Resolve pronouns and ambiguous targets from visible evidence.
+3. Decide whether this is a conservative edit or an intentionally generative restaging. Lock the
+source plate by default. Unlock composition, viewpoint, camera path, action, or timing only when the
+user explicitly requests new shots, poses, actions, interactions, or camera work.
+4. Design one coherent result. Do not average references. When different references control face,
+hair, physique, wardrobe, motion, environment, or look, assign those attributes separately and
+recombine them on one consistent subject/body and one consistent world.
+5. Express visible evidence concretely and selectively. Describe identity through observed facial
+geometry, hair, skin and distinctive stable traits; wardrobe through silhouette, construction,
+fabric and fit; environments through layout, depth planes, materials and practical lights; look
+through capture medium, lens behavior, contrast, palette, grain and lighting—not vague adjectives.
+
+Operation contracts:
+- Background transfer: reconstruct the target environment as a three-dimensional moving plate,
+not a flat cutout. Preserve foreground matte edges, hair detail and transparent/reflective objects;
+solve horizon, vanishing lines, scale, camera parallax, occlusion order, depth of field, spill,
+contact shadows, reflections, atmospheric depth, light direction, intensity and color temperature.
+- Character replacement: replace the intended person, not merely clothing. Transfer face, head,
+hair, skin, physique and explicitly assigned distinctive traits to exactly one body across every
+angle and occlusion. Preserve source performance, pose sequence, gaze, expression, contacts,
+wardrobe and timing unless the request assigns any of those to another reference.
+- Wardrobe: reconstruct the garment on the moving body with stable cut, layers, closures, fabric,
+fit, wrinkles and accessories; preserve anatomy and correct cloth-body/hand occlusions.
+- Add/remove/object edit: specify count, placement and ownership. Maintain scale, support, grip,
+collision, reflections, shadows and reveal/occlusion behavior; never duplicate a subject or prop.
+- Pose/action/interaction: state participants, initiator, recipient, contact points, direction,
+weight transfer, reaction and temporal order. Maintain anatomy, screen direction and causal motion.
+- Camera/shot change: when requested, name framing, height, angle, lens character, movement path,
+subject blocking and transition timing. Otherwise camera, framing and cuts are locked.
+- Look/relighting: transfer only assigned capture and lighting attributes. Relight foreground and
+environment coherently while retaining identity, geometry and material identity.
+
+For audiovisual edits, describe events chronologically when they change over time. Preserve source
+audio, lip synchronization, musical/performance timing and causal contacts unless explicitly edited.
+Use positive construction language. Include only a short final failure-control clause for the most
+likely task-specific failures; never append a generic negative-prompt dump. Keep edit_prompt usually
+between 120 and 320 English words, expanding only for genuinely multi-operation edits. Every source
+tag used in the request must appear canonically as <Picture N>, <Video N>, <Mood Image 1>, or
+<Mood Video 1>.
+
+When an actual source video is being edited, reason using H3's full-reference concepts: stable
+subject definitions, task summary, retention relationships and chronological shot description.
+For a simple direct edit, compress that reasoning into one precise paragraph like the user's
+existing compact edit contract. Use the full labeled sections `subject_definitions:`, `summary:`,
+`retention_analysis:`, `detailed_description:`, `overall_soundscape:`, and
+`non_diegetic_music:` only when multiple subjects, timed changes, interactions or requested shot
+changes genuinely need them. Define reusable people, environments, wardrobe, objects, actions or
+styles as stable <Subject N> units when the structured form is used. In retention_analysis use only
+`fully_preserved`, `partially_preserved`, `attribute_transfer`, or `weak_reference` for visible
+content. Use [Shot 1] and timed later shots only when the source has cuts or the user requests new
+coverage; do not invent cuts. Keep copied source audio explicit in prose without inventing an
+<Audio N> tag when no separate audio reference is connected. The node supplies the bracketed task
+header outside edit_prompt.
+For image-only edits, do not force this six-section video structure: return one direct, spatially
+precise edit instruction with the same source-role and preservation discipline.
+""".strip()
+
+    ELABORATE_RULES = """
+ELABORATE MODE — RICH SINGLE-PROMPT DIRECTION
+Produce one substantially developed, production-ready prompt rather than a compact summary.
+Preserve the same source-role discipline and cumulative change/preserve contract, but give the
+requested result enough concrete visual and temporal information for MiniMax H3 to stage it
+coherently. The final edit_prompt should normally contain 380–650 English words and may reach 800
+only for a genuinely complex multi-subject or multi-operation request. Length is not a quota:
+every detail must guide a visible or audible property of the result.
+
+CREATIVE DIRECTOR MANDATE:
+The user's text may be only a seed. Elevate it into a distinctive, fully conceived audiovisual
+moment rather than paraphrasing or padding it. Creative completion is explicitly authorized for
+every dimension the user leaves unspecified: precise location and time, production design,
+foreground activity, atmosphere, weather, practical props, performance intention, staging,
+choreography, camera grammar, lens and focus behavior, lighting progression, palette, environmental
+motion, soundscape, rhythm and final visual payoff. Make decisive compatible choices; never respond
+with alternatives, `could`, `may`, generic filler or a neutral default. The result should reveal a
+directorial point of view and feel designed for this exact premise rather than reusable stock prose.
+
+Before writing, privately solve the following compact creative blueprint. Do not output its labels,
+analysis or JSON; express its decisions only through the finished edit_prompt:
+- Creative objective: identify what the audience should feel, notice and remember at the end.
+- Action spine: preserve every user-requested event in order, then add only small connective beats
+  that make cause, physical movement, reaction and completion readable.
+- Reference ownership: decide exactly which identity, wardrobe, object, environment, pose, style or
+  motion traits each source controls and prevent unrelated traits from leaking across sources.
+- World design: choose a specific geography with navigable depth, architecture or natural forms,
+  materials, set dressing, practical light sources, atmosphere and a coherent sound perspective.
+- Subject direction: give each visible subject an intention expressed through gaze, posture,
+  breathing, gesture, timing and interaction with space; appearance alone is not performance.
+- Cinematic strategy: choose framing, axis, camera height, lens behavior, focus, movement and
+  reveal structure because they strengthen the premise, emotion, power relationship or product.
+- Sensory arc: shape light, color, texture, environmental motion and sound across the action instead
+  of describing one static mood repeatedly.
+- Payoff: end on a concrete changed composition, completed action, reveal, reaction or resonant held
+  beat that fulfills the user's idea rather than merely stopping.
+
+CREATIVE FREEDOM BOUNDARY:
+Explicit requests and assigned source traits remain authoritative. A source video used as a locked
+plate still protects its timing, performance, camera and audio unless the user changes them. Do not
+replace identities, assigned wardrobe, named locations, required actions or outcomes. Do not add a
+new principal character, unrelated subplot, dialogue, major stunt, violence, intimacy, supernatural
+event or location change merely for spectacle. Within those boundaries, enrich empty space boldly
+with compatible environmental detail, motivated secondary action, expressive reactions, camera
+design, atmosphere and sound. `Preserve unrequested content` is not a command to be unimaginative:
+it protects established evidence while permitting invention wherever the request and sources are
+silent.
+
+Develop the prompt as cohesive prose in a useful cinematic order:
+1. Establish the current subjects, their stable identity traits, relevant wardrobe and exact
+   positions relative to one another and to the environment.
+2. Build the setting through specific layout, foreground/midground/background depth, materials,
+   practical elements, atmosphere, weather when applicable, palette, light sources and shadow
+   behavior. Make the selected genre or mood tangible without importing unrelated story content.
+3. Describe requested actions chronologically with initiator, direction, pace, body mechanics,
+   contact, reactions and resulting state. Keep causality readable and do not repeat completed beats.
+4. Specify shot size, camera height and angle, lens/depth-of-field character and camera movement.
+   Preserve source framing and motion unless the request or Direction Controls authorizes a change.
+5. Integrate physically plausible ambience, Foley, dialogue and music only when applicable. Preserve
+   source audio and synchronization whenever the source video is the temporal plate.
+6. Close with a short task-specific continuity constraint covering only the most likely failures,
+   such as identity drift, duplicated subjects, unstable wardrobe, broken contact, incorrect
+   occlusion or environment flicker. Do not append a generic negative-prompt list.
+
+Use precise sensory and spatial details instead of adjective stacks. Maintain one coherent world,
+consistent screen direction, scale, perspective, parallax, reflections, occlusion, contact shadows,
+light spill and temporal continuity. Explicit user requests remain absolute; elaboration must never
+invent extra characters, actions, dialogue, cuts, plot escalation or changes to protected content.
+Return the same four-key JSON schema required by the base director. `edit_prompt` contains the rich
+finished instruction; `visual_evidence` remains a concise audit rather than duplicating the prompt.
+
+DIRECT VISUAL PROSE IS MANDATORY:
+- Write edit_prompt as a description of finished footage visibly unfolding, never as a request to
+  another model. Do not begin with or use meta-directive phrases such as `Create a scene`,
+  `Generate`, `Show`, `Depict`, `Make`, `Use`, `Maintain`, `Preserve`, `Ensure`, `Keep`, `Avoid`,
+  `Do not`, `The scene should`, `The model should`, or `focus on`.
+- Begin with the active canonical subjects or visible setting: `<Picture 1> stands...`,
+  `<Video 1> continues...`, or `Inside the narrow workshop...`. State preservation as an observable
+  fact: `Her facial structure, white hair and purple beanie remain consistent throughout`, never
+  `Maintain her identity`.
+- Replace emotional or stylistic adjective stacks with observable evidence. Words such as intense,
+  passionate, desperate, visceral, raw, frantic or animalistic cannot stand in for choreography.
+  Express their visible meaning through exact distance, posture, gaze, hand placement, direction,
+  pace, contact, weight transfer, breathing and reaction.
+- Write actions as chronological micro-beats with a readable beginning, development and resulting
+  state. Do not summarize the action as `they engage in` or `are locked in`; describe what each
+  participant actually does and how the other visibly responds.
+- The final continuity sentence must remain descriptive, such as `Their faces, clothing and anatomy
+  remain stable through every occlusion`, with no command verbs or production commentary.
+""".strip()
+
+    CONTINUOUS_RULES = """
+ENHANCE — CHRONOLOGICAL GENERATION
+Turn the user's idea into exactly the requested number of standalone scene prompts.
+Priority: explicit user instructions, assigned reference roles, selected direction, then creative completion.
+A character reference supplies identity and visible wardrobe unless the user changes them;
+it does not impose its background, pose, expression or camera. Use a reference environment,
+composition or starting pose only when assigned that role. Keep the user's named location.
+Develop unspecified surroundings and performance naturally within the requested idea.
+
+Divide the action into distinct chronological beats. Each scene advances the preceding state
+without replaying completed actions, anticipating later beats or inventing additional plot.
+Establish a readable starting position, action and resulting state; reach the requested outcome
+in the final scene. Preserve established identities, wardrobe and spatial continuity unless changed.
+Use present-tense English prose, normally 70–180 words per scene, up to 260 when necessary,
+not as a quota. Return only the requested JSON, not analysis, timestamps or a separate plan.
+
+SOURCE-TAG CONTRACT
+Each scene explicitly binds every active referenced element to its canonical tag:
+<Picture N>, <Video N>, <Mood Image 1> or <Mood Video 1>.
+Keep angle brackets; never substitute an untagged "same person" or invent <Subject N>.
+Reference only connected sources and only for their assigned roles.
+""".strip()
+
+    SPECIFICITY_RULES = """
+CONCISE VISUAL SPECIFICITY
+Make each prompt executable: current tagged cast, location with two or three distinguishing
+spatial/material/light details, brief relevant wardrobe, focused action, framing and relevant sound.
+Use reference details only for assigned roles; do not import an unrelated reference background.
+State where subjects are relative to one another and the environment. Choose a concrete camera
+position or path appropriate to the beat; no particular movement is required without a selection.
+For editing, describe the requested changes and briefly preserve unaffected elements.
+Locked camera, performance and audio take priority over creative additions.
+Every sentence adds useful information; avoid repeated descriptions and preservation boilerplate.
+""".strip()
+
+    CONTEXTUAL_REACTION_RULES = """
+PERFORMANCE AND COMPLETION
+Give important interactions one or two observable, causally connected reactions: expression,
+gesture or posture consistent with the event and the character's intent. Identity is not a fixed
+expression. Do not copy a reference smile into a changed emotional situation or use arbitrary
+gestures for drama. Hostility implies distress or self-protection unless the user specifies otherwise;
+appearance and genre do not imply consent or enjoyment. Do not invent unrequested escalation.
+In source edits, change performance only when authorized; preserve locked timing and audio.
+
+When speech is appropriate, write brief actual lines responding to the current action and intent,
+not exposition or a description of a conversation. Bind each speaker to a tagged subject; use
+stable speaker numbers and (S1) says: <d>[Spanish] exact words</d>, substituting the actual language.
+Directions stay English; dialogue uses the requested language. Keep supplied lines verbatim.
+Dialogue none means no override, not mandatory speech or silence; No dialogue prohibits speech.
+Do not replace preserved source speech or lyrics. Sound must have a plausible physical source.
+
+Check the sequence silently: correct cast, reference roles, named location, stable wardrobe,
+readable positions, distinct beats, motivated reactions and the exact requested final outcome.
+Do not substitute an attempt for success or unconsciousness for death, or add graphic injury detail.
+Make a selected genre recognizable through a coherent few environment, light, staging or sound
+choices, maintained across scenes without changing protected elements or adding plot.
+When controls are none, make context-appropriate creative choices rather than using a fixed template.
+Return only the finished prompts.
+""".strip()
+
+    CONTINUOUS_EDIT_RULES = """
+EDIT CONTINUO — EDIT CONTRACT PER SCENE
+Use the same precise change/preserve discipline as edit mode, but distribute the requested
+progression into exactly the selected number of chronological scene prompts.
+The output schema for this mode overrides single-edit output instructions: return only
+{"scene_prompts": ["...", "..."]}. Do not return edit_type, source_roles or visual_evidence;
+use those concepts internally to write each finished prompt.
+Each scene prompt is a standalone, compact edit instruction, normally 80–200 English words,
+with a maximum of 320 only when needed for a complex requested edit, never as a quota:
+identify the affected subject/region and canonical source tags, specify the current requested
+change concretely, then briefly preserve the relevant unaffected attributes.
+Repeat persistent edits in later scenes so they do not revert. Advance only changes/actions
+the user requested, maintaining the established result of prior scenes. Never replay completed
+changes, anticipate later beats, invent plot events or introduce camera cuts merely to fill
+the scene count. A single static edit remains consistent in every scene.
+When a source video is connected, preserve its performance, timing, camera and audio unless
+explicitly changed. Samples are observations, not separate scenes; never claim knowledge of
+unseen moments. With only images, preserve the assigned identities/designs while developing
+only the requested sequence.
+Keep every applicable <Picture N>, <Video N> and mood reference explicit per scene. Do not
+use "same person" as a replacement for a source tag. Return final instructions, not analysis,
+and do not embed your own task headers: the node supplies those.
+""".strip()
+
+    CONTINUOUS_ELABORATE_RULES = """
+CONTINUOUS ELABORATE — RICH EDIT CONTRACT PER SCENE
+This mode keeps the exact sequencing and JSON contract of CONTINUOUS EDIT, but deliberately
+expands every scene into richer production direction. Return exactly the selected number of
+standalone scene_prompts. Each scene should normally contain 260–480 English words and may reach
+650 only when the requested beat genuinely needs multiple subjects, interactions or simultaneous
+edits. These length targets override the compact word targets in CONTINUOUS EDIT; detail is useful
+only when it controls a visible, temporal or audible property.
+
+CREATIVE SEQUENCE DIRECTOR MANDATE:
+Treat the user's text as the action seed for one designed audiovisual progression, not as prose to
+paraphrase once per scene. Creative completion is explicitly authorized wherever the request and
+assigned sources are silent: choose a precise setting and time, production design, atmosphere,
+performance intention, connective physical behavior, visual motifs, environmental activity,
+camera strategy, lighting and color progression, sound perspective, rhythm, reveals and a final
+payoff. Make decisive compatible choices with a recognizable directorial point of view. Never pad
+the sequence by restating the premise, multiplying adjectives or repeating the same action with
+greater claimed intensity.
+
+Before writing, privately solve one sequence blueprint. Do not expose its labels, analysis or JSON:
+- Creative objective: the audience-facing feeling, idea, spectacle or product value that governs
+  the complete sequence and the memorable image or state that delivers it.
+- User action spine: every requested action, transformation, interaction, line and final outcome in
+  its original causal order, with no omission or unauthorized substitution.
+- Reference ownership: the exact identity, appearance, wardrobe, object, environment, pose, style,
+  motion or temporal role controlled by every connected source.
+- Continuity ledger: immutable identities and designs plus evolving geography, body configuration,
+  hand/object contacts, gaze, momentum, camera axis/path, lighting phase and audio phase.
+- World design: one coherent location with traversable depth, materials, set dressing, practical
+  lights, atmosphere, environmental behavior and consistent acoustic character.
+- Cinematic arc: a motivated evolution of framing, camera relationship, lens/focus behavior,
+  staging, light, palette and sound that supports the action rather than randomly decorating it.
+- Scene functions: assign each block a distinct dramatic or visual purpose—initiation, development,
+  complication, reveal, reaction, transformation, culmination or settle—as appropriate to the
+  user's actual request. Never invent conflict merely to fill these functions.
+- Boundary handoffs: define the exact unfinished physical and audiovisual state passed between
+  adjacent scenes so motion, contact, camera travel, light and sound do not reset.
+- Final payoff: reserve the requested completion or strongest resolved image for the final scene,
+  then allow a brief natural settling beat.
+
+CREATIVE FREEDOM BOUNDARY:
+Explicit requests and source assignments remain authoritative. Do not change identity, assigned
+wardrobe, named location, required action, consent, relationship or outcome. Do not introduce a new
+principal character, unrelated subplot, dialogue, violence, intimacy, supernatural event, stunt,
+cut or location change simply to make the sequence seem dramatic. A locked source video retains its
+timing, camera, performance and audio outside requested edits. Within these boundaries, invent
+compatible context and production detail boldly enough that every scene feels authored and specific.
+
+Within every scene, establish the currently visible tagged cast and stable appearance, relevant
+wardrobe and objects, spatial relationships and the persistent edited state inherited from earlier
+scenes. Develop the location through concrete layout, foreground/midground/background depth,
+materials, practical elements, atmosphere, palette, motivated light sources, shadows, reflections
+and depth of field. Make selected genre, look and mood tangible through a coherent set of details,
+without importing unrelated story content.
+
+Describe the current beat chronologically: starting state, initiator, direction and pace of motion,
+body mechanics or object behavior, contact and occlusion, motivated reactions, and the resulting
+state that the following scene must inherit. Advance the user's requested progression without
+replaying completed actions or prematurely performing later beats. Keep identity, wardrobe,
+environment geography, screen direction, scale, perspective and temporal state stable across all
+prompts unless the request explicitly changes them.
+
+Specify shot size, camera height and angle, lens character, focus behavior and any selected camera
+path with physically coherent parallax. When editing a source video, its framing, camera, timing,
+performance and audio remain locked unless explicitly changed. Integrate relevant ambience, Foley,
+dialogue and music in the same chronology. End each prompt with only a brief task-specific
+continuity safeguard; never append a generic negative-prompt dump.
+
+Every applicable connected canonical source tag must appear verbatim in every scene where its
+assigned element remains active. Return only {"scene_prompts": ["...", "..."]}; do not include
+analysis, headings, timestamps or the four-key single-edit schema. The node adds task headers.
+
+DIRECT VISUAL PROSE IS MANDATORY IN EVERY SCENE:
+- Describe finished footage unfolding in present tense. Never address the generator or use
+  `Create`, `Generate`, `Show`, `Depict`, `Make`, `Use`, `Maintain`, `Preserve`, `Ensure`, `Keep`,
+  `Avoid`, `Do not`, `should`, `focus on`, or comparable production commands.
+- Begin each prompt with the active tagged subject or visible setting and immediately establish its
+  starting physical state. State persistent identity, wardrobe, environment and continuity as
+  visible facts rather than instructions.
+- Convert mood words into exact performance and staging. Describe positions, gaze, gestures, hand
+  placement, direction, speed, contact, weight, breathing, reaction and the resulting state instead
+  of repeating abstract adjectives.
+- Give each block chronological micro-beats while inheriting the preceding state. The last sentence
+  remains descriptive and cannot become a list of prohibitions or generation safeguards.
+""".strip()
+
+    I2V_RULES = """
+IMAGE-TO-VIDEO MODE — PICTURE 1 IS FRAME ZERO
+The generation is image-to-video. <Picture 1> is not a loose character, style or composition
+reference: it is the exact visible opening frame of the generated video. Inspect its pixels and
+begin from its established subject count, identities, wardrobe, objects, poses, hand placement,
+facial expressions, environment, framing, viewpoint, scale, depth, lighting and color. The first
+described movement must emerge naturally from that precise physical state.
+
+Write direct finished-footage prose, not an edit request. Do not say create, generate, use the
+image, match the reference, transform the picture, animate the image, maintain, preserve, ensure,
+avoid or do not. State stable properties as visible facts. Mention <Picture 1> canonically so H3
+binds the opening visual source, but never call it an input image or reference inside the prompt.
+
+The user's requested motion, action, camera behavior, atmosphere and outcome determine what happens
+after frame zero. Do not reset poses, relocate subjects, change wardrobe, introduce a new opening
+composition or invent a transition into the visible starting state. When the requested action
+requires repositioning, describe the movement from the observed pose to the new pose chronologically.
+Camera movement begins from the observed framing with coherent parallax and occlusion; a locked
+camera remains locked. Natural secondary motion may develop only from visible materials and forces.
+
+For sequence modes, Scene 1 starts exactly at <Picture 1>. Later scenes inherit the preceding
+scene's final state and use <Picture 1> only as the persistent identity/design anchor; they must not
+snap back to its original pose or composition. Every prompt still includes <Picture 1> wherever its
+assigned subjects or design remain active.
+""".strip()
+
+    ELABORATE_DIRECTION_RULES = """
+ELABORATE DIRECTION CONTROLS — VERIFIABLE EXECUTION
+Every selected non-none Direction Control is a binding visual or audible requirement. Do not merely
+name, paraphrase or acknowledge a selection. Translate it into observable construction inside the
+finished footage. A prompt fails this mode if deleting the control's label would leave no concrete
+evidence that the selection changed the scene.
+
+- Genre: realize it through at least three mutually coherent choices among environment/production
+  design, lighting and palette, performance/staging, atmosphere and sound. Never output the genre
+  label as a substitute for those choices, relocate the requested setting without permission or
+  invent plot events associated with the genre.
+- Motion style: specify the mechanics that distinguish the selected motion: who or what moves,
+  trajectory, direction, speed or cadence, acceleration/deceleration, depth change, secondary
+  motion, camera response and resulting position. Mood adjectives do not satisfy motion controls.
+- Camera style: define the starting shot size and viewpoint, camera height, physical travel path,
+  direction, relationship to a clear pivot or tracked subject, speed, stabilization character,
+  changing foreground/background relationships and final composition. A named camera move cannot
+  be replaced by a generic pan, zoom, reframing or unspecified `dynamic camera`.
+- Visual look: express capture format, lens behavior, depth of field, contrast, highlight/shadow
+  response, palette, texture and motivated light behavior as applicable. `Cinematic`, `dramatic
+  lighting`, `beautiful` or the selected label alone is insufficient.
+- Dialogue: `No dialogue` means no spoken words or vocalizations presented as speech. A selected
+  language applies only to dialogue permitted by the request and uses exact H3 dialogue syntax;
+  never invent speech solely because a language is selected.
+
+When two controls of one category are selected, the first defines the dominant execution and the
+second supplies compatible secondary traits. State one coherent result rather than two competing
+alternatives. In Continuous Elaborate, carry the chosen grammar across every scene, but continue
+camera paths, actions and temporal states from the prior endpoint instead of restarting them.
+""".strip()
+
+    ELABORATE_ORBIT_RULES = """
+ORBIT CAMERA — REQUIRED GEOMETRY
+The prompt must describe a genuine translating camera orbit, not just contain the words orbit,
+circle or parallax. Identify: (1) the initial viewpoint relative to the pivot subject(s), (2) a
+clockwise or counterclockwise direction, (3) an approximate arc in degrees, (4) camera height,
+(5) a smooth circular travel path with a substantially constant radius, (6) the pivot/center held
+in composition, (7) a clear final viewpoint, and (8) at least two depth layers whose different
+screen displacement demonstrates parallax. Describe how subject overlap, profile or background
+reveal changes during the move. Keep focal length and subject scale substantially stable; describe
+the viewpoint physically travelling through space rather than remaining planted for a pan or using
+an optical zoom. Express all of this as direct finished-footage prose, not camera instructions.
+
+For Continuous Elaborate, divide one coherent orbit into consecutive arc segments. Each scene begins
+at the exact viewpoint reached by the prior scene and proceeds in the same direction, height and
+radius unless the user explicitly requests a change. Never reset to the original angle at a scene
+boundary and never repeat the same arc description in every scene.
+""".strip()
+
+    @staticmethod
+    def _debug_request(llm, payload):
+        builder = getattr(llm, "build_request_payload", None)
+        exact = callable(builder)
+        body = builder(payload) if exact else payload
+        image_count = 0
+        secret = str(getattr(llm, "api_key", "") or "")
+
+        def clean(value, field=""):
+            nonlocal image_count
+            if field.lower() in ("api_key", "authorization", "password", "access_token"):
+                return "[REDACTED]"
+            if field == "images" and isinstance(value, list):
+                markers = []
+                for _ in value:
+                    image_count += 1
+                    markers.append(f"[IMAGE {image_count}: base64 omitted]")
+                return markers
+            if isinstance(value, dict):
+                return {key: clean(item, key) for key, item in value.items()}
+            if isinstance(value, list):
+                return [clean(item, field) for item in value]
+            if isinstance(value, str):
+                if value.startswith("data:image/"):
+                    image_count += 1
+                    return f"[IMAGE {image_count}: embedded data omitted]"
+                if secret:
+                    value = value.replace(secret, "[REDACTED]")
+                return re.sub(r"\bsk-(?:or-v1-)?[A-Za-z0-9_-]{12,}", "[REDACTED]", value)
+            return value
+
+        safe_body = clean(body)
+        return json.dumps({
+            "provider": type(llm).__name__,
+            "request_kind": "provider request body" if exact else
+                "director payload before provider adaptation",
+            "images_omitted": image_count,
+            "body": safe_body,
+        }, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _canonicalize_source_tags(text: str) -> str:
+        canonical = str(text or "")
+        for label in (
+            "Mood Image 1", "Mood Video 1",
+            "Picture 1", "Picture 2", "Picture 3", "Picture 4",
+            "Video 1", "Video 2",
+        ):
+            canonical = re.sub(
+                rf"(?<!<)\b{re.escape(label)}\b(?!>)",
+                f"<{label}>",
+                canonical,
+                flags=re.IGNORECASE,
+            )
+        return canonical
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3CompactMultimodalEditDirector",
+            display_name="H3 Director — Compact Multimodal Edit",
+            category="text/minimax_h3",
+            search_aliases=[
+                "h3 compact edit director", "h3 multimodal edit", "h3 image video edit",
+            ],
+            description=(
+                "Compact optional-source director for background, identity, wardrobe, object, "
+                "pose, action, style and relighting edits. Requires an external LLM provider."
+            ),
+            inputs=[
+                io.String.Input(
+                    "edit_request", multiline=True, dynamic_prompts=False,
+                    default="Describe the exact edit and assign each connected source its role.",
+                ),
+                io.Combo.Input(
+                    "edit_mode", options=["compact", "edit", "Elaborate", "Enhance", "Continuous Edit", "Continuous Elaborate"], default="compact",
+                    tooltip=(
+                        "compact keeps the established short director. edit performs a "
+                        "strong Context-IR-style source ledger and change/preserve analysis, "
+                        "then returns one compact production prompt. Elaborate returns one richer "
+                        "cinematic prompt with expanded setting, action, mood, camera and sound. "
+                        "Enhance writes a specific "
+                        "compact prompt for each requested scene. Continuous Edit applies edit "
+                        "rules with one progressive edit prompt per scene. Continuous Elaborate "
+                        "uses that same sequence structure with richer direction in every scene."
+                    ),
+                ),
+                io.Image.Input("reference_image_1", optional=True),
+                io.Image.Input("reference_image_2", optional=True),
+                io.Image.Input("reference_image_3", optional=True),
+                io.Image.Input("reference_image_4", optional=True),
+                io.Image.Input("source_video_1", optional=True),
+                io.Image.Input("source_video_2", optional=True),
+                io.Image.Input("mood_image", optional=True),
+                io.Image.Input("mood_video", optional=True),
+                io.Combo.Input("video_samples", options=["3", "5", "10"], default="3"),
+                io.String.Input(
+                    "system_prompt", multiline=True, dynamic_prompts=False,
+                    default=cls.DEFAULT_SYSTEM_PROMPT,
+                ),
+                io.Int.Input("max_tokens", default=1200, min=256, max=3072),
+                io.Float.Input("temperature", default=0.2, min=0.0, max=1.0, step=0.05),
+                io.Boolean.Input("reasoning", default=False),
+                io.Int.Input(
+                    "seed", default=0, min=0, max=0xFFFFFFFF,
+                    control_after_generate=True,
+                ),
+                io.Int.Input(
+                    "image_max_dimension", default=1024, min=512, max=2048,
+                    step=64, advanced=True,
+                ),
+                io.Int.Input(
+                    "timeout_seconds", default=300, min=30, max=900, advanced=True,
+                ),
+                io.Boolean.Input(
+                    "hold_prompt", display_name="Hold Edit Prompt", default=False,
+                ),
+                io.Boolean.Input(
+                    "i2v_mode", display_name="I2V Mode — Picture 1 is First Frame",
+                    default=False,
+                    tooltip=(
+                        "When enabled, Picture 1 is treated as the exact opening frame and every "
+                        "director mode writes motion beginning from its visible state."
+                    ),
+                ),
+                io.Int.Input(
+                    "continuous_scene_count", display_name="Scenes — Enhance / Continuous Edit",
+                    default=3, min=0, max=12, step=1,
+                    tooltip=(
+                        "Number of contiguous generated scenes. Used by the local compact "
+                        "continuous plan and does not increase OpenRouter usage. Legacy value "
+                        "0 is accepted and normalized internally to 1."
+                    ),
+                ),
+                io.String.Input(
+                    "direction_context", optional=True, force_input=True,
+                    tooltip="Optional Direction Controls reinforcement. Empty or disconnected preserves the existing behavior.",
+                ),
+                io.Custom("LLMMODEL").Input(
+                    "llm", optional=True,
+                    tooltip="External provider, required unless bypass is enabled. No internal API or fallback.",
+                ),
+                io.Boolean.Input(
+                    "bypass", default=False,
+                    tooltip="Return the user prompt verbatim. Skip LLM, references, direction controls and Hold.",
+                ),
+                io.Boolean.Input(
+                    "debug_request", default=False,
+                    tooltip="Expose sanitized request text and parameters, without image data or credentials. No extra LLM call.",
+                ),
+            ],
+            outputs=[
+                io.String.Output("edit_prompt"),
+                io.String.Output("validation"),
+                io.String.Output("usage_stats"),
+                io.Int.Output("continuous_scene_count"),
+                io.String.Output("debug_request"),
+                io.String.Output("raw_response"),
+            ],
+            hidden=[io.Hidden.unique_id],
+        )
+
+    @classmethod
+    def execute(
+        cls, edit_request: str, edit_mode: str,
+        video_samples: str,
+        system_prompt: str, max_tokens: int, temperature: float, reasoning: bool,
+        seed: int, image_max_dimension: int, timeout_seconds: int,
+        hold_prompt: bool = False, reference_image_1=None, reference_image_2=None,
+        reference_image_3=None, reference_image_4=None, source_video_1=None,
+        source_video_2=None, mood_image=None, mood_video=None,
+        continuous_scene_count: int = 3, unique_id=None, direction_context=None,
+        llm=None, bypass: bool = False, debug_request: bool = False,
+        i2v_mode: bool = False,
+    ) -> io.NodeOutput:
+        if bool(bypass):
+            direct_prompt = str(edit_request if edit_request is not None else "")
+            return io.NodeOutput(
+                direct_prompt,
+                "BYPASS · user prompt passed through unchanged",
+                "Bypass · no LLM called",
+                max(1, min(12, int(continuous_scene_count))),
+                "BYPASS: no request sent." if debug_request else "",
+                "BYPASS: no model response." if debug_request else "",
+                ui=ui.PreviewText(direct_prompt),
+            )
+        if llm is None:
+            raise ValueError(
+                "Connect an external provider to llm: H3 OpenRouter Model, "
+                "H3 Ollama Model or H3 Qwen3-VL Model. No internal API is available."
+            )
+        request_text = str(edit_request or "").strip()
+        direction_text = str(direction_context or "").strip()
+        if direction_text.lower() == "none":
+            direction_text = ""
+
+        requested_mode = str(edit_mode or "compact")
+        requested_mode = {
+            "edit": "deep_edit", "Enhance": "continuous", "enhance": "continuous",
+            "Elaborate": "elaborate", "elaborate": "elaborate",
+            "Edit Continuo": "continuous_edit",
+            "Continuous Edit": "continuous_edit",
+            "Elaborate Continuo": "continuous_elaborate",
+            "Continuous Elaborate": "continuous_elaborate",
+        }.get(requested_mode, requested_mode)
+        if requested_mode not in (
+            "compact", "deep_edit", "elaborate", "continuous",
+            "continuous_edit", "continuous_elaborate",
+        ):
+            requested_mode = "compact"
+        creative_control_present = bool(re.search(
+            r"(?im)^(?:Genre|Motion style|Visual look):\s*\S", direction_text
+        ))
+        controls_only_generation = False
+        if not request_text:
+            if (
+                requested_mode in ("elaborate", "continuous_elaborate")
+                and creative_control_present
+            ):
+                controls_only_generation = True
+                request_text = (
+                    "No written premise was supplied. Invent one original, coherent audiovisual "
+                    "concept grounded in the connected visual sources and governed completely by "
+                    "the selected Direction Controls."
+                )
+            else:
+                raise ValueError(
+                    "Compact H3 Edit Director requires an edit_request, except Elaborate modes "
+                    "can generate from active Genre, Motion style or Visual look controls."
+                )
+
+        def valid_frames(value):
+            return (
+                value is not None and hasattr(value, "shape")
+                and len(value.shape) >= 4 and int(value.shape[0]) > 0
+            )
+
+        pictures = [
+            (index, image) for index, image in enumerate((
+                reference_image_1, reference_image_2,
+                reference_image_3, reference_image_4,
+            ), 1) if valid_frames(image)
+        ]
+        videos = [
+            (index, video) for index, video in enumerate((
+                source_video_1, source_video_2,
+            ), 1) if valid_frames(video)
+        ]
+        has_mood_image = valid_frames(mood_image)
+        has_mood_video = valid_frames(mood_video)
+        if not (pictures or videos or has_mood_image or has_mood_video):
+            raise ValueError("Connect at least one image, video or mood source.")
+
+        is_sequence = requested_mode in (
+            "continuous", "continuous_edit", "continuous_elaborate",
+        )
+        requested_count = max(1, min(12, int(continuous_scene_count)))
+        cache_key = f"{cls.__name__}:{str(unique_id or 'default')}"
+        provider_identity = (
+            json.dumps({
+                "type": type(llm).__name__,
+                "model": str(getattr(llm, "model", "")),
+                "endpoint": str(getattr(llm, "server_url", getattr(llm, "base_url", ""))),
+                "clip_type": str(getattr(llm, "clip_type", "")),
+                "thinking": getattr(llm, "thinking", None),
+            }, sort_keys=True)
+            if llm is not None else ""
+        )
+        if bool(hold_prompt):
+            held = _get_held_director_plan(cache_key)
+            if held and held.get("cache_kind") == "h3_compact_multimodal_edit":
+                if str(held.get("provider_identity") or "") != provider_identity:
+                    raise RuntimeError(
+                        "The LLM provider/model changed. Disable Hold once to compare "
+                        "the new provider; no model or API was called."
+                    )
+                if str(held.get("direction_context") or "") != direction_text:
+                    raise RuntimeError(
+                        "Direction Controls changed since Hold Edit Prompt was saved. "
+                        "Disable Hold once to apply the new direction; no API call was made."
+                    )
+                if held.get("resolved_mode", "compact") != requested_mode:
+                    raise RuntimeError(
+                        "Hold Edit Prompt belongs to a different director mode. "
+                        "Disable Hold once to regenerate."
+                    )
+                if bool(held.get("i2v_mode", False)) != bool(i2v_mode):
+                    raise RuntimeError(
+                        "I2V Mode changed since Hold Edit Prompt was saved. "
+                        "Disable Hold once to regenerate."
+                    )
+                if (
+                    is_sequence
+                    and int(held.get("continuous_scene_count", 0)) != requested_count
+                ):
+                    raise RuntimeError(
+                        "Hold Edit Prompt contains a different number of continuous "
+                        "scene prompts. Disable Hold once to regenerate."
+                    )
+                held_prompt = cls._canonicalize_source_tags(held["edit_prompt"])
+                held_preview = str(held.get("preview_prompt") or held_prompt)
+                return io.NodeOutput(
+                    held_prompt, held["validation"] + " · HOLD",
+                    "Held prompt · provider not called",
+                    requested_count,
+                    (
+                        "HOLD: historical request; no new request sent.\n"
+                        + str(held.get("debug_request") or
+                              "Unavailable. Enable debug_request and disable Hold for the next generation.")
+                    ) if debug_request else "",
+                    str(held.get("raw_response", "Unavailable: regenerate with debug_request enabled.")) if debug_request else "",
+                    ui=ui.PreviewText(held_preview),
+                )
+
+        requested_samples = int(str(video_samples or "3"))
+
+        def sample_indices(count):
+            amount = min(requested_samples, int(count))
+            if amount <= 1:
+                return [0]
+            return sorted(set(
+                round(position * (int(count) - 1) / (amount - 1))
+                for position in range(amount)
+            ))
+
+        content = [{
+            "type": "text",
+            "text": "USER EDIT REQUEST:\n" + request_text,
+        }]
+        for picture_index, image in pictures:
+            content.append({
+                "type": "text",
+                "text": (
+                    f"LITERAL VISUAL REFERENCE <Picture {picture_index}>. Inspect its actual "
+                    "visible traits and use it only for the role assigned by the user."
+                ),
+            })
+            content.append({"type": "image_url", "image_url": {
+                "url": _image_data_url(image[:1], int(image_max_dimension))
+            }})
+
+        video_frame_total = 0
+        for video_index, video in videos:
+            indices = sample_indices(int(video.shape[0]))
+            content.append({
+                "type": "text",
+                "text": (
+                    f"CHRONOLOGICAL VIDEO SOURCE <Video {video_index}>. Infer its role only "
+                    "from the user request and inspect the following ordered samples."
+                ),
+            })
+            for order, frame_index in enumerate(indices, 1):
+                content.append({
+                    "type": "text",
+                    "text": f"<Video {video_index}> SAMPLE {order}/{len(indices)}",
+                })
+                content.append({"type": "image_url", "image_url": {
+                    "url": _image_data_url(
+                        video[frame_index:frame_index + 1], int(image_max_dimension)
+                    )
+                }})
+            video_frame_total += len(indices)
+
+        if has_mood_image:
+            content.append({
+                "type": "text",
+                "text": (
+                    "FLEXIBLE DIRECTION REFERENCE <Mood Image 1>. Transfer only the visual "
+                    "attributes explicitly assigned to it by the user."
+                ),
+            })
+            content.append({"type": "image_url", "image_url": {
+                "url": _image_data_url(mood_image[:1], int(image_max_dimension))
+            }})
+        if has_mood_video:
+            indices = sample_indices(int(mood_video.shape[0]))
+            content.append({
+                "type": "text",
+                "text": (
+                    "FLEXIBLE DIRECTION REFERENCE <Mood Video 1>. Transfer only the motion "
+                    "or visual attributes explicitly assigned to it by the user."
+                ),
+            })
+            for order, frame_index in enumerate(indices, 1):
+                content.append({
+                    "type": "text",
+                    "text": f"<Mood Video 1> SAMPLE {order}/{len(indices)}",
+                })
+                content.append({"type": "image_url", "image_url": {
+                    "url": _image_data_url(
+                        mood_video[frame_index:frame_index + 1], int(image_max_dimension)
+                    )
+                }})
+            video_frame_total += len(indices)
+
+        canonical_request = cls._canonicalize_source_tags(request_text)
+        connected_canonical_tags = [
+            *(f"<Picture {index}>" for index, _image in pictures),
+            *(f"<Video {index}>" for index, _video in videos),
+            *(("<Mood Image 1>",) if has_mood_image else ()),
+            *(("<Mood Video 1>",) if has_mood_video else ()),
+        ]
+        persistent_tags = [
+            tag for tag in connected_canonical_tags
+            if tag.lower() in canonical_request.lower()
+        ]
+        # A sole ordinary picture is the persistent visual source for an
+        # image-started continuation even if the user calls it only "the image".
+        if len(pictures) == 1 and not videos and not persistent_tags:
+            persistent_tags = [f"<Picture {pictures[0][0]}>"]
+
+        resolved_control_specs = []
+        for control_line in direction_text.splitlines():
+            if ":" not in control_line:
+                continue
+            control_label, control_values = control_line.split(":", 1)
+            control_label = control_label.strip().lower()
+            selections = [
+                value.strip() for value in control_values.split(" + ") if value.strip()
+            ]
+            if control_label == "motion style":
+                for selection in selections:
+                    specification = MOTION_STYLES.get(selection)
+                    if specification:
+                        resolved_control_specs.append(
+                            f"Motion style `{selection}` means: {specification}"
+                        )
+            elif control_label == "visual look":
+                for selection in selections:
+                    specification = VISUAL_LOOKS.get(selection)
+                    if specification:
+                        resolved_control_specs.append(
+                            f"Visual look `{selection}` means: {specification}"
+                        )
+            elif control_label == "genre":
+                for selection in selections:
+                    resolved_control_specs.append(
+                        f"Genre `{selection}` governs the premise, performance, production "
+                        "design, atmosphere, lighting, palette, pacing and sound through "
+                        "recognizable concrete choices rather than the label alone."
+                    )
+
+        resolved_mode = requested_mode
+        resolved_system = str(system_prompt or cls.DEFAULT_SYSTEM_PROMPT).strip()
+        if resolved_mode == "deep_edit":
+            resolved_system = "\n\n".join((resolved_system, cls.DEEP_EDIT_RULES))
+        elif resolved_mode == "elaborate":
+            resolved_system = "\n\n".join((
+                resolved_system, cls.DEEP_EDIT_RULES, cls.ELABORATE_RULES,
+            ))
+        elif resolved_mode == "continuous_edit":
+            resolved_system = "\n\n".join((
+                resolved_system, cls.DEEP_EDIT_RULES, cls.CONTINUOUS_EDIT_RULES,
+                f"Return exactly {requested_count} chronological scene_prompts.",
+                "Keep these source assignments explicit where applicable: "
+                + ", ".join(persistent_tags),
+            ))
+        elif resolved_mode == "continuous_elaborate":
+            resolved_system = "\n\n".join((
+                resolved_system, cls.DEEP_EDIT_RULES, cls.CONTINUOUS_EDIT_RULES,
+                cls.CONTINUOUS_ELABORATE_RULES,
+                f"Return exactly {requested_count} chronological scene_prompts.",
+                "Keep these source assignments explicit where applicable: "
+                + ", ".join(persistent_tags),
+            ))
+        elif resolved_mode == "continuous":
+            persistent_contract = (
+                "The following canonical source tags remain active and MUST appear "
+                "verbatim in every scene_prompt: " + ", ".join(persistent_tags) + "."
+                if persistent_tags else
+                "Repeat every applicable connected canonical source tag verbatim in "
+                "each scene_prompt where its assigned element remains visible."
+            )
+            resolved_system = "\n\n".join((
+                "You are a compact multimodal continuation director for MiniMax H3. "
+                "Inspect the connected visual references and obey the user's chronology. "
+                "Return the required JSON schema with English directions and dialogue in its requested language.",
+                cls.CONTINUOUS_RULES,
+                persistent_contract,
+                f"Return exactly {max(1, min(12, int(continuous_scene_count)))} "
+                "chronological strings in scene_prompts, one compact prompt per scene.",
+            ))
+
+        if bool(i2v_mode):
+            if not any(index == 1 for index, _image in pictures):
+                raise ValueError("I2V Mode requires reference_image_1 as the opening frame.")
+            resolved_system += "\n\n" + cls.I2V_RULES
+
+        resolved_system += "\n\n" + cls.SPECIFICITY_RULES
+        if is_sequence:
+            resolved_system += "\n\n" + cls.CONTEXTUAL_REACTION_RULES
+            if "gothic horror" in direction_text.lower():
+                resolved_system += (
+                    "\n\nGOTHIC HORROR EXECUTION: Within the requested location and permitted "
+                    "edits, choose a small coherent set of gothic details: for example aged "
+                    "carved wood, heavy drapery, tall shadowed windows, candlelight contrasting "
+                    "with cold window light, oppressive negative space or distant timber creaks. "
+                    "These are alternatives, not a checklist. Maintain the chosen atmosphere "
+                    "across scenes without relocating the story to a castle, inventing "
+                    "supernatural events, changing assigned wardrobe or adding gore. Use only "
+                    "details compatible with the user's source-preservation constraints."
+                )
+        if direction_text:
+            resolved_system += (
+                "\n\nSELECTED DIRECTION CONTRACT:\n" + direction_text
+                + "\nSelected non-none controls are requirements, not optional suggestions. "
+                "The user's explicit request, "
+                "source-role assignments and preservation constraints always take priority. "
+                "Otherwise realize every selection concretely in the final prompt. "
+                "Blend the second selection as a compatible accent; do not invent a new plot "
+                "or change locked subjects, camera, actions, wardrobe or source audio. "
+                "Express applicable hints through concrete choices inside the existing compact "
+                "prompt, never as appended labels, a checklist or extra boilerplate. "
+                "For continuous mode realize the selected camera/motion in every applicable "
+                "scene, not just the first. If two selections conflict, the first is primary; "
+                "use the second only in a compatible way rather than canceling the first. "
+                "Before returning, check each prompt for explicit selected camera behavior, "
+                "environment and wardrobe details, and source tags. "
+                "Dialogue none or omitted means no override, not a ban on requested speech. "
+                "A selected dialogue language guides permitted speech, but never replaces "
+                "source audio the user asks to preserve. Retain canonical angle-bracket source tags."
+            )
+
+            if resolved_control_specs:
+                resolved_system += (
+                    "\n\nRESOLVED CONTROL SPECIFICATIONS:\n- "
+                    + "\n- ".join(resolved_control_specs)
+                    + "\nThese full specifications are binding. Their concrete behavior must "
+                    "be visible or audible in the finished prompt; do not reduce them back to labels."
+                )
+
+            if resolved_mode in ("elaborate", "continuous_elaborate"):
+                resolved_system += "\n\n" + cls.ELABORATE_DIRECTION_RULES
+                if controls_only_generation:
+                    resolved_system += (
+                        "\n\nCONTROLS-ONLY ORIGINAL DIRECTION:\n"
+                        "There is no user-written premise. Invent the complete concept yourself from "
+                        "the visible connected sources and the selected controls. The controls are "
+                        "the primary creative brief, not optional styling. Choose a specific role for "
+                        "every visible subject, a concrete location compatible with source ownership, "
+                        "a motivated action with chronological development, a camera design that "
+                        "fully performs the selected motion, a recognizable realization of the genre "
+                        "and look, an integrated soundscape and a memorable resolved ending. Do not "
+                        "describe the act of inventing; output only the finished footage."
+                    )
+
+        if "orbit" in direction_text.lower():
+            if resolved_mode in ("elaborate", "continuous_elaborate"):
+                resolved_system += "\n\n" + cls.ELABORATE_ORBIT_RULES
+            else:
+                resolved_system += (
+                    "\nSelected Orbit Camera: describe an actual arc around the subject, "
+                    "with changing viewpoint and background parallax, not a zoom or pan in place. "
+                    "Respect explicit source-camera preservation."
+                )
+
+        continuous_count = max(1, min(12, int(continuous_scene_count)))
+        if is_sequence:
+            response_schema = {
+                "name": "h3_compact_continuous_scene_prompts",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "scene_prompts": {
+                            "type": "array",
+                            "minItems": continuous_count,
+                            "maxItems": continuous_count,
+                            "items": {
+                                "type": "string",
+                                "minLength": 1100 if resolved_mode == "continuous_elaborate" else 30,
+                                **({"maxLength": 7000} if resolved_mode == "continuous_elaborate" else {}),
+                            },
+                        }
+                    },
+                    "required": ["scene_prompts"],
+                    "additionalProperties": False,
+                },
+            }
+        else:
+            response_schema = {
+                "name": "h3_compact_multimodal_edit_prompt",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "edit_type": {
+                            "type": "string",
+                            "enum": [
+                                "background_environment", "identity_person",
+                                "wardrobe_appearance", "object_replacement",
+                                "pose_action_motion", "style_relight",
+                                "composite_multi_edit", "general_edit"
+                            ],
+                        },
+                        "source_roles": {
+                            "type": "array", "minItems": 1,
+                            "items": {"type": "string", "minLength": 8},
+                        },
+                        "visual_evidence": {"type": "string", "minLength": 20},
+                        "edit_prompt": {
+                            "type": "string",
+                            "minLength": 1600 if resolved_mode == "elaborate" else 80,
+                            **({"maxLength": 7000} if resolved_mode == "elaborate" else {}),
+                        }
+                    },
+                    "required": [
+                        "edit_type", "source_roles", "visual_evidence", "edit_prompt"
+                    ],
+                    "additionalProperties": False,
+                },
+            }
+
+        payload = {
+            "model": str(getattr(llm, "model", "") or ""),
+            "messages": [
+                {"role": "system", "content": resolved_system},
+                {"role": "user", "content": content},
+            ],
+            "max_tokens": (
+                max(int(max_tokens), 3000)
+                if resolved_mode == "elaborate"
+                else
+                max(int(max_tokens), 1800)
+                if resolved_mode == "deep_edit"
+                else max(int(max_tokens), continuous_count * 1000)
+                if resolved_mode == "continuous_elaborate"
+                else max(int(max_tokens), continuous_count * 480)
+                if resolved_mode == "continuous_edit"
+                else max(int(max_tokens), continuous_count * 400)
+                if resolved_mode == "continuous"
+                else int(max_tokens)
+            ),
+            "temperature": float(temperature),
+            "seed": int(seed),
+            "reasoning": {"enabled": bool(reasoning)},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": response_schema,
+            },
+            "provider": {"require_parameters": True},
+        }
+        debug_text = cls._debug_request(llm, payload) if debug_request else ""
+        result = _external_llm_request(llm, payload)
+
+        def parse_json_content(value):
+            if not isinstance(value, str):
+                return value
+            candidate = value.strip()
+            fenced = re.match(
+                r"^```(?:json)?\s*(.*?)\s*```$", candidate,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if fenced:
+                candidate = fenced.group(1).strip()
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError as first_error:
+                try:
+                    return json.loads(candidate, strict=False)
+                except json.JSONDecodeError:
+                    start = candidate.find("{")
+                    end = candidate.rfind("}")
+                    if start >= 0 and end > start:
+                        return json.loads(candidate[start:end + 1], strict=False)
+                    raise first_error
+
+        repair_retry_used = False
+        try:
+            raw = result["choices"][0]["message"]["content"]
+            # Capture assistant content before parsing, tag repair or task headers.
+            # Excludes the provider envelope, credentials and reasoning content.
+            first_raw_text = (
+                raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
+            )
+            try:
+                parsed = parse_json_content(raw)
+                raw_response = first_raw_text if debug_request else ""
+            except json.JSONDecodeError:
+                repair_retry_used = True
+                repair_payload = {
+                    "model": str(getattr(llm, "model", "") or ""),
+                    "messages": [
+                        {"role": "system", "content": (
+                            "Repair an interrupted or malformed director response. Return one "
+                            "complete JSON object matching the supplied schema exactly. Preserve "
+                            "all usable visual facts, source tags, chronology, creative direction "
+                            "and wording from the partial response. Complete unfinished prose "
+                            "coherently. Output JSON only, with valid escaping and closed strings."
+                        )},
+                        {"role": "user", "content": (
+                            "DIRECTOR MODE: " + str(edit_mode)
+                            + "\nUSER REQUEST: " + request_text
+                            + ("\nDIRECTION CONTROLS:\n" + direction_text if direction_text else "")
+                            + "\n\nMALFORMED OR INTERRUPTED RESPONSE:\n" + first_raw_text
+                        )},
+                    ],
+                    "max_tokens": payload["max_tokens"],
+                    "temperature": 0.0,
+                    "seed": int(seed),
+                    "reasoning": {"enabled": False},
+                    "response_format": payload["response_format"],
+                    "provider": {"require_parameters": True},
+                }
+                repair_result = _external_llm_request(llm, repair_payload)
+                repaired_raw = repair_result["choices"][0]["message"]["content"]
+                parsed = parse_json_content(repaired_raw)
+                if debug_request:
+                    repaired_text = (
+                        repaired_raw if isinstance(repaired_raw, str)
+                        else json.dumps(repaired_raw, ensure_ascii=False)
+                    )
+                    raw_response = (
+                        "ATTEMPT 1 — INVALID\n" + first_raw_text
+                        + "\n\nATTEMPT 2 — REPAIRED\n" + repaired_text
+                    )
+                result = repair_result
+            if is_sequence:
+                scene_prompts = [
+                    cls._canonicalize_source_tags(str(item).strip())
+                    for item in parsed["scene_prompts"]
+                ]
+                # Repair omitted persistent tags locally instead of spending
+                # credits on a second OpenRouter request.
+                if persistent_tags:
+                    repaired_prompts = []
+                    for item in scene_prompts:
+                        missing = [tag for tag in persistent_tags if tag not in item]
+                        if missing:
+                            item = (
+                                "Keep all visual assignments from "
+                                + " and ".join(missing)
+                                + " active in this scene. "
+                                + item
+                            )
+                        repaired_prompts.append(item)
+                    scene_prompts = repaired_prompts
+                if len(scene_prompts) != continuous_count or any(
+                    not item for item in scene_prompts
+                ):
+                    raise ValueError("continuous prompt count mismatch")
+                edit_type = (
+                    "continuous_elaborate_sequence"
+                    if resolved_mode == "continuous_elaborate"
+                    else "continuous_edit_sequence" if resolved_mode == "continuous_edit"
+                    else "continuous_sequence"
+                )
+                source_roles = []
+                visual_evidence = ""
+            else:
+                edit_type = str(parsed["edit_type"]).strip()
+                source_roles = [str(role).strip() for role in parsed["source_roles"]]
+                visual_evidence = str(parsed["visual_evidence"]).strip()
+                edit_prompt = cls._canonicalize_source_tags(
+                    str(parsed["edit_prompt"]).strip()
+                )
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+            raise RuntimeError("Compact H3 Edit Director returned an invalid response.") from error
+
+        if videos:
+            required_header = (
+                "[video editing + reference generation]"
+                if pictures or has_mood_image or has_mood_video
+                else "[video editing]"
+            )
+        else:
+            required_header = "[reference generation]"
+        header_pattern = (
+            r"^\s*\[(?:video\s+editing(?:\s*\+\s*reference\s+generation)?|"
+            r"reference\s+generation|image\s+editing(?:\s*\+\s*reference\s+generation)?)\]\s*"
+        )
+        if is_sequence:
+            scene_prompts = [
+                f"{required_header}\n\n" + re.sub(
+                    header_pattern, "", item, count=1, flags=re.IGNORECASE
+                ).strip()
+                for item in scene_prompts
+            ]
+            edit_prompt = json.dumps(
+                {"scene_prompts": scene_prompts}, ensure_ascii=False
+            )
+            preview_prompt = "\n\n".join(
+                f"SCENE {index}\n{item}"
+                for index, item in enumerate(scene_prompts, 1)
+            )
+        else:
+            edit_prompt = re.sub(
+                header_pattern, "", edit_prompt, count=1, flags=re.IGNORECASE,
+            ).strip()
+            edit_prompt = f"{required_header}\n\n{edit_prompt}"
+            preview_prompt = edit_prompt
+
+        connected_tags = {
+            *(f"<Picture {index}>" for index, _image in pictures),
+            *(f"<Video {index}>" for index, _video in videos),
+        }
+        if has_mood_image:
+            connected_tags.add("<Mood Image 1>")
+        if has_mood_video:
+            connected_tags.add("<Mood Video 1>")
+        warnings = []
+        if not is_sequence:
+            role_text = " ".join(source_roles)
+            if not any(tag in role_text for tag in connected_tags):
+                warnings.append("source roles lack a connected tag")
+            for tag in connected_tags:
+                if tag.lower() in request_text.lower() and tag not in edit_prompt:
+                    warnings.append(f"explicit {tag} absent from final prompt")
+            evidence_terms = {
+                word.lower() for word in re.findall(r"[A-Za-z][A-Za-z-]{4,}", visual_evidence)
+            }
+            prompt_terms = {
+                word.lower() for word in re.findall(r"[A-Za-z][A-Za-z-]{4,}", edit_prompt)
+            }
+            if len(evidence_terms & prompt_terms) < 2:
+                warnings.append("weak visual-evidence integration")
+            if resolved_mode == "elaborate":
+                elaborate_word_count = len(re.findall(r"\b[\w'-]+\b", edit_prompt))
+                if elaborate_word_count < 300:
+                    warnings.append(
+                        f"Elaborate prompt is underdeveloped ({elaborate_word_count} words)"
+                    )
+
+        displayed_mode = {
+            "deep_edit": "edit", "elaborate": "Elaborate", "continuous": "Enhance",
+            "continuous_edit": "Continuous Edit",
+            "continuous_elaborate": "Continuous Elaborate",
+        }.get(
+            resolved_mode, resolved_mode
+        )
+        validation = (
+            f"{displayed_mode} {edit_type} ready · {continuous_count if is_sequence else 1} prompt(s) · "
+            f"{len(pictures)} picture(s) · "
+            f"{len(videos)} video(s) · "
+            f"{video_frame_total} sampled frame(s) · mood image "
+            f"{'yes' if has_mood_image else 'no'} · mood video "
+            f"{'yes' if has_mood_video else 'no'} · "
+            f"I2V {'on' if i2v_mode else 'off'} · "
+            + ("grounding verified" if not warnings else "warnings: " + "; ".join(warnings))
+            + (" · JSON repaired after one retry" if repair_retry_used else "")
+        )
+        usage = result.get("usage") or {}
+        usage_stats = (
+            f"input: {usage.get('prompt_tokens', '?')} · "
+            f"output: {usage.get('completion_tokens', '?')} · "
+            f"total: {usage.get('total_tokens', '?')}"
+        )
+        if llm is not None:
+            usage_stats += (
+                f" · provider: {type(llm).__name__} · "
+                f"model: {getattr(llm, 'model', 'external')}"
+            )
+        _set_held_director_plan(cache_key, {
+            "cache_kind": "h3_compact_multimodal_edit",
+            "provider_identity": provider_identity,
+            "debug_request": debug_text,
+            "raw_response": raw_response,
+            "direction_context": direction_text,
+            "resolved_mode": resolved_mode,
+            "i2v_mode": bool(i2v_mode),
+            "edit_prompt": edit_prompt,
+            "preview_prompt": preview_prompt,
+            "continuous_scene_count": continuous_count,
+            "validation": validation,
+        })
+        return io.NodeOutput(
+            edit_prompt, validation, usage_stats,
+            max(1, min(12, int(continuous_scene_count))),
+            debug_text,
+            raw_response,
+            ui=ui.PreviewText(preview_prompt),
+        )
+
+
+class H3StoryboardMotionDirector(io.ComfyNode):
+    """Write direct video prompts after inspecting the accepted storyboard sheet."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3StoryboardMotionDirector",
+            display_name="H3 Storyboard Motion Director — Image-Aware",
+            category="text/minimax_h3",
+            search_aliases=[
+                "storyboard animation director", "panel motion prompts",
+                "image aware h3 director",
+            ],
+            description=(
+                "Acts as an automatic assistant director: it detects the real panel "
+                "count from the accepted storyboard and writes one direct H3 motion "
+                "prompt per panel. Language, performance, camera grammar and motion "
+                "are inferred from the images and story."
+            ),
+            inputs=[
+                io.String.Input(
+                    "api_key", default="", placeholder="sk-or-v1-...",
+                    extra_dict={"password": True},
+                ),
+                io.String.Input("model", default=DEFAULT_MODEL),
+                io.Image.Input(
+                    "storyboard_sheet",
+                    tooltip="Connect the final accepted 1x2, 2x2, or 3x2 storyboard sheet.",
+                ),
+                io.String.Input(
+                    "direction_context", multiline=True, dynamic_prompts=False,
+                    default="", force_input=True,
+                    tooltip=(
+                        "Connect plan_json from the first Director. It contains the "
+                        "original user intent and resolved production-direction contract. "
+                        "The accepted storyboard still wins on visible opening-state detail."
+                    ),
+                ),
+                io.Int.Input("max_tokens", default=3072, min=1024, max=8192),
+                io.Float.Input("temperature", default=0.35, min=0.0, max=1.5, step=0.05),
+                io.Boolean.Input("reasoning", default=False),
+                io.Int.Input(
+                    "seed", default=0, min=0, max=0xFFFFFFFF,
+                    control_after_generate=True,
+                ),
+                io.Int.Input(
+                    "image_max_dimension", default=1536, min=768, max=2048,
+                    step=64, advanced=True,
+                ),
+                io.Int.Input(
+                    "timeout_seconds", default=300, min=30, max=900, advanced=True,
+                ),
+                io.Boolean.Input(
+                    "hold_prompts", display_name="Hold Motion Prompts", default=False,
+                    tooltip=(
+                        "Reuse the last successful image-aware prompts without another "
+                        "OpenRouter call. Changes are ignored until disabled."
+                    ),
+                ),
+            ],
+            outputs=[
+                io.String.Output("prompt_lines"),
+                io.String.Output("first_prompt"),
+                io.Int.Output("prompt_count"),
+                io.String.Output("validation"),
+                io.String.Output("usage_stats"),
+                io.String.Output("credits_remaining"),
+            ],
+            hidden=[io.Hidden.unique_id],
+        )
+
+    @classmethod
+    def execute(
+        cls, api_key: str, model: str, storyboard_sheet, direction_context: str,
+        max_tokens: int, temperature: float, reasoning: bool, seed: int,
+        image_max_dimension: int, timeout_seconds: int,
+        hold_prompts: bool = False, unique_id=None,
+    ) -> io.NodeOutput:
+        if storyboard_sheet is None or not hasattr(storyboard_sheet, "shape"):
+            raise ValueError("Storyboard Motion Director requires a storyboard image.")
+        shape = tuple(int(value) for value in storyboard_sheet.shape)
+        if len(shape) < 3 or shape[1] < 1 or shape[2] < 1:
+            raise ValueError(f"Invalid storyboard image shape: {shape}.")
+        raw_context = str(direction_context or "").strip()
+        try:
+            parsed_context = json.loads(raw_context)
+        except (TypeError, json.JSONDecodeError):
+            parsed_context = None
+        contract_count = 0
+        if isinstance(parsed_context, dict):
+            contract_shots = parsed_context.get("shots") or []
+            if isinstance(contract_shots, list):
+                contract_count = len([
+                    shot for shot in contract_shots if isinstance(shot, dict)
+                ])
+        sheet_ratio = float(shape[2]) / float(shape[1])
+        # The accepted production contract is authoritative. Overall sheet
+        # aspect ratio cannot identify the grid now that cells may be square,
+        # landscape or portrait: for example a 2x2 sheet of 16:9 panels has a
+        # 16:9 total ratio and the old heuristic incorrectly called it 6 panels.
+        count = contract_count if contract_count in (2, 4, 6) else min(
+            ((2, 0.5), (4, 1.0), (6, 1.5)),
+            key=lambda item: abs(sheet_ratio - item[1]),
+        )[0]
+        scene_duration_seconds = 5.0
+        steps = 8
+        cache_key = f"{cls.__name__}:{str(unique_id or 'default')}"
+        if bool(hold_prompts):
+            held = _get_held_director_plan(cache_key)
+            if (
+                held
+                and held.get("cache_kind") == "storyboard_motion_prompts"
+                and int(held.get("prompt_count", 0)) == count
+            ):
+                preview = held["preview"]
+                return io.NodeOutput(
+                    held["prompt_lines"], held["first_prompt"],
+                    int(held["prompt_count"]), held["validation"] + " · HOLD",
+                    "Held prompts · LLM not called", "Credits unchanged",
+                    ui=ui.PreviewText(preview),
+                )
+            if held and held.get("cache_kind") == "storyboard_motion_prompts":
+                raise RuntimeError(
+                    "Hold Motion Prompts contains "
+                    f"{int(held.get('prompt_count', 0))} prompts, but the current "
+                    f"director contract requires {count}. No API call was made. "
+                    "Disable Hold Motion Prompts once to regenerate the correct count."
+                )
+
+        key = str(api_key or os.environ.get("OPENROUTER_API_KEY", "")).strip()
+        if not key:
+            raise ValueError(
+                "An OpenRouter API key is required in the node or the "
+                "OPENROUTER_API_KEY environment variable."
+            )
+        columns, rows = {2: (1, 2), 4: (2, 2), 6: (3, 2)}[count]
+        dialogue_rule = (
+            "Infer whether dialogue exists and its natural language from the original "
+            "story and visible scene. Never invent dialogue when the story is nonverbal. "
+            "When dialogue is motivated, use MiniMax syntax "
+            "`(Sx) says: <d>[Language] exact words</d>`."
+        )
+        system = f"""
+You are the image-aware motion director for MiniMax H3 Reference to Video.
+The supplied image is the final accepted storyboard: exactly {count} panels in a
+{columns}-column by {rows}-row grid, read left-to-right across the top row and then
+left-to-right across the bottom row. Analyze what is ACTUALLY visible in every panel.
+
+Return exactly {count} self-contained production-ready video prompts in scene_prompts.
+Every downstream clip receives only its own cropped panel as <Picture 1>.
+
+DIRECTION CONTRACT AUTHORITY:
+- The attached DIRECT PRODUCTION CONTRACT preserves the user's original request plus the
+  first director's resolved genre, secondary genre, visual look, motion language, spoken
+  language, sound policy, story bible and per-scene intentions. Treat every explicit value
+  other than Auto or None as mandatory production direction.
+- The current cropped panel remains authoritative for visible opening facts: present cast,
+  wardrobe, hair, props, location, lighting, composition and pose. Never overwrite those
+  pixels merely to recreate an earlier textual plan.
+- Use sequence_contract to understand narrative purpose and boundaries. Reconcile its planned
+  action with the accepted pixels, preserving intent while preventing the next panel's beat
+  from leaking into the current clip.
+- Resolve Auto values intelligently from the user intent, the complete storyboard progression
+  and the current panel rather than defaulting to a generic cheerful or cinematic treatment.
+
+BOUNDARY CONTRACT:
+- Panel N is the literal visible opening state of clip N: cast, subject count, identity
+  presentation, wardrobe, hair, props, location, lighting, composition and pose.
+- The defining visual event already shown in panel N happens at the opening of clip N;
+  never make clip N-1 perform it early.
+- Panel N+1 is a RESERVED FUTURE BEAT. Clip N may create anticipation or a threshold
+  state for it, but must not complete, reveal or duplicate its defining action, new cast,
+  new wardrobe, new location or decisive composition.
+- If panel N shows an impact, kiss, landing, reveal or other peak already in progress,
+  begin at that exact peak and animate its completion and reaction instead of replaying setup.
+- For the final panel, complete the requested outcome and settle on a resolved state.
+
+SCENE ISOLATION:
+- Mention only people visibly present in the current panel. Never import a person from
+  another panel, the original references, or a shared global cast.
+- State the exact visible wardrobe and location independently in every prompt. Never
+  restore old clothing or a previous location. Never normalize intentional changes.
+- <Picture 1> controls the opening visual state. The user story controls intended motion;
+  when prose and pixels conflict, start from the pixels and adapt the motion coherently.
+- Do not mention the full storyboard, grids, panels, future reference pictures or analysis
+  inside the final prompts.
+
+GENRE EXECUTION:
+- Infer the active production genre from the original story intent and visible storyboard,
+  then make it control performance, proximity, gaze, touch, camera relationship,
+  pacing and sound in every clip, not only lighting or color treatment.
+- For OnlyFans-style creator direction, use intimate self-produced energy, confident seductive
+  body language, charged mutual attraction, tactile interaction and passionate escalation
+  appropriate to the current beat. A public or introductory beat may remain teasing and restrained;
+  a private payoff may become openly passionate. Avoid generic cheerful couple posing when the
+  active genre calls for erotic or intimate tension.
+
+CAMERA AND ACTION:
+- Give every clip purposeful motion and a distinct coverage strategy appropriate to its
+  visible composition and narrative function. Across the sequence vary wide, medium,
+  profile, over-the-shoulder, close-up, insert/detail, high/low angle or tracking coverage
+  when motivated; avoid repeating near-identical medium shots.
+- Preserve readable anatomy, contact points, geography and cause-and-effect. Choose focused
+  action and pacing that can be expressed clearly in one short H3 clip.
+- Each prompt must contain: concise visible opening state; chronological movement;
+  camera behavior; lighting; synchronized sound; optional dialogue; concrete ending state;
+  and one short clause reserving the next panel's defining beat without describing it.
+- {dialogue_rule}
+- Infer a distinct, motivated motion and camera style for each shot instead of applying one
+  global motion preset to the complete sequence.
+
+OUTPUT:
+Return only one JSON object containing one key, scene_prompts, whose value is an array
+of exactly {count} complete strings. No other keys or commentary.
+""".strip()
+        if isinstance(parsed_context, dict):
+            contract = dict(parsed_context.get("direction_contract") or {})
+            sequence = []
+            for index, shot in enumerate(parsed_context.get("shots") or [], 1):
+                if not isinstance(shot, dict):
+                    continue
+                sequence.append({
+                    "scene": index,
+                    "storyboard_keyframe_intent": str(
+                        shot.get("storyboard_prompt") or ""
+                    ).strip(),
+                    "planned_action": str(shot.get("prompt") or "").strip(),
+                })
+            contract["sequence_contract"] = sequence
+            context_text = json.dumps(contract, ensure_ascii=False, indent=2)
+        else:
+            context_text = raw_context
+        user_text = "\n\n".join((
+            "DIRECT PRODUCTION CONTRACT:\n" + context_text,
+            "Inspect the attached accepted storyboard and direct the motion now. "
+            "Use the contract for intent and direction, while pixels remain authoritative "
+            "for each clip's visible opening state.",
+        ))
+        content = [
+            {"type": "text", "text": user_text},
+            {"type": "image_url", "image_url": {
+                "url": _image_data_url(storyboard_sheet, int(image_max_dimension))
+            }},
+        ]
+        payload = {
+            "model": str(model).strip() or DEFAULT_MODEL,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": content},
+            ],
+            "max_tokens": int(max_tokens),
+            "temperature": float(temperature),
+            "seed": int(seed),
+            "reasoning": {"enabled": bool(reasoning)},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "storyboard_motion_prompts",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {"scene_prompts": {
+                            "type": "array", "minItems": count, "maxItems": count,
+                            "items": {"type": "string", "minLength": 1},
+                        }},
+                        "required": ["scene_prompts"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "provider": {"require_parameters": True},
+        }
+        result = _openrouter_request(key, payload, int(timeout_seconds))
+        try:
+            response_text = result["choices"][0]["message"]["content"]
+            prompts = _parse_direct_prompt_response(response_text, count)
+        except (KeyError, IndexError, TypeError, RuntimeError) as error:
+            raise RuntimeError(
+                f"Storyboard Motion Director did not return {count} usable prompts: {error}"
+            ) from error
+        usage = result.get("usage") or {}
+        usage_stats = (
+            f"input: {usage.get('prompt_tokens', '?')} · "
+            f"output: {usage.get('completion_tokens', '?')} · "
+            f"total: {usage.get('total_tokens', '?')}"
+        )
+        credits = _credits(key, min(30, int(timeout_seconds)))
+        validation = (
+            f"Image-aware motion prompts ready · {count} panels from "
+            f"{'director contract' if contract_count in (2, 4, 6) else 'legacy ratio fallback'} · "
+            f"sheet {shape[2]}×{shape[1]} · "
+            "current beat protected from future-beat leakage · no creative JSON plan"
+        )
+        prompt_lines = _format_direct_chain_payload(
+            prompts, scene_duration_seconds, steps, seed, "Cinematic Cuts"
+        )
+        preview = "\n\n".join(
+            f"SCENE {index:02d}\n{prompt}"
+            for index, prompt in enumerate(prompts, 1)
+        )
+        record = {
+            "cache_kind": "storyboard_motion_prompts",
+            "prompt_lines": prompt_lines,
+            "first_prompt": prompts[0],
+            "prompt_count": count,
+            "validation": validation,
+            "usage_stats": usage_stats,
+            "credits_remaining": credits,
+            "preview": preview,
+        }
+        _set_held_director_plan(cache_key, record)
+        return io.NodeOutput(
+            prompt_lines, prompts[0], count, validation, usage_stats, credits,
+            ui=ui.PreviewText(preview),
+        )
 
 
 class SimpleH3PromptLinesToList(io.ComfyNode):
@@ -5589,9 +8066,19 @@ class H3StoryDirectorStoryboardCuts(H3StoryDirector):
             "h3 storyboard director", "storyboard cuts", "shot sheet director"
         ]
         schema.description = (
-            "Plans independent shots plus one static storyboard frame per scene. "
-            "The generated sheet becomes the FL2VA first-frame source."
+            "Plans one coherent horizontal storyboard strip plus independent Ref2VA "
+            "shots. Panel N becomes the sole video reference for scene N."
         )
+        for index, item in enumerate(schema.inputs):
+            if item.id == "scene_count":
+                schema.inputs[index] = io.Int.Input(
+                    "scene_count", default=2, min=1, max=6,
+                    tooltip=(
+                        "Number of ordered storyboard panels and matching Ref2VA scenes. "
+                        "Panels are always arranged left-to-right in one row."
+                    ),
+                )
+                break
         return schema
 
     @classmethod
@@ -5599,8 +8086,16 @@ class H3StoryDirectorStoryboardCuts(H3StoryDirector):
         storyboard_rules = """
 MANDATORY STORYBOARD-CUT DIRECTION:
 - Every scene is an independent cinematic shot beginning after a hard cut.
+- Produce between one and six scenes exactly as requested. All storyboard_prompt
+  compositions will be rendered simultaneously inside one horizontal strip,
+  ordered strictly left-to-right. Design the complete strip as one coherent visual
+  artifact so identity, wardrobe, hairstyle, accessories, props, architecture,
+  palette, lighting logic and production design remain consistent across panels.
 - Preserve identity, wardrobe, hairstyle, accessories, physical changes,
   persistent props, geography and narrative state across the complete story.
+- Original reference poses, framing, expressions, camera angles and backgrounds are
+  source observations, not continuity locks. Invent new poses and compositions for
+  the storyboard unless the user explicitly asks to retain one of those properties.
 - Never continue the previous camera trajectory, composition, exact pose or body
   motion. Freely choose the best new shot size, angle, lens, focus and movement.
 - Never describe a seamless transition or one continuous take.
@@ -5608,9 +8103,10 @@ MANDATORY STORYBOARD-CUT DIRECTION:
 - storyboard_prompt_prefix is used only to generate still images. It must assign
   every connected original <Picture N> reference to stable subject labels S1,
   S2 and S3 as applicable, plus permanent visual rules.
-- prompt_prefix is used only for video generation after the still exists. In it,
-  <Picture 1> always means the complete generated storyboard image for the
-  current scene, never an original uploaded reference. Define S1, S2 and S3 as
+- prompt_prefix is used only for video generation after the strip exists and is
+  divided into individual panels. In it, <Picture 1> always means the single
+  generated panel matching the current scene, never the complete strip and never
+  an original uploaded reference. Define S1, S2 and S3 as
   the depicted subjects inside that generated image. Never mention <Picture 2>,
   <Picture 3> or any higher Picture tag in prompt_prefix.
 - The normal scene prompt describes action, camera movement, dialogue and sound
@@ -5622,6 +8118,67 @@ MANDATORY STORYBOARD-CUT DIRECTION:
   environment, shot size, angle, lens, focus and lighting, but no temporal
   sequence, camera movement, audio, dialogue delivery, captions, panel numbers,
   labels or multiple moments.
+- Write storyboard_prompt_prefix and every storyboard_prompt in native MiniMax
+  image-prompt language: concrete Subject/Picture bindings, retention intent,
+  one finished composition, precise visible detail and no video terminology.
+- Before writing the storyboard prompts, privately design one purposeful visual
+  coverage progression for the complete strip. Every panel must have a distinct
+  dramatic job: establish geography, reveal a relationship, emphasize an action,
+  isolate a reaction, expose an important detail, intensify the conflict, or land
+  the outcome. Do not output this private coverage plan as labels or metadata.
+- First divide the complete user request into the requested number of successive
+  cause-and-effect story milestones. Distribute the action across the whole strip:
+  do not complete or summarize the entire request in panel 1, and do not merely
+  repeat its climax in later panels. Each panel begins from the visible consequence
+  of the preceding milestone and contributes one new readable development.
+- Treat the panels as selected key moments from one coherent chronological sequence,
+  not independent variations of one prompt. Preserve geography, screen direction,
+  character objectives, current physical state and persistent changes across cuts,
+  while allowing motivated location changes explicitly required by the story.
+- Adjacent panels may not repeat substantially the same shot scale, camera height,
+  camera side, angle, lens impression, subject arrangement or negative-space
+  pattern. A minor crop, small zoom or slightly shifted camera is not sufficient.
+- Adjacent panels must also depict different chronological action phases. Never
+  write the same physical pose and activity twice with only intensified adjectives.
+  Panel N must visibly inherit the result of panel N-1 and advance to a new readable
+  state. For two panels, use a clear setup/cause in panel 1 and a later decisive
+  development, reaction, consequence or resolution in panel 2.
+- Choose the widest useful narrative separation that remains coherent for the
+  available panel count. With only two panels, select two substantially different
+  milestones rather than two neighboring instants of the same repeated motion.
+- Characters act toward their objective, environment and one another. Their gaze,
+  posture and hands must be task-motivated; never make them stop, pose, present the
+  action to the viewer or look into the camera unless the user explicitly asks.
+- Use deliberate cinematic variety selected for the story: establishing wide or
+  full shots, medium two-shots, over-the-shoulder views, profiles, low/high angles,
+  close-ups, extreme close-ups, inserts, foreground occlusion, depth staging and
+  asymmetric compositions. Choose only useful coverage; do not cycle mechanically
+  through a generic shot list.
+- Preserve screen direction and spatial geography across cuts. Cross the axis only
+  when the new composition clearly re-establishes orientation. Maintain coherent
+  eyelines, subject handedness, prop positions and entrances/exits.
+- Escalate visual emphasis across the strip. Reserve the strongest close-up,
+  unusual angle or most graphic composition for the most important story beat;
+  do not spend every panel at the same intensity.
+- storyboard_prompt must state its exact shot scale, viewpoint, camera height,
+  angle, foreground/midground/background arrangement, subject placement, eyelines,
+  lens character and focal priority in concrete visible terms.
+- Do not write vague phrases such as cinematic angle, dynamic composition or a
+  slightly different view. Make the new camera geometry unmistakable from visible
+  foreground, profile/face orientation, body overlap, depth layers and screen space.
+- Scene prompt N must animate only panel N. The panel is authoritative for visible
+  wardrobe, hairstyle, accessories, props, environment, lighting, composition and
+  character placement. Do not restore visual details from the original uploads.
+- Keep the video-side prompt_prefix extremely short. Do not redescribe identity,
+  wardrobe, environment, lighting or composition already visible in the current
+  panel. Each normal scene prompt should contain only the chronological action,
+  expression/performance changes, camera movement, dialogue, sound and the exact
+  ending state needed by that clip. Repeat a visual fact only when it changes.
+- The storyboard side carries visual design; the Ref2VA side carries motion and
+  sound. Never duplicate the complete storyboard description inside a video prompt.
+- Write every normal scene prompt so the action begins naturally from the visible
+  state designed in its matching panel, while allowing a deliberate camera move
+  inside that shot. Do not describe interpolation toward the following panel.
 """.strip()
         kwargs["system_prompt"] = "\n\n".join((
             str(kwargs.get("system_prompt") or "").strip(),
@@ -5707,9 +8264,110 @@ MANDATORY FL2VA KEYFRAME STORYBOARD DIRECTION:
         return super().execute(**kwargs)
 
 
+class H3StoryDirectorStoryboardBlocks(H3StoryDirector):
+    """Plan 1-4 storyboard sheets whose panels animate inside one clip each."""
+
+    @classmethod
+    def define_schema(cls):
+        schema = super().define_schema()
+        schema.node_id = "H3StoryDirectorStoryboardBlocks"
+        schema.display_name = "H3 Story Director — Multi-Storyboard Clips"
+        schema.search_aliases = [
+            "h3 storyboard blocks", "multi storyboard video", "storyboard clip director"
+        ]
+        schema.description = (
+            "Creates 1-4 chronological storyboard blocks with 1, 2, or 4 panels "
+            "per block. Each complete sheet later drives one Ref2VA clip."
+        )
+        replaced = []
+        for item in schema.inputs:
+            if item.id == "scene_count":
+                replaced.extend((
+                    io.Int.Input(
+                        "storyboard_count", default=2, min=1, max=4,
+                        tooltip="Number of complete storyboard sheets and resulting clips.",
+                    ),
+                    io.Combo.Input(
+                        "panels_per_storyboard", options=["1", "2", "4"], default="4",
+                        tooltip="Ordered panels interpreted inside every generated clip.",
+                    ),
+                ))
+            elif item.id == "scene_duration_seconds":
+                replaced.append(io.Combo.Input(
+                    "clip_duration_seconds", options=["5", "10", "15"], default="10",
+                    tooltip="Duration of every storyboard-driven video clip.",
+                ))
+            else:
+                replaced.append(item)
+        schema.inputs = replaced
+        schema.outputs.append(io.String.Output(
+            "block_config",
+            tooltip="Connect to Simple H3 Storyboard Block Plan and Context.",
+        ))
+        return schema
+
+    @classmethod
+    def execute(cls, **kwargs) -> io.NodeOutput:
+        storyboard_count = max(1, min(4, int(kwargs.pop("storyboard_count", 2))))
+        panels_per = int(kwargs.pop("panels_per_storyboard", "4"))
+        if panels_per not in (1, 2, 4):
+            raise ValueError("panels_per_storyboard must be 1, 2, or 4.")
+        clip_duration = int(kwargs.pop("clip_duration_seconds", "10"))
+        if clip_duration not in (5, 10, 15):
+            raise ValueError("clip_duration_seconds must be 5, 10, or 15.")
+        total_panels = storyboard_count * panels_per
+        kwargs["scene_count"] = total_panels
+        kwargs["scene_duration_seconds"] = max(1.0, clip_duration / panels_per)
+        block_rules = f"""
+MANDATORY MULTI-STORYBOARD BLOCK CONTRACT:
+- Plan exactly {storyboard_count} consecutive storyboard blocks with exactly
+  {panels_per} ordered panels in every block ({total_panels} panels total).
+- Block B contains scenes ((B-1)*{panels_per}+1) through (B*{panels_per}).
+- Every complete block will be supplied to MiniMax H3 as one <Picture 1> and
+  animated as one {clip_duration}-second video with internal motivated cuts.
+- Within each block, distribute the chronological action across all panels and
+  design distinctly different, readable camera coverage. Panel 1 establishes
+  that block; the final panel lands its local consequence or handoff state.
+- Across block boundaries preserve identity, wardrobe, physical state, props,
+  geography, screen direction, story logic, soundscape and musical development.
+- Normal scene prompts must describe the motion beginning at that panel and its
+  chronological development. Do not use original Picture tags in video prompts.
+""".strip()
+        kwargs["system_prompt"] = "\n\n".join((
+            str(kwargs.get("system_prompt") or "").strip(), block_rules,
+        )).strip()
+        result = super().execute(**kwargs)
+        config_data = {
+            "version": 1,
+            "storyboard_count": storyboard_count,
+            "panels_per_storyboard": panels_per,
+            "clip_duration_seconds": clip_duration,
+            "total_panels": total_panels,
+        }
+        config = json.dumps(
+            config_data, ensure_ascii=False, separators=(",", ":")
+        )
+        output_args = list(result.args)
+        try:
+            enriched_plan = json.loads(str(output_args[0]))
+            enriched_plan["storyboard_block_config"] = config_data
+            output_args[0] = json.dumps(enriched_plan, ensure_ascii=False)
+        except (IndexError, TypeError, json.JSONDecodeError) as error:
+            raise ValueError(
+                "Multi-Storyboard Director could not attach its block settings to the plan."
+            ) from error
+        return io.NodeOutput(
+            *output_args, config, ui=result.ui, expand=result.expand,
+            block_execution=result.block_execution,
+        )
+
+
 __all__ = [
     "H3StoryDirector",
     "H3DirectPromptDirector",
     "SimpleH3PromptLinesToList",
+    "H3StoryDirectorStoryboardCuts",
+    "H3StoryDirectorStoryboardBlocks",
 ]
+
 

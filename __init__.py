@@ -19,12 +19,23 @@ from .story_director import (
     H3LLMModelAPI,
     H3OllamaModel,
     H3DirectPromptDirector,
+    LTX25EditAnythingDirector,
+    H3DirectVideoEditDirector,
+    H3CompactMultimodalEditDirector,
+    LTX25FirstFrameDirector,
+    H3CompactDirectionControls,
+    H3StoryboardMotionDirector,
     SimpleH3PromptLinesToList,
     H3DirectPromptsToChainJSON,
     H3StoryDirector,
+    H3StoryDirectorStoryboardCuts,
+    H3StoryDirectorStoryboardBlocks,
     H3StoryDirectorLLMAPI,
 )
 from .audio_transcriber import LocalWhisperTranscribe
+from .compact_llm_providers import H3OpenRouterModel, H3QwenLocalModel
+from .ltx_overlap import LTX25ForwardOverlapAssemble
+from .ltx25_compact_director import LTX25CompactI2VDirector
 
 
 VISION_BLOCK = "<|vision_start|><|image_pad|><|vision_end|>"
@@ -674,6 +685,72 @@ class H3EditDuration24FPS(io.ComfyNode):
         return io.NodeOutput(duration, frame_load_cap)
 
 
+class H3SecondsToFrameCap(io.ComfyNode):
+    """Convert seconds to a VHS cap without an editable math expression."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3SecondsToFrameCap",
+            display_name="H3 Seconds → Frame Load Cap",
+            category="conditioning/minimax",
+            inputs=[
+                io.Float.Input("seconds", force_input=True),
+                io.Combo.Input(
+                    "mode",
+                    options=["single H3 edit", "raw source duration"],
+                    default="single H3 edit",
+                ),
+            ],
+            outputs=[io.Int.Output("frame_load_cap")],
+        )
+
+    @classmethod
+    def execute(cls, seconds: float, mode: str) -> io.NodeOutput:
+        value = float(seconds)
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("seconds must be a finite positive number.")
+        raw_frames = max(1, int(round(value * 24.0)))
+        if mode == "single H3 edit":
+            # Nearest native H3 temporal boundary, capped at H3's 15 s limit.
+            frame_cap = round((raw_frames - 5) / 17) * 17 + 5
+            frame_cap = min(359, max(5, int(frame_cap)))
+        else:
+            frame_cap = raw_frames
+        return io.NodeOutput(frame_cap)
+
+
+class H3LoadedFrameCount(io.ComfyNode):
+    """Normalize the frame count actually delivered by VHS without text math."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3LoadedFrameCount",
+            display_name="H3 Loaded Frames — Normalize",
+            category="conditioning/minimax",
+            inputs=[
+                io.Int.Input("loaded_frames", force_input=True),
+                io.Combo.Input(
+                    "mode",
+                    options=["snap down to H3 grid", "raw loaded frames"],
+                    default="snap down to H3 grid",
+                ),
+            ],
+            outputs=[
+                io.Int.Output("frames"),
+                io.Float.Output("seconds"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, loaded_frames: int, mode: str) -> io.NodeOutput:
+        count = max(1, int(loaded_frames))
+        if mode == "snap down to H3 grid":
+            count = max(5, ((count - 5) // 17) * 17 + 5)
+        return io.NodeOutput(count, count / 24.0)
+
+
 class LocalVisionPromptExtension(ComfyExtension):
     @override
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
@@ -683,13 +760,27 @@ class LocalVisionPromptExtension(ComfyExtension):
             H3LLMModelAPI,
             H3OllamaModel,
             H3StoryDirector,
+            H3StoryDirectorStoryboardCuts,
+            H3StoryDirectorStoryboardBlocks,
             H3StoryDirectorLLMAPI,
             H3DirectPromptDirector,
+            LTX25EditAnythingDirector,
+            H3DirectVideoEditDirector,
+            H3CompactMultimodalEditDirector,
+            LTX25FirstFrameDirector,
+            LTX25CompactI2VDirector,
+            H3CompactDirectionControls,
+            H3OpenRouterModel,
+            H3QwenLocalModel,
+            H3StoryboardMotionDirector,
             SimpleH3PromptLinesToList,
             H3DirectPromptsToChainJSON,
             LocalWhisperTranscribe,
             PreviewVisionPrompt,
             H3EditDuration24FPS,
+            H3SecondsToFrameCap,
+            H3LoadedFrameCount,
+            LTX25ForwardOverlapAssemble,
         ]
 
 
