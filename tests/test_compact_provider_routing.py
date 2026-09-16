@@ -1,6 +1,7 @@
 """Offline contract tests: no model loads, HTTP requests or paid generations."""
 import ast
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -17,7 +18,7 @@ def load_director():
                and n.name == "H3CompactMultimodalEditDirector")
     calls = []
     scope = dict(
-        json=json, os=os, re=re, DEFAULT_MODEL="internal-test",
+        json=json, math=math, os=os, re=re, DEFAULT_MODEL="internal-test",
         io=SimpleNamespace(ComfyNode=object, NodeOutput=lambda *v, **kw: v),
         ui=SimpleNamespace(PreviewText=lambda v: v),
         MOTION_STYLES={
@@ -103,7 +104,8 @@ class RoutingTests(unittest.TestCase):
                     edit_mode="compact", video_samples="3", system_prompt="Test.",
                     max_tokens=1200, temperature=0.2, reasoning=False, seed=0,
                     image_max_dimension=1024, timeout_seconds=30,
-                    reference_image_1=Frame(), continuous_scene_count=2)
+                    reference_image_1=Frame(), continuous_scene_count=2,
+                    seconds_per_scene=5.0)
 
     def test_external_does_not_require_or_call_internal_openrouter(self):
         for mode in ("compact", "deep_edit", "continuous"):
@@ -163,6 +165,8 @@ class RoutingTests(unittest.TestCase):
         system = payload["messages"][0]["content"]
         self.assertIn(cls.DEEP_EDIT_RULES, system)
         self.assertIn(cls.ELABORATE_RULES, system)
+        self.assertIn(cls.H3_NATIVE_PROMPT_RULES, system)
+        self.assertIn("5.00 SECONDS PER SCENE", system)
         self.assertIn("CREATIVE DIRECTOR MANDATE", system)
         self.assertIn("compact creative blueprint", system)
         self.assertIn("Creative objective", system)
@@ -176,9 +180,9 @@ class RoutingTests(unittest.TestCase):
             payload["response_format"]["json_schema"]["name"],
             "h3_compact_multimodal_edit_prompt",
         )
-        self.assertGreaterEqual(payload["max_tokens"], 3000)
+        self.assertGreaterEqual(payload["max_tokens"], 500)
         prompt_schema = payload["response_format"]["json_schema"]["schema"]["properties"]["edit_prompt"]
-        self.assertGreaterEqual(prompt_schema["minLength"], 1600)
+        self.assertGreaterEqual(prompt_schema["minLength"], 450)
         self.assertGreaterEqual(prompt_schema["maxLength"], 7000)
         self.assertTrue(result[0].startswith("[reference generation]"))
         self.assertTrue(result[1].startswith("Elaborate "))
@@ -199,15 +203,51 @@ class RoutingTests(unittest.TestCase):
         self.assertIn(cls.DEEP_EDIT_RULES, system)
         self.assertIn(cls.CONTINUOUS_EDIT_RULES, system)
         self.assertIn(cls.CONTINUOUS_ELABORATE_RULES, system)
+        self.assertIn(cls.H3_NATIVE_PROMPT_RULES, system)
+        self.assertIn(cls.CONTINUOUS_H3_HANDOFF_RULES, system)
+        self.assertIn("no generated last-frame inspection", system)
         self.assertIn("DIRECT VISUAL PROSE IS MANDATORY IN EVERY SCENE", system)
         self.assertEqual(
             payload["response_format"]["json_schema"]["name"],
             "h3_compact_continuous_scene_prompts",
         )
-        self.assertGreaterEqual(payload["max_tokens"], 2 * 760)
+        self.assertGreaterEqual(payload["max_tokens"], 2 * 500)
         self.assertEqual(len(json.loads(result[0])["scene_prompts"]), 2)
         self.assertTrue(result[1].startswith("Continuous Elaborate "))
         self.assertEqual(calls, ["external"])
+
+    def test_elaborate_seconds_control_density_and_validation(self):
+        for seconds, expected_chars, expected_tokens in (
+            (4.0, 450, 500), (8.0, 700, 700), (15.0, 900, 900),
+        ):
+            scope, calls = load_director()
+            args = self.kwargs()
+            args.update(edit_mode="Continuous Elaborate", seconds_per_scene=seconds,
+                        max_tokens=256, llm=SimpleNamespace(model="local-test"))
+            scope["H3CompactMultimodalEditDirector"].execute(**args)
+            payload = scope["last_payload"]
+            system = payload["messages"][0]["content"]
+            item = payload["response_format"]["json_schema"]["schema"]["properties"]["scene_prompts"]["items"]
+            self.assertIn(f"{seconds:.2f} SECONDS PER SCENE", system)
+            self.assertEqual(item["minLength"], expected_chars)
+            self.assertEqual(payload["max_tokens"], 2 * expected_tokens)
+            self.assertEqual(calls, ["external"])
+
+        scope, calls = load_director()
+        args = self.kwargs()
+        args.update(edit_mode="Elaborate", seconds_per_scene=16.0,
+                    llm=SimpleNamespace(model="local-test"))
+        with self.assertRaisesRegex(ValueError, "between 1 and 15"):
+            scope["H3CompactMultimodalEditDirector"].execute(**args)
+        self.assertEqual(calls, [])
+
+        scope, calls = load_director()
+        args = self.kwargs()
+        args.update(edit_mode="Elaborate", seconds_per_scene="not-a-number",
+                    llm=SimpleNamespace(model="local-test"))
+        with self.assertRaisesRegex(ValueError, "must be a number"):
+            scope["H3CompactMultimodalEditDirector"].execute(**args)
+        self.assertEqual(calls, [])
 
     def test_i2v_mode_treats_picture_one_as_exact_opening_frame(self):
         for mode in ("compact", "Elaborate", "Continuous Edit", "Continuous Elaborate"):

@@ -1,8 +1,10 @@
 {
-  "LocalVisionPromptGenerator": "Vision Prompt Assistant",
-  "AbliterationVisionPrompt": "Abliteration Vision Prompt",
-  "H3StoryDirector": "H3 Story Director",
-  "LocalWhisperTranscribe": "Local Whisper Transcribe",
-  "PreviewVisionPrompt": "Preview Vision Prompt",
-  "H3EditDuration24FPS": "H3 Edit Duration — 24 FPS"
+  "H3CompactMultimodalEditDirector": "H3 Compact Multimodal Edit Director",
+  "H3CompactDirectionControls": "H3 Compact Director — Direction Controls",
+  "H3CompactPromptSelect": "H3 Compact Prompt Select",
+  "MiniMaxMusic3CompactDirector": "MiniMax Music 3 Compact Director",
+  "H3OpenRouterModel": "H3 OpenRouter Model",
+  "H3OllamaModel": "H3 Ollama Model",
+  "H3LLMModelAPI": "H3 LLM Model API",
+  "H3QwenLocalModel": "H3 Qwen Local Model"
 }

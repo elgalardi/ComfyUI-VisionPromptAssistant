@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0 - 2026-09-15
+
+- Breaking cleanup: removed legacy image/video/storyboard/LTX directors,
+  transcription and unused utility nodes. Old workflows using those node IDs
+  require an earlier release.
+- Retained the compact H3 director, direction controls, prompt selector,
+  Music 3 director and OpenRouter/Ollama/API/local Qwen LLM loaders.
+- Added text-only requests without requiring a visual reference.
+- Director seed can share a PrimitiveInt input with the generation sampler.
+- Removed the unused faster-whisper dependency.
+- Stored held plans under ComfyUI output/Sexy AI Studio/director_hold.
+
 ## 1.5.0 - 2026-08-20
 
 - Added separate `OpenRouter` and `Gemma` Director Profiles without changing

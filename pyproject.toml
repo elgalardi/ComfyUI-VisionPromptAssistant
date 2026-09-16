@@ -1,10 +1,10 @@
 [project]
 name = "vision-prompt-assistant"
-version = "1.5.0"
-description = "Generate reference-aware prompts and structured MiniMax H3 story plans."
+version = "2.0.0"
+description = "Compact MiniMax H3 and Music 3 directors with OpenRouter, Ollama, API and local LLM providers."
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
-dependencies = ["faster-whisper>=1.1.0"]
+dependencies = []
 classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
