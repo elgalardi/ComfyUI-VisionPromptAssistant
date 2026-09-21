@@ -4,6 +4,8 @@ Compact MiniMax H3 and Music 3 prompt directors with interchangeable LLM loaders
 
 ## Included nodes
 
+- `PreviewVisionPrompt`: display prompt text without saving a file.
+
 - `H3CompactMultimodalEditDirector`: compact/edit/elaborate and continuous scene
   prompts, with optional references or text-only requests.
 - `H3CompactDirectionControls`: genre, motion, visual look and dialogue controls.
