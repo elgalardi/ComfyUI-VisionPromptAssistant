@@ -4,6 +4,10 @@ Compact MiniMax H3 and Music 3 prompt directors with interchangeable LLM loaders
 
 ## Included nodes
 
+- `LocalVisionPromptGenerator` (Vision Prompt Assistant): local Qwen vision
+  prompting with up to three images, system/user prompts and sampling controls.
+  The original node ID and sockets are preserved for existing workflows.
+
 - `PreviewVisionPrompt`: display prompt text without saving a file.
 
 - `H3CompactMultimodalEditDirector`: compact/edit/elaborate and continuous scene

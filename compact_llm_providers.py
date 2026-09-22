@@ -99,7 +99,7 @@ class QwenLocalConnection:
         self.load_device = load_device
 
     def h3_chat_completion(self, payload):
-        # Reuse the existing single-entry CLIP cache and Comfy memory manager.
+        # Use the shared local loader and ComfyUI's memory manager.
         package = importlib.import_module(__package__)
         clip = package.LocalVisionPromptGenerator._load_clip(
             self.model, self.clip_type, self.load_device

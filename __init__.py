@@ -8,6 +8,7 @@ from .story_director import (
 from .compact_llm_providers import H3OpenRouterModel, H3QwenLocalModel
 from .compact_prompt_select import H3CompactPromptSelect
 from .music_director import MiniMaxMusic3CompactDirector
+from .local_vision_prompt import LocalVisionPromptGenerator
 
 
 class PreviewVisionPrompt(io.ComfyNode):
@@ -35,6 +36,7 @@ class LocalVisionPromptExtension(ComfyExtension):
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         return [
             PreviewVisionPrompt,
+            LocalVisionPromptGenerator,
             H3CompactMultimodalEditDirector, H3CompactDirectionControls,
             H3CompactPromptSelect, MiniMaxMusic3CompactDirector,
             H3OpenRouterModel, H3OllamaModel, H3LLMModelAPI, H3QwenLocalModel,
