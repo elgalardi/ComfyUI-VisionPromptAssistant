@@ -31,6 +31,14 @@ external LLM will return identical text: save and reuse the generated prompt
 when exact prompt recall is needed. Hold data is stored in
 `output/Sexy AI Studio/director_hold/plans.json`.
 
+## Pending improvements
+
+- Visual director for chained video: inspect the actual generated tail frames before writing
+  the next segment, then adapt its action and camera continuity to the observed result.
+  Carry forward reference roles, completed events and the requested final outcome. Derive any
+  timestamp compensation from the actual trimmed context and FPS. This remains future work;
+  the current director plans the entire sequence in one call without seeing generated segments.
+
 ## Install / update
 
 Install through Comfy Registry or clone this repository into ComfyUI's
@@ -47,8 +55,17 @@ sampler recipe, or LoRAs.
 
 Offline checks: `python -B tests/test_compact_provider_routing.py`.
 No model generation is performed by that test suite.
-
 # Vision Prompt — Visual Director
+
+`target_model` selects `MiniMax H3` (backward-compatible default) or `Qwen`,
+independently of the LLM provider. Both targets support all four modes. H3 retains
+`<Picture N>` / `<Subject N>` definitions and retention sections. Qwen uses an
+actionable prose prompt with `<imageN>` for multiple connected images and natural
+reference wording for one image. Its sizing advice (`wh_ratio` / `ratio_follow`)
+is exposed in `sheet_plan`, not injected into the image prompt or wired to canvas
+controls. Configure actual generation dimensions separately. Change targets with
+Hold off; held prompts from another target cannot be reused. Qwen's sheet plan is
+its rewritten prompt plus sizing metadata, not the H3 panel-ledger schema.
 
 `Edit` modifies an existing image or sheet: connect the source to
 `reference_image_1` and write the requested change. Images 2–4 are optional
@@ -103,3 +120,23 @@ More panels may require a larger `max_tokens`; truncated responses fail clearly
 instead of returning an incomplete sheet. Exact rendering and identity retention
 depend on the downstream image model and connected references.
 
+# Storyboard mode
+
+Select `Storyboard` in the compact director and connect a planning sheet to
+`storyboard_image`. Use a vision-capable LLM. `continuous_scene_count` selects
+1–12 generated scenes and `seconds_per_scene` sets each scene's duration.
+An empty request means faithful adaptation; use the request box for intentional
+changes. Increase `image_max_dimension` when small panel annotations are unreadable.
+
+The director plans all scenes in one response, with numbered shots inside each
+scene. It uses the existing `scene_prompts` JSON output contract and permits
+storyboard-motivated cuts instead of enforcing continuous-camera boundaries.
+Planning warnings appear in the preview and `validation`; they do not stop the
+workflow. Check them before sampling. Panel interpretation and timing feasibility
+remain LLM judgments, not guarantees.
+
+The sheet is only planning input: do not connect it to H3's reference/first-frame
+inputs. Separate identity references may use the existing reference sockets.
+This mode does not crop panels or rewire the generation workflow automatically.
+Disable Hold after changing the sheet or request. Existing modes ignore the new
+optional socket. No per-scene last-frame inspection is performed.

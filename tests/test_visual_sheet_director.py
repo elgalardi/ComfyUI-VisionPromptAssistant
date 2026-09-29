@@ -24,6 +24,11 @@ def load_sheet():
     held = {}
     def respond(llm, payload):
         calls.append(payload)
+        if payload["response_format"]["json_schema"]["name"] == "qwen_visual_director":
+            return {"choices": [{"message": {"content": json.dumps({
+                "rewritten_prompt": "Create the requested image, preserving reference identity.",
+                "wh_ratio": "16:9", "ratio_follow": "", "warnings": [],
+            })}}]}
         if payload["response_format"]["json_schema"]["name"] == "visual_sheet_edit":
             return {"choices": [{"message": {"content": json.dumps({
                 "subject_definitions": "<Subject 1> is the person in <Picture 1>.",
@@ -49,6 +54,33 @@ def load_sheet():
 
 
 class VisualSheetTests(unittest.TestCase):
+    def test_qwen_modes_and_hold_target_isolation(self):
+        for mode in ("Storyboard", "Character Sheet", "Custom Sheet", "Edit"):
+            scope, calls = load_sheet()
+            director = scope["VisualSheetDirector"]
+            result = director.execute(SimpleNamespace(model="test"), request="test", sheet_type=mode,
+                                      reference_image_1=Frames(), target_model="Qwen", unique_id="q")
+            self.assertNotIn("<Picture", result[0])
+            self.assertEqual(len(calls), 1)
+            self.assertIn("MODE:", calls[0]["messages"][0]["content"])
+            self.assertIn("the input image", str(calls[0]["messages"][1]["content"]))
+            self.assertIn("wh_ratio", json.loads(result[1]))
+            with self.assertRaisesRegex(ValueError, "Target model changed"):
+                director.execute(None, hold_prompt=True, unique_id="q", target_model="MiniMax H3")
+
+    def test_qwen_multiple_refs_and_invalid_sizing(self):
+        scope, calls = load_sheet()
+        scope["VisualSheetDirector"].execute(SimpleNamespace(model="test"), request="test", target_model="Qwen",
+            reference_image_2=Frames(), reference_image_4=Frames())
+        content = str(calls[0]["messages"][1]["content"])
+        self.assertIn("<image1> (reference_image_2)", content)
+        self.assertIn("<image2> (reference_image_4)", content)
+        for prompt, ratio, follow in (("Use <image3>", "", ""), ("Edit", "16:9", "<image1>")):
+            response = {"choices": [{"message": {"content": json.dumps({
+                "rewritten_prompt": prompt, "wh_ratio": ratio, "ratio_follow": follow, "warnings": []})}}]}
+            with self.assertRaises(ValueError):
+                scope["render_qwen"](response, 2)
+
     def test_edit_missing_source_tag_is_added_without_retry(self):
         scope, calls = load_sheet()
         plan = {"subject_definitions": "The woman in the source image.",
