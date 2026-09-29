@@ -95,7 +95,7 @@ def qwen_schema():
             "required": [*fields, "warnings"]}
 
 
-def render_qwen(response, reference_count):
+def render_qwen(response, reference_count, selected_ratio=None):
     choice = response["choices"][0]
     if choice.get("finish_reason") == "length":
         raise ValueError("Qwen prompt was truncated. Increase max_tokens.")
@@ -113,13 +113,23 @@ def render_qwen(response, reference_count):
     prompt = plan["rewritten_prompt"].strip()
     if not prompt or not isinstance(plan.get("warnings"), list) or any(not isinstance(w, str) for w in plan["warnings"]):
         raise ValueError("Qwen response requires a prompt and warning list.")
-    if plan["wh_ratio"] and plan["ratio_follow"]:
-        raise ValueError("Qwen sizing metadata must select a ratio OR a reference, not both.")
+    plan["wh_ratio"] = plan["wh_ratio"].strip()
+    plan["ratio_follow"] = plan["ratio_follow"].strip()
+    if selected_ratio:
+        plan["wh_ratio"], plan["ratio_follow"] = selected_ratio, ""
+    elif plan["wh_ratio"] and plan["ratio_follow"]:
+        # Edit has no explicit canvas control here. Do not guess which advice
+        # expresses the user's intent; the actual workflow dimensions remain authoritative.
+        plan["wh_ratio"], plan["ratio_follow"] = "", ""
+        plan["warnings"].append("Conflicting sizing advice omitted; keep the canvas dimensions configured in the workflow.")
     if plan["wh_ratio"] and not re.fullmatch(r"[1-9]\d*:[1-9]\d*", plan["wh_ratio"]):
-        raise ValueError("Qwen aspect ratio must use W:H notation.")
-    if plan["ratio_follow"] and not re.fullmatch(r"<image[1-9]\d*>", plan["ratio_follow"]):
-        raise ValueError("Qwen ratio_follow must identify an input image.")
-    for text in (prompt, plan["ratio_follow"]):
+        plan["wh_ratio"] = ""
+        plan["warnings"].append("Invalid aspect-ratio advice omitted; configure canvas dimensions in the workflow.")
+    follow = re.fullmatch(r"<image([1-9]\d*)>", plan["ratio_follow"])
+    if plan["ratio_follow"] and (not follow or int(follow[1]) > reference_count):
+        plan["ratio_follow"] = ""
+        plan["warnings"].append("Invalid sizing reference omitted; workflow dimensions are unchanged.")
+    for text in (prompt,):
         if any(int(n) > reference_count for n in re.findall(r"<image(\d+)>", text)):
             raise ValueError("Qwen prompt referenced an image that is not connected.")
     if re.search(r"<(?:Picture|Subject)\s+\d+>", prompt):
@@ -392,7 +402,7 @@ preservation is not guaranteed. Return one edit_description, not a panel list.""
                        "schema": qwen_schema() if target_model == "Qwen" else edit_schema() if is_edit else sheet_schema(count)}},
                    "provider": {"require_parameters": True}}
         response = _external_llm_request(llm, payload)
-        prompt, plan = (render_qwen(response, len(refs)) if target_model == "Qwen" else render_edit(response, len(refs)) if is_edit else
+        prompt, plan = (render_qwen(response, len(refs), None if is_edit else aspect_ratio) if target_model == "Qwen" else render_edit(response, len(refs)) if is_edit else
                         render_sheet(response, count, sheet_type, layout, annotations, aspect_ratio, reference_slots))
         if has_video:
             plan["warnings"].append(f"Experimental video: {len(indices)} sampled frames; no audio or full-motion analysis.")

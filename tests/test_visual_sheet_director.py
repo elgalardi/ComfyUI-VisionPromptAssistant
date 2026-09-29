@@ -75,11 +75,24 @@ class VisualSheetTests(unittest.TestCase):
         content = str(calls[0]["messages"][1]["content"])
         self.assertIn("<image1> (reference_image_2)", content)
         self.assertIn("<image2> (reference_image_4)", content)
-        for prompt, ratio, follow in (("Use <image3>", "", ""), ("Edit", "16:9", "<image1>")):
+        for prompt, ratio, follow in (("Use <image3>", "", ""),):
             response = {"choices": [{"message": {"content": json.dumps({
                 "rewritten_prompt": prompt, "wh_ratio": ratio, "ratio_follow": follow, "warnings": []})}}]}
             with self.assertRaises(ValueError):
                 scope["render_qwen"](response, 2)
+
+    def test_qwen_sizing_advice_does_not_block_prompt(self):
+        scope, calls = load_sheet()
+        for ratio, follow in (("16:9", "<image1>"), ("bad", ""), ("", "<image9>")):
+            response = {"choices": [{"message": {"content": json.dumps({
+                "rewritten_prompt": "Make the jacket blue.", "wh_ratio": ratio,
+                "ratio_follow": follow, "warnings": []})}}]}
+            prompt, plan = scope["render_qwen"](response, 1)
+            self.assertEqual(prompt, "Make the jacket blue.")
+            self.assertEqual((plan["wh_ratio"], plan["ratio_follow"]), ("", ""))
+            _, plan = scope["render_qwen"](response, 1, "4:3")
+            self.assertEqual((plan["wh_ratio"], plan["ratio_follow"]), ("4:3", ""))
+        self.assertEqual(calls, [])
 
     def test_edit_missing_source_tag_is_added_without_retry(self):
         scope, calls = load_sheet()
