@@ -48,7 +48,7 @@ sampler recipe, or LoRAs.
 Offline checks: `python -B tests/test_compact_provider_routing.py`.
 No model generation is performed by that test suite.
 
-# Vision Prompt - Sheet Director
+# Vision Prompt — Visual Director
 
 `Edit` modifies an existing image or sheet: connect the source to
 `reference_image_1` and write the requested change. Images 2–4 are optional
@@ -73,7 +73,7 @@ replicate KJ padding, masks or GPU/VSR options. Leave this resize active; bypass
 the upstream Load Image to disable a reference. Required image consumers still
 need a real image.
 
-`Vision Prompt - Sheet Director` is independent of the H3 video director.
+`Vision Prompt — Visual Director` is independent of the H3 video director.
 It writes one image prompt for an entire sheet, not one prompt per generated frame.
 Choose `Storyboard`, `Character Sheet`, or `Custom Sheet`; `Scenes / Panels` sets
 the number of panels/views in that one image (1–24 in the UI). It supports grid,
@@ -102,5 +102,4 @@ the image sampler: connect/set the sampler's seed separately for repeatability.
 More panels may require a larger `max_tokens`; truncated responses fail clearly
 instead of returning an incomplete sheet. Exact rendering and identity retention
 depend on the downstream image model and connected references.
-
 

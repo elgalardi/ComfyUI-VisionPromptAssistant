@@ -194,7 +194,7 @@ class VisualSheetDirector(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="VisualSheetDirector", display_name="Vision Prompt - Sheet Director",
+            node_id="VisualSheetDirector", display_name="Vision Prompt — Visual Director",
             category="text/vision_prompt", description="Create a prompt for one storyboard, character sheet or custom sheet. Does not generate images.",
             inputs=[
                 io.Custom("LLMMODEL").Input("llm"),
