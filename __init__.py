@@ -9,6 +9,8 @@ from .compact_llm_providers import H3OpenRouterModel, H3QwenLocalModel
 from .compact_prompt_select import H3CompactPromptSelect
 from .music_director import MiniMaxMusic3CompactDirector
 from .local_vision_prompt import LocalVisionPromptGenerator
+from .visual_sheet_director import VisualSheetDirector
+from .optional_reference_resize import OptionalReferenceResize
 
 
 class PreviewVisionPrompt(io.ComfyNode):
@@ -39,6 +41,8 @@ class LocalVisionPromptExtension(ComfyExtension):
             LocalVisionPromptGenerator,
             H3CompactMultimodalEditDirector, H3CompactDirectionControls,
             H3CompactPromptSelect, MiniMaxMusic3CompactDirector,
+            VisualSheetDirector,
+            OptionalReferenceResize,
             H3OpenRouterModel, H3OllamaModel, H3LLMModelAPI, H3QwenLocalModel,
         ]
 
