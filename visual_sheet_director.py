@@ -282,7 +282,7 @@ class VisualSheetDirector(io.ComfyNode):
             node_id="VisualSheetDirector", display_name="Vision Prompt — Visual Director",
             category="text/vision_prompt", description="Create a prompt for one storyboard, character sheet or custom sheet. Does not generate images.",
             inputs=[
-                io.Custom("LLMMODEL").Input("llm"),
+                io.Custom("LLMMODEL").Input("llm", optional=True),
                 io.String.Input("request", multiline=True, dynamic_prompts=False, default=""),
                 io.Combo.Input("sheet_type", options=["Storyboard", "Character Sheet", "Custom Sheet", "Edit"], default="Storyboard"),
                 io.Int.Input("scene_count", display_name="Scenes / Panels", default=9, min=1, max=24),
@@ -303,19 +303,25 @@ class VisualSheetDirector(io.ComfyNode):
                                  tooltip="Reuse this node's last saved sheet without calling the LLM. Disable to apply any changes."),
                 io.Combo.Input("target_model", options=["MiniMax H3", "Qwen"], default="MiniMax H3",
                                tooltip="Selects prompt grammar, not the LLM provider or image model loader."),
+                io.Boolean.Input("bypass", default=False,
+                                 tooltip="Pass request through unchanged. Skip LLM, Hold, references and all planning controls."),
             ], outputs=[io.String.Output("prompt"), io.String.Output("sheet_plan"),
                         io.String.Output("validation"), io.String.Output("usage_stats")],
             hidden=[io.Hidden.unique_id],
         )
 
     @classmethod
-    def execute(cls, llm, request="", sheet_type="Storyboard", scene_count=9,
+    def execute(cls, llm=None, request="", sheet_type="Storyboard", scene_count=9,
                 layout="grid", aspect_ratio="16:9", annotations="panels_only",
                 annotation_language="English", seed=0, max_tokens=4096, temperature=0.7,
                 image_max_dimension=1536, video_samples="5", reference_image_1=None,
                 reference_image_2=None, reference_image_3=None, reference_image_4=None,
                 reference_video=None, direction_context=None, hold_prompt=False, unique_id=None,
-                target_model="MiniMax H3"):
+                target_model="MiniMax H3", bypass=False):
+        if bypass:
+            prompt = request if request is not None else ""
+            return io.NodeOutput(prompt, "", "BYPASS · request passed through unchanged",
+                                 "Bypass · no LLM call", ui=ui.PreviewText(prompt))
         if target_model not in ("MiniMax H3", "Qwen"):
             raise ValueError("Unknown target model.")
         cache_key = f"VisualSheetDirector:{unique_id or 'default'}"

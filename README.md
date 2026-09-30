@@ -57,6 +57,12 @@ Offline checks: `python -B tests/test_compact_provider_routing.py`.
 No model generation is performed by that test suite.
 # Vision Prompt — Visual Director
 
+`bypass` sends `request` unchanged to `prompt`, including whitespace, without an
+LLM call. It takes priority over Hold and all planning controls, returns an empty
+`sheet_plan`, and does not overwrite the saved Hold result. The LLM connection is
+optional for bypass but required for normal generation. Connected upstream nodes
+may still execute under ComfyUI's graph evaluation.
+
 `target_model` selects `MiniMax H3` (backward-compatible default) or `Qwen`,
 independently of the LLM provider. Both targets support all four modes. H3 retains
 `<Picture N>` / `<Subject N>` definitions and retention sections. Qwen uses an

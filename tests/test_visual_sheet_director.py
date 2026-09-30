@@ -54,6 +54,17 @@ def load_sheet():
 
 
 class VisualSheetTests(unittest.TestCase):
+    def test_bypass_is_verbatim_without_provider_and_overrides_hold(self):
+        scope, calls = load_sheet()
+        for text in ("  Keep <Picture 1> exactly.\n\n", ""):
+            result = scope["VisualSheetDirector"].execute(
+                request=text, bypass=True, hold_prompt=True, sheet_type="Edit",
+                target_model="unused", scene_count=0)
+            self.assertEqual(result[0], text)
+            self.assertEqual(result[1], "")
+            self.assertIn("BYPASS", result[2])
+        self.assertEqual(calls, [])
+
     def test_qwen_modes_and_hold_target_isolation(self):
         for mode in ("Storyboard", "Character Sheet", "Custom Sheet", "Edit"):
             scope, calls = load_sheet()
