@@ -1888,7 +1888,31 @@ boundary and never repeat the same arc description in every scene.
         return canonical
 
     @staticmethod
-    def _prepare_storyboard(parsed, seconds):
+    def _normalize_storyboard_times(scene, seconds):
+        shots = scene["shots"]
+        if not shots:
+            return False
+        if any(not isinstance(shot, dict) for shot in shots):
+            raise ValueError("Storyboard shot must be an object.")
+        try:
+            starts = [float(shot.get("start_seconds")) for shot in shots]
+        except (TypeError, ValueError, OverflowError):
+            starts = []
+        valid = (
+            bool(starts) and starts[0] == 0
+            and all(math.isfinite(t) and 0 <= t < seconds for t in starts)
+        )
+        millis = [round(t * 1000) for t in starts] if valid else []
+        valid = valid and all(a < b for a, b in zip(millis, millis[1:])) and millis[-1] < seconds * 1000
+        if not valid:
+            # Preserve every shot in narrative order; each scene owns its local clock.
+            millis = [math.floor(i * seconds * 1000 / len(shots)) for i in range(len(shots))]
+        for shot, timestamp in zip(shots, millis):
+            shot["start_seconds"] = timestamp / 1000
+        return not valid
+
+    @classmethod
+    def _prepare_storyboard(cls, parsed, seconds):
         panels = parsed.get("panels")
         if not isinstance(panels, list) or not panels:
             raise ValueError("Storyboard requires a panel-by-panel visual ledger.")
@@ -1899,6 +1923,8 @@ boundary and never repeat the same arc description in every scene.
         spoken = set()
         for scene_index, scene in enumerate(parsed["scene_prompts"], 1):
             shots = scene["shots"]
+            if cls._normalize_storyboard_times(scene, seconds):
+                warnings.append(f"Scene {scene_index}: shot timestamps automatically redistributed within {seconds:g}s; all shots preserved.")
             for index, shot in enumerate(shots):
                 panel_id = shot["panel_id"]
                 if type(panel_id) is not int or not 1 <= panel_id <= len(panels):
@@ -1923,22 +1949,17 @@ boundary and never repeat the same arc description in every scene.
         if covered != sorted(covered):
             warnings.append("Storyboard panel order changed; check the requested chronology.")
 
-    @staticmethod
-    def _render_storyboard_scene(scene, seconds):
+    @classmethod
+    def _render_storyboard_scene(cls, scene, seconds):
         if not isinstance(scene, dict) or not isinstance(scene.get("shots"), list) or not scene["shots"]:
             raise ValueError("Storyboard requires structured shots. Disable Hold and regenerate the director prompt.")
+        cls._normalize_storyboard_times(scene, seconds)
         lines = ["integrated_multimodal_description:"]
-        previous_ms = -1
         for index, shot in enumerate(scene["shots"], 1):
             if not isinstance(shot, dict):
                 raise ValueError("Storyboard shot must be an object.")
             start = float(shot["start_seconds"])
-            if not math.isfinite(start) or start < 0 or start >= seconds:
-                raise ValueError("Storyboard shot timestamp is outside the scene duration.")
             millis = round(start * 1000)
-            if (index == 1 and start != 0) or millis <= previous_ms or millis >= seconds * 1000:
-                raise ValueError("Storyboard shot times must start at zero and strictly increase.")
-            previous_ms = millis
             description, dialogue = shot["description"], shot["dialogue"]
             if not isinstance(description, str) or not description.strip() or not isinstance(dialogue, str):
                 raise ValueError("Storyboard shot requires visual description and separate dialogue text.")

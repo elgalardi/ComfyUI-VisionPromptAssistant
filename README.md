@@ -137,6 +137,9 @@ changes. Increase `image_max_dimension` when small panel annotations are unreada
 The director plans all scenes in one response, with numbered shots inside each
 scene. It uses the existing `scene_prompts` JSON output contract and permits
 storyboard-motivated cuts instead of enforcing continuous-camera boundaries.
+Invalid, missing, duplicated or out-of-range shot timestamps are automatically
+redistributed within each scene, preserving all shots in their supplied order.
+Valid timing is retained to millisecond precision; repairs require no extra LLM call.
 Planning warnings appear in the preview and `validation`; they do not stop the
 workflow. Check them before sampling. Panel interpretation and timing feasibility
 remain LLM judgments, not guarantees.

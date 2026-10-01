@@ -65,15 +65,43 @@ class StoryboardTests(unittest.TestCase):
         self.assertTrue(any("Uncovered storyboard panels: 2" in w for w in parsed["planning_warnings"]))
         self.assertTrue(any("likely too short" in w for w in parsed["planning_warnings"]))
 
-    def test_rejects_unstructured_and_invalid_timeline(self):
+    def test_rejects_unstructured_shots(self):
         director, _, _ = self.setup_director()
         with self.assertRaisesRegex(ValueError, "structured shots"):
             director._render_storyboard_scene("[Shot 1] all actions merged", 10)
-        for times in ((1, 2), (0, 0), (0, 10), (0, -1)):
+
+    def test_repairs_invalid_timestamps_without_dropping_shots(self):
+        director, _, _ = self.setup_director()
+        for times in ((1, 2), (0, 0), (0, 10), (0, -1), (10, 15),
+                      (0, float('nan')), (0, float('inf')), (0, None),
+                      (0, '00:04.000'), (0, 0.0001), (0, 9.9999), (0, 4, 2)):
             scene = {"shots": [{"start_seconds": t, "description": "Action.", "dialogue": ""} for t in times],
                      "overall_soundscape": "", "non_diegetic_music": ""}
-            with self.assertRaises(ValueError):
-                director._render_storyboard_scene(scene, 10)
+            rendered = director._render_storyboard_scene(scene, 10)
+            self.assertEqual(rendered.count('[Shot '), len(times))
+            starts = [s['start_seconds'] for s in scene['shots']]
+            self.assertEqual(starts[0], 0)
+            self.assertTrue(all(0 <= t < 10 for t in starts))
+            self.assertTrue(all(a < b for a, b in zip(starts, starts[1:])))
+
+    def test_valid_timeline_is_preserved(self):
+        director, _, _ = self.setup_director()
+        scene = {'shots': [{'start_seconds': t} for t in (0, 1.5, 4.999)]}
+        self.assertFalse(director._normalize_storyboard_times(scene, 5))
+        self.assertEqual([s['start_seconds'] for s in scene['shots']], [0, 1.5, 4.999])
+
+    def test_execute_repairs_each_scene_locally_with_one_llm_call(self):
+        director, args, calls = self.setup_director(count=2)
+        # The fixture returns a second shot at 2.5s, outside this 1s scene.
+        args['seconds_per_scene'] = 1
+        result = director.execute(**args)
+        prompts = json.loads(result[0])['scene_prompts']
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(prompts), 2)
+        for prompt in prompts:
+            self.assertIn('[Shot 2] At 00:00.500,', prompt)
+            self.assertIn('Hola.', prompt)
+        self.assertIn('automatically redistributed', result[1])
 
     def test_warnings_visible_in_validation(self):
         director, args, calls = self.setup_director(warnings=["Not enough time for all nine panels."])
