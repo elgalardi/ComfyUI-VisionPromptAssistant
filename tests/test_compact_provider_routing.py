@@ -235,9 +235,17 @@ class RoutingTests(unittest.TestCase):
 
         scope, calls = load_director()
         args = self.kwargs()
-        args.update(edit_mode="Elaborate", seconds_per_scene=16.0,
+        args.update(edit_mode="Elaborate", seconds_per_scene=30.0,
                     llm=SimpleNamespace(model="local-test"))
-        with self.assertRaisesRegex(ValueError, "between 1 and 15"):
+        scope["H3CompactMultimodalEditDirector"].execute(**args)
+        self.assertEqual(calls, ["external"])
+        self.assertIn("30.00 SECONDS PER SCENE", scope["last_payload"]["messages"][0]["content"])
+
+        scope, calls = load_director()
+        args = self.kwargs()
+        args.update(edit_mode="Elaborate", seconds_per_scene=30.5,
+                    llm=SimpleNamespace(model="local-test"))
+        with self.assertRaisesRegex(ValueError, "between 1 and 30"):
             scope["H3CompactMultimodalEditDirector"].execute(**args)
         self.assertEqual(calls, [])
 

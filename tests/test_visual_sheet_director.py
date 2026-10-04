@@ -54,6 +54,40 @@ def load_sheet():
 
 
 class VisualSheetTests(unittest.TestCase):
+    def test_image_mode_text_only_ignores_sheet_controls(self):
+        for target in ("MiniMax H3", "Qwen"):
+            scope, calls = load_sheet()
+            result = scope["VisualSheetDirector"].execute(
+                SimpleNamespace(model="test"), request="A lighthouse above a stormy sea",
+                sheet_type="Image", scene_count=24, layout="vertical",
+                annotations="production_notes", target_model=target,
+                direction_context="Low angle, cinematic lighting")
+            self.assertEqual(len(calls), 1)
+            brief = json.loads(calls[0]["messages"][1]["content"][0]["text"])
+            for field in ("panel_count", "layout", "annotations", "annotation_language"):
+                self.assertNotIn(field, brief)
+            self.assertIn("Low angle", brief["direction_controls"])
+            self.assertNotIn("<Picture", result[0])
+            self.assertNotIn("PANEL 1", result[0])
+            self.assertNotIn("gutters", result[0])
+            self.assertIn("one standalone image prompt", result[2])
+            if target == "MiniMax H3":
+                self.assertIn("image_description:", result[0])
+                self.assertEqual(len(json.loads(result[1])["panels"]), 1)
+            else:
+                self.assertEqual(json.loads(result[1])["wh_ratio"], "16:9")
+
+    def test_image_mode_accepts_optional_references_and_video(self):
+        for target, tag in (("MiniMax H3", "<Picture 1>"), ("Qwen", "the input image")):
+            scope, calls = load_sheet()
+            result = scope["VisualSheetDirector"].execute(
+                SimpleNamespace(model="test"), request="", sheet_type="Image",
+                reference_image_3=Frames(), reference_video=Frames(6), target_model=target)
+            content = calls[0]["messages"][1]["content"]
+            self.assertIn(tag + " (reference_image_3)", str(content))
+            self.assertEqual(sum(item["type"] == "image_url" for item in content), 6)
+            self.assertIn("Experimental video", result[2])
+
     def test_bypass_is_verbatim_without_provider_and_overrides_hold(self):
         scope, calls = load_sheet()
         for text in ("  Keep <Picture 1> exactly.\n\n", ""):

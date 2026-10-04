@@ -98,6 +98,12 @@ need a real image.
 
 `Vision Prompt — Visual Director` is independent of the H3 video director.
 It writes one image prompt for an entire sheet, not one prompt per generated frame.
+Choose `Image` for a standalone image prompt from a written idea, with no visual
+input required. Connected images optionally supply references; sampled video can
+also inform the composition. This mode supports MiniMax H3 and Qwen, Direction
+Controls, Hold and bypass. Scenes / Panels, layout and annotation widgets are
+ignored; it does not add a sheet grid or captions. Actual images are still created
+by the downstream generation workflow, not this director.
 Choose `Storyboard`, `Character Sheet`, or `Custom Sheet`; `Scenes / Panels` sets
 the number of panels/views in that one image (1–24 in the UI). It supports grid,
 horizontal and vertical layouts, whole-sheet aspect ratio, and `panels_only`,
@@ -130,7 +136,7 @@ depend on the downstream image model and connected references.
 
 Select `Storyboard` in the compact director and connect a planning sheet to
 `storyboard_image`. Use a vision-capable LLM. `continuous_scene_count` selects
-1–12 generated scenes and `seconds_per_scene` sets each scene's duration.
+1–12 generated scenes and `seconds_per_scene` sets each scene's duration (1–30 seconds).
 An empty request means faithful adaptation; use the request box for intentional
 changes. Increase `image_max_dimension` when small panel annotations are unreadable.
 

@@ -2053,9 +2053,9 @@ boundary and never repeat the same arc description in every scene.
                 ),
                 io.Float.Input(
                     "seconds_per_scene", display_name="Seconds per Scene — Elaborate / Storyboard",
-                    default=5.0, min=1.0, max=15.0, step=0.5, force_input=True,
+                    default=5.0, min=1.0, max=30.0, step=0.5, force_input=True,
                     tooltip=(
-                        "Connected FLOAT containing the 1–15 second screen-time budget used by "
+                        "Connected FLOAT containing the 1–30 second screen-time budget used by "
                         "Elaborate, Continuous Elaborate and Storyboard. Other modes ignore it."
                     ),
                 ),
@@ -2192,9 +2192,9 @@ boundary and never repeat the same arc description in every scene.
         try:
             scene_seconds = float(seconds_per_scene)
         except (TypeError, ValueError) as error:
-            raise ValueError("seconds_per_scene must be a number between 1 and 15.") from error
-        if not math.isfinite(scene_seconds) or not 1.0 <= scene_seconds <= 15.0:
-            raise ValueError("seconds_per_scene must be between 1 and 15 seconds.")
+            raise ValueError("seconds_per_scene must be a number between 1 and 30.") from error
+        if not math.isfinite(scene_seconds) or not 1.0 <= scene_seconds <= 30.0:
+            raise ValueError("seconds_per_scene must be between 1 and 30 seconds.")
         cache_key = f"{cls.__name__}:{str(unique_id or 'default')}"
         provider_identity = (
             json.dumps({
