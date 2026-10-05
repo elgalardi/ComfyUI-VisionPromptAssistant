@@ -65,6 +65,23 @@ class Frame:
 
 
 class RoutingTests(unittest.TestCase):
+    def test_cinematic_craft_preserves_contract_and_one_call(self):
+        for mode in ("compact", "Elaborate", "Elaborate Continuous"):
+            scope, calls = load_director()
+            args = self.kwargs()
+            args.update(llm=SimpleNamespace(model="test"), edit_mode=mode)
+            scope["H3CompactMultimodalEditDirector"].execute(**args)
+            self.assertEqual(calls, ["external"])
+            payload = scope["last_payload"]
+            system = payload["messages"][0]["content"]
+            self.assertIn("CINEMATIC CRAFT", system)
+            self.assertIn("Carry forward positions", system)
+            self.assertIn("Allow requested montage", system)
+            self.assertIn("without generated-tail review", system)
+            self.assertIn("locked camera/performance", system)
+            self.assertIn("sparse video frames do not", system)
+            self.assertEqual(payload["response_format"]["type"], "json_schema")
+
     def test_debug_is_optional_and_does_not_add_calls(self):
         for enabled in (False, True):
             scope, calls = load_director()

@@ -54,6 +54,30 @@ def load_sheet():
 
 
 class VisualSheetTests(unittest.TestCase):
+    def test_cinematic_craft_is_target_and_mode_aware(self):
+        for target in ("MiniMax H3", "Qwen"):
+            for mode in ("Storyboard", "Character Sheet", "Custom Sheet", "Image", "Edit"):
+                scope, calls = load_sheet()
+                scope["VisualSheetDirector"].execute(
+                    SimpleNamespace(model="test"), request="Change the jacket" if mode == "Edit" else "A traveler",
+                    sheet_type=mode, target_model=target, reference_image_1=Frames())
+                self.assertEqual(len(calls), 1)
+                payload = calls[0]
+                system = payload["messages"][0]["content"]
+                self.assertIn("VISUAL CRAFT", system)
+                self.assertIn("static viewpoint, never camera travel", system)
+                self.assertEqual(payload["response_format"]["type"], "json_schema")
+                if mode == "Storyboard":
+                    self.assertIn("Keep the exact panel count", system)
+                    self.assertIn("Allow requested montage", system)
+                elif mode == "Edit":
+                    self.assertIn("only inside the requested edit", system)
+                    self.assertNotIn("Each panel captures one useful instant", system)
+                elif mode == "Character Sheet":
+                    self.assertIn("Do not impose a narrative arc or continuity of events", system)
+                else:
+                    self.assertIn("do not impose a narrative arc", system)
+
     def test_image_mode_text_only_ignores_sheet_controls(self):
         for target in ("MiniMax H3", "Qwen"):
             scope, calls = load_sheet()

@@ -112,6 +112,38 @@ QWEN_MODES = {
 }
 
 
+def cinematic_craft(sheet_type):
+    craft = """VISUAL CRAFT: Apply internally; keep the selected target's JSON and reference grammar.
+User requirements, assigned reference roles and preservation outrank creative invention. Preserve
+distinct identities, clothing, props, geography and eyelines; identity references do not lock an
+unrequested background or pose. Describe concrete visible staging, contact, scale, lighting and
+composition, not adjective lists. Camera language describes a static viewpoint, never camera travel.
+Do not invent audio analysis or exact beat timing from video frames. Add no lettering, production
+instructions or sensual framing unless requested; honor the selected annotation mode for sheets.
+Silently audit consistency and compress repetition without losing distinctive visual facts.
+Return no reasoning, extra planning fields, workflow recommendations or requests for more inputs.
+"""
+    if sheet_type == "Storyboard":
+        craft += """Each panel captures one useful instant in action, consequence, reaction or new
+information. Carry forward positions, held objects and accumulated changes; do not restart completed
+events. Preserve screen direction and spatial relationships while varying motivated static framing,
+height, angle or distance. Keep the exact panel count and required events; make repetitive panels
+useful rather than deleting them. Allow requested montage, time/location jumps and non-linear order.
+Do not force every storyboard into one physical event or invent a resolution contrary to the brief.
+"""
+    elif sheet_type == "Edit":
+        craft += """Apply this craft only inside the requested edit. Preserve untargeted composition,
+panels, text, poses and style; do not add a narrative, new angles or a cinematic restyle by default.
+"""
+    elif sheet_type == "Character Sheet":
+        craft += """Choose useful complementary views, expressions and details of the same identity,
+with comparable scale and coherent lighting. Do not impose a narrative arc or continuity of events.
+"""
+    else:
+        craft += "Honor the selected Image or Custom Sheet structure; do not impose a narrative arc."
+    return craft.strip()
+
+
 def qwen_schema():
     fields = ("rewritten_prompt", "wh_ratio", "ratio_follow")
     return {"type": "object", "additionalProperties": False,
@@ -440,6 +472,7 @@ preservation is not guaranteed. Return one edit_description, not a panel list.""
                            "brief_labels means short exact quoted captions. production_notes means concise "
                            "quoted action/camera/audio/music notes under each panel in annotation_language. "
                            "Annotation suggestions are visible text, not audible sound.")
+        system += "\n\n" + cinematic_craft(sheet_type)
         payload = {"model": str(getattr(llm, "model", "") or ""),
                    "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
                    "max_tokens": int(max_tokens), "temperature": float(temperature), "seed": int(seed),

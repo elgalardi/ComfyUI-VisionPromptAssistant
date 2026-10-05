@@ -40,6 +40,9 @@ class StoryboardTests(unittest.TestCase):
             self.assertIn(f"exactly {count} scene_prompts", system)
             self.assertIn("5 seconds", system)
             self.assertNotIn("ONE-PASS LOGICAL CONTINUITY", system)
+            self.assertIn("CINEMATIC CRAFT", system)
+            self.assertIn("storyboard setups outrank", system)
+            self.assertIn("without inventing cuts in a continuous take or dropping required shots/panels", system)
             self.assertEqual(sum(x["type"] == "image_url" for x in calls[0]["messages"][1]["content"]), 1)
 
     def test_missing_sheet_fails_before_call(self):

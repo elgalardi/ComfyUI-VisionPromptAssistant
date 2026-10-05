@@ -1273,6 +1273,24 @@ class H3CompactDirectionControls(io.ComfyNode):
 class H3CompactMultimodalEditDirector(io.ComfyNode):
     """Compact, source-optional multimodal director for precise H3 edits."""
 
+    CINEMATIC_CRAFT = """CINEMATIC CRAFT: Apply internally; keep the selected mode, counts, duration,
+reference roles and JSON grammar. No extra fields/workflows/references.
+Requests and source preservation outrank invention; locked camera/performance and storyboard setups outrank
+variety. References control assigned traits. Stage action as start/development/result.
+Carry forward positions, orientation, eyelines, props, wardrobe, damage and completed events.
+Show consequences/reactions/information, not repeated actions/rediscoveries.
+Preserve geography/screen direction; motivate axis crossings. Allow requested montage, time/location
+jumps; continuity need not mean identical framing. Vary purposeful framing/height/angle/distance,
+without inventing cuts in a continuous take or dropping required shots/panels. Prefer one dominant
+camera movement, clear blocking/contacts/weight/secondary motion.
+Fit actions/speech to time, not fixed-interval cuts. Balance escalation/recovery.
+No unrequested sensual framing, wardrobe changes or extra subjects.
+Use supplied lyrics/music instructions or audio evidence; sparse video frames do not reveal audio/beat timing.
+Keep production notes out of imagery and speech. Plan in one call without generated-tail review or extra
+critique calls. Silently audit causality/references/camera/timing; compress repetition, preserving
+subject/action/camera/environment, continuity and ending state. No reasoning output.
+""".strip()
+
     DEFAULT_SYSTEM_PROMPT = """
 You are a precise multimodal edit director for MiniMax H3. Inspect the actual pixels of every
 connected source before writing. Return English only as one JSON object with exactly four keys:
@@ -2669,6 +2687,7 @@ boundary and never repeat the same arc description in every scene.
             }
             response_schema["schema"]["required"].append("panels")
 
+        resolved_system += "\n\n" + cls.CINEMATIC_CRAFT
         payload = {
             "model": str(getattr(llm, "model", "") or ""),
             "messages": [

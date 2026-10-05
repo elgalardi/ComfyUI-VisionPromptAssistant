@@ -31,6 +31,14 @@ external LLM will return identical text: save and reuse the generated prompt
 when exact prompt recall is needed. Hold data is stored in
 `output/Sexy AI Studio/director_hold/plans.json`.
 
+## Cinematic craft
+
+The video and visual directors include compact cinematic-craft instructions: causal progression,
+persistent physical state, motivated framing and concrete staging. Existing mode, source-role,
+scene/panel-count and JSON contracts take priority. Video sequences are still planned in one call;
+image prompts use static viewpoints, and local edits preserve untargeted content. These are prompt
+instructions, not a guarantee of generated continuity or an analysis of audio from sampled frames.
+
 ## Pending improvements
 
 - Visual director for chained video: inspect the actual generated tail frames before writing
