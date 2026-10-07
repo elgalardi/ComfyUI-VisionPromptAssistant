@@ -1291,6 +1291,26 @@ critique calls. Silently audit causality/references/camera/timing; compress repe
 subject/action/camera/environment, continuity and ending state. No reasoning output.
 """.strip()
 
+    CREATIVE_TREATMENT_RULES = """
+CREATIVE TREATMENT SELECTION
+Within the detail budget, consider {candidates} brief treatments internally; commit to one.
+Distinguish them through two unlocked choices:
+audience viewpoint, spatial staging, reveal timing, performance, practical light, environmental
+interaction or sound perspective. Changing adjectives is not a different treatment. Do not write
+multiple full drafts or return alternatives, scores, reasoning or extra JSON fields.
+Choose the strongest feasible approach, not the most complicated. Give it one memorable visible
+relationship, composition or change; camera, light, performance and sound support it. Avoid stock
+embellishment and repeated camera moves. Restraint, stillness and a purposeful held beat are valid.
+Do not force conflict, surprise or a dramatic turn into a dance or non-narrative presentation.
+Explicit requests, assigned reference traits, locked camera/performance/audio and storyboard
+events outrank novelty. In source edits, invent only within the authorized change. Small gestures
+may clarify requested action; never add a major event, principal character, dialogue, location
+change or different outcome merely for spectacle. An identity reference does not lock its source
+background or pose unless assigned. Keep one treatment across scenes, distinct causal beats and
+inherited physical state. Plan in this call without frame review.
+Compile only the chosen treatment into this mode's existing source tags and output contract.
+""".strip()
+
     DEFAULT_SYSTEM_PROMPT = """
 You are a precise multimodal edit director for MiniMax H3. Inspect the actual pixels of every
 connected source before writing. Return English only as one JSON object with exactly four keys:
@@ -1488,7 +1508,9 @@ Develop the prompt as cohesive prose in a useful cinematic order:
 Use precise sensory and spatial details instead of adjective stacks. Maintain one coherent world,
 consistent screen direction, scale, perspective, parallax, reflections, occlusion, contact shadows,
 light spill and temporal continuity. Explicit user requests remain absolute; elaboration must never
-invent extra characters, actions, dialogue, cuts, plot escalation or changes to protected content.
+invent extra principal characters, major events, dialogue, plot escalation or changes to protected
+content. Small supporting gestures may clarify requested actions. Cuts are allowed only when the
+requested structure permits them; locked cameras and continuous takes remain locked.
 Return the same four-key JSON schema required by the base director. `edit_prompt` contains the rich
 finished instruction; `visual_evidence` remains a concise audit rather than duplicating the prompt.
 
@@ -1541,8 +1563,8 @@ non_diegetic_music:
   necessary; explicitly keep the visible subject's lips closed during voiceover.
 - overall_soundscape contains only diegetic ambience, room tone and physical Foley, never dialogue
   text or score. non_diegetic_music contains only score direction, or `N/A` when no score is wanted.
-- Finish the available time with continuing physical behavior or a completed result, not a frozen
-  stare, generic hold, unexplained dead air or a second copy of the opening composition.
+- Finish the available time with continuing physical behavior, a completed result or a purposeful
+  held beat, not an unexplained freeze, dead air or a second copy of the opening composition.
 - Prefer positive, direct description. Use a narrowly targeted constraint only when it prevents a
   likely H3 failure such as duplicate subjects, voice swapping, unstable wardrobe or broken contact.
 
@@ -1605,8 +1627,11 @@ screen positions, wardrobe, object counts and already-used dialogue while still 
 """.strip()
 
     CONTINUOUS_RULES = """
-ENHANCE — CHRONOLOGICAL GENERATION
+ENHANCE — BALANCED CREATIVE DIRECTION
 Turn the user's idea into exactly the requested number of standalone scene prompts.
+This is the middle ground between Compact and Elaborate: a designed audiovisual beat, not a
+bare paraphrase or an exhaustive production treatment. Spend detail on the main action, readable
+staging, one distinctive visual choice and a useful ending; omit long inventories and audits.
 Priority: explicit user instructions, assigned reference roles, selected direction, then creative completion.
 A character reference supplies identity and visible wardrobe unless the user changes them;
 it does not impose its background, pose, expression or camera. Use a reference environment,
@@ -1617,8 +1642,10 @@ Divide the action into distinct chronological beats. Each scene advances the pre
 without replaying completed actions, anticipating later beats or inventing additional plot.
 Establish a readable starting position, action and resulting state; reach the requested outcome
 in the final scene. Preserve established identities, wardrobe and spatial continuity unless changed.
-Use present-tense English prose, normally 70–180 words per scene, up to 260 when necessary,
-not as a quota. Return only the requested JSON, not analysis, timestamps or a separate plan.
+Use present-tense English prose. The duration-specific detail target below overrides defaults;
+up to 260 words only for a genuinely complex required beat, never as a quota. Preserve supplied
+dialogue even when it needs more space. Return only the requested JSON, not analysis, timestamps
+or a separate plan. Prefer one dominant camera behavior; do not invent cuts in a continuous take.
 
 SOURCE-TAG CONTRACT
 Each scene explicitly binds every active referenced element to its canonical tag:
@@ -2016,8 +2043,9 @@ boundary and never repeat the same arc description in every scene.
                         "strong Context-IR-style source ledger and change/preserve analysis, "
                         "then returns one compact production prompt. Elaborate returns one richer "
                         "cinematic prompt with expanded setting, action, mood, camera and sound. "
-                        "Enhance writes a specific "
-                        "compact prompt for each requested scene. Continuous Edit applies edit "
+                        "Enhance is the economical middle ground: focused creative direction "
+                        "between Compact and Elaborate, with one prompt per requested scene. "
+                        "Continuous Edit applies edit "
                         "rules with one progressive edit prompt per scene. Continuous Elaborate "
                         "uses that same sequence structure with richer direction in every scene."
                     ),
@@ -2441,13 +2469,17 @@ boundary and never repeat the same arc description in every scene.
                 "each scene_prompt where its assigned element remains visible."
             )
             resolved_system = "\n\n".join((
-                "You are a compact multimodal continuation director for MiniMax H3. "
+                "You are an economical creative continuation director for MiniMax H3. "
                 "Inspect the connected visual references and obey the user's chronology. "
                 "Return the required JSON schema with English directions and dialogue in its requested language.",
                 cls.CONTINUOUS_RULES,
                 persistent_contract,
                 f"Return exactly {max(1, min(12, int(continuous_scene_count)))} "
-                "chronological strings in scene_prompts, one compact prompt per scene.",
+                "chronological strings in scene_prompts, one balanced prompt per scene.",
+                f"Each scene lasts {scene_seconds:g} seconds. Normally use "
+                + ("90–140" if scene_seconds <= 5 else "120–200" if scene_seconds <= 10 else "160–240")
+                + " English words per scene, shorter when sufficient. Fit action and speech to "
+                "that time, leaving room for reactions; do not force equal-length beats.",
             ))
 
         if resolved_mode == "storyboard":
@@ -2687,6 +2719,10 @@ boundary and never repeat the same arc description in every scene.
             }
             response_schema["schema"]["required"].append("panels")
 
+        if resolved_mode in ("elaborate", "continuous_elaborate", "continuous"):
+            resolved_system += "\n\n" + cls.CREATIVE_TREATMENT_RULES.format(
+                candidates=2 if resolved_mode == "continuous" else 3,
+            )
         resolved_system += "\n\n" + cls.CINEMATIC_CRAFT
         payload = {
             "model": str(getattr(llm, "model", "") or ""),
@@ -2706,7 +2742,9 @@ boundary and never repeat the same arc description in every scene.
                 if resolved_mode in ("continuous_elaborate", "storyboard")
                 else max(int(max_tokens), continuous_count * 480)
                 if resolved_mode == "continuous_edit"
-                else max(int(max_tokens), continuous_count * 400)
+                else max(int(max_tokens), continuous_count * (
+                    350 if scene_seconds <= 5 else 500 if scene_seconds <= 10 else 650
+                ))
                 if resolved_mode == "continuous"
                 else int(max_tokens)
             ),

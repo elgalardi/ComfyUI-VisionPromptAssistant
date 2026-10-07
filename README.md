@@ -39,6 +39,22 @@ scene/panel-count and JSON contracts take priority. Video sequences are still pl
 image prompts use static viewpoints, and local edits preserve untargeted content. These are prompt
 instructions, not a guarantee of generated continuity or an analysis of audio from sampled frames.
 
+Elaborate and Continuous Elaborate now compare three concise creative treatments internally and
+commit to one coherent approach; Enhance compares two within a smaller detail budget. This adds
+no API stages or output fields. Explicit requests, reference roles, locked controls and edit scope
+still take priority. Compact, Edit and faithful Storyboard adaptation do not receive this extra
+exploration layer. These instructions do not guarantee that every LLM explores distinct ideas.
+
+Enhance is the economical middle ground between Compact and Elaborate. It targets 90–140 English
+words per scene for 1–5 seconds, 120–200 for over 5–10, and 160–240 for longer scenes. These are
+guidelines, not truncation limits; required dialogue is preserved. It retains the existing
+`scene_prompts` contract and Scenes control: select one scene for a single prompt. The automatic
+output-token allowance is 350 / 500 / 650 per scene respectively, or the user's `max_tokens` if
+higher. All scenes use one normal LLM request; the existing malformed-response repair may still
+make one additional call. Actual charges depend on provider pricing and token usage; a lower
+allowance is not a guaranteed discount. Existing temperature and seed settings remain unchanged.
+Disable Hold to request fresh prompts after updating, and restart ComfyUI to load the new code.
+
 ## Pending improvements
 
 - Visual director for chained video: inspect the actual generated tail frames before writing

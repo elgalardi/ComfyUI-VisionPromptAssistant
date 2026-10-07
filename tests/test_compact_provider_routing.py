@@ -531,12 +531,12 @@ class RoutingTests(unittest.TestCase):
                 if mode == "Enhance":
                     self.assertNotIn("orbit", system.lower())
                     self.assertIn("does not impose its background, pose, expression or camera", system)
-                    self.assertLess(len(system.split()), 1100)
+                    self.assertLess(len(system.split()), 1500)
                 self.assertEqual(calls, ["external"])
 
     def test_sequence_detail_budget_and_causality_without_temperature_change(self):
         for mode, ceiling, tokens_per_scene in (
-            ("Enhance", "up to 260", 400),
+            ("Enhance", "up to 260", 350),
             ("Continuous Edit", "maximum of 320", 480),
         ):
             scope, calls = load_director()
@@ -553,6 +553,72 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual(payload["temperature"], 0.2)
             self.assertEqual(payload["max_tokens"], 2 * tokens_per_scene)
             self.assertEqual(calls, ["external"])
+
+    def test_creative_exploration_is_scoped_and_does_not_add_calls(self):
+        for mode, candidates in (("Elaborate", 3), ("Continuous Elaborate", 3),
+                                 ("Enhance", 2), ("compact", None),
+                                 ("edit", None), ("Continuous Edit", None)):
+            scope, calls = load_director()
+            args = self.kwargs()
+            args.update(edit_mode=mode, llm=SimpleNamespace(model="test"))
+            scope["H3CompactMultimodalEditDirector"].execute(**args)
+            system = scope["last_payload"]["messages"][0]["content"]
+            self.assertEqual("CREATIVE TREATMENT SELECTION" in system, candidates is not None)
+            if candidates:
+                self.assertIn(f"consider {candidates} brief", system)
+                self.assertIn("locked camera/performance/audio", system)
+                self.assertIn("without frame review", system)
+                self.assertIn("never add a major event", system)
+                self.assertIn("purposeful held beat", system)
+                self.assertIn("return alternatives, scores, reasoning or extra JSON fields", system)
+            self.assertEqual(calls, ["external"])
+
+    def test_enhance_duration_budget_preserves_schema_and_user_settings(self):
+        for seconds, words, allowance in ((4, "90–140", 350), (10, "120–200", 500),
+                                         (30, "160–240", 650)):
+            for count in (1, 3):
+                scope, calls = load_director()
+                args = self.kwargs()
+                args.update(edit_mode="Enhance", llm=SimpleNamespace(model="test"),
+                            seconds_per_scene=seconds, continuous_scene_count=count,
+                            max_tokens=256, temperature=0.35, seed=123)
+                result = scope["H3CompactMultimodalEditDirector"].execute(**args)
+                payload = scope["last_payload"]
+                system = payload["messages"][0]["content"]
+                self.assertIn("middle ground between Compact and Elaborate", system)
+                self.assertIn(words, system)
+                self.assertIn(f"Each scene lasts {seconds:g} seconds", system)
+                self.assertIn("Preserve supplied", system)
+                self.assertNotIn("CREATIVE DIRECTOR MANDATE", system)
+                self.assertEqual(payload["max_tokens"], count * allowance)
+                self.assertEqual(payload["temperature"], 0.35)
+                self.assertEqual(payload["seed"], 123)
+                self.assertEqual(len(json.loads(result[0])["scene_prompts"]), count)
+                self.assertEqual(calls, ["external"])
+
+    def test_enhance_does_not_reduce_explicit_max_tokens(self):
+        scope, calls = load_director()
+        args = self.kwargs()
+        args.update(edit_mode="Enhance", llm=SimpleNamespace(model="test"), max_tokens=2500)
+        scope["H3CompactMultimodalEditDirector"].execute(**args)
+        self.assertEqual(scope["last_payload"]["max_tokens"], 2500)
+        self.assertEqual(calls, ["external"])
+
+    def test_enhance_uses_less_input_and_output_budget_than_elaborate_sequence(self):
+        payloads = {}
+        for mode in ("Enhance", "Continuous Elaborate"):
+            scope, calls = load_director()
+            args = self.kwargs()
+            args.update(edit_mode=mode, llm=SimpleNamespace(model="test"),
+                        max_tokens=256, seconds_per_scene=10,
+                        direction_context="Genre: Gothic Horror")
+            scope["H3CompactMultimodalEditDirector"].execute(**args)
+            payloads[mode] = scope["last_payload"]
+            self.assertEqual(calls, ["external"])
+        self.assertLess(len(payloads["Enhance"]["messages"][0]["content"]),
+                        len(payloads["Continuous Elaborate"]["messages"][0]["content"]))
+        self.assertLess(payloads["Enhance"]["max_tokens"],
+                        payloads["Continuous Elaborate"]["max_tokens"])
 
 
 if __name__ == "__main__":
