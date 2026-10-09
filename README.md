@@ -40,20 +40,48 @@ image prompts use static viewpoints, and local edits preserve untargeted content
 instructions, not a guarantee of generated continuity or an analysis of audio from sampled frames.
 
 Elaborate and Continuous Elaborate now compare three concise creative treatments internally and
-commit to one coherent approach; Enhance compares two within a smaller detail budget. This adds
+commit to one coherent approach; Enhance compares three within a smaller detail budget. This adds
 no API stages or output fields. Explicit requests, reference roles, locked controls and edit scope
 still take priority. Compact, Edit and faithful Storyboard adaptation do not receive this extra
 exploration layer. These instructions do not guarantee that every LLM explores distinct ideas.
 
-Enhance is the economical middle ground between Compact and Elaborate. It targets 90–140 English
+Enhance is compact Elaborate: the same creative exploration with concentrated wording, not
+an expanded Compact paraphrase. It designs complementary staging, viewpoint, performance and
+light choices, with distinct visual purposes across scenes while preserving the user's action
+and locked controls. It targets 90–140 English
 words per scene for 1–5 seconds, 120–200 for over 5–10, and 160–240 for longer scenes. These are
 guidelines, not truncation limits; required dialogue is preserved. It retains the existing
+H3 section grammar inside each scene: `subject_definitions:`,
+`integrated_multimodal_description:`, `overall_soundscape:` and `non_diegetic_music:`.
+Subject IDs bind canonical source tags in short definitions, the integrated description keeps
+the creative action and camera design, and sound/music use concise lines. Roughly half-length
+Elaborate prose is a target, not automatic truncation; missing sections produce a validation warning.
+It retains the existing
 `scene_prompts` contract and Scenes control: select one scene for a single prompt. The automatic
 output-token allowance is 350 / 500 / 650 per scene respectively, or the user's `max_tokens` if
 higher. All scenes use one normal LLM request; the existing malformed-response repair may still
 make one additional call. Actual charges depend on provider pricing and token usage; a lower
 allowance is not a guaranteed discount. Existing temperature and seed settings remain unchanged.
 Disable Hold to request fresh prompts after updating, and restart ComfyUI to load the new code.
+
+### Shots per scene
+
+Enhance, Elaborate and Continuous Elaborate expose `Shots — Per Scene` (1–3).
+1 preserves automatic shot design; it does not force a single take. 2 or 3 requests
+exactly that many shots inside each scene's existing duration, not additional scenes.
+The LLM plans structured shots in one request; the node renders the same H3 text
+sections and `[Shot N]` labels with scene-local cut times. Invalid timestamps are
+redistributed locally without dropping shots. A provider returning the wrong shot
+count produces a validation warning rather than discarding generated descriptions.
+
+Multi-shot selection authorizes internal cuts over general continuous-take guidance;
+other reference, action and direction locks remain active. The next scene's first
+shot inherits the previous scene's final-shot action, framing and audiovisual state
+before its first internal cut. This is logical planning, not generated-frame review
+or a guarantee of pixel-perfect continuity. For I2V, only the first scene is aligned
+to the supplied opening image; subsequent scenes follow the inherited state.
+Compact, Edit and Storyboard keep their existing shot behavior. Disable Hold when
+changing Shots or multi-shot duration. No new output sockets or sampler changes.
 
 ## Pending improvements
 

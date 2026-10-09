@@ -1627,11 +1627,19 @@ screen positions, wardrobe, object counts and already-used dialogue while still 
 """.strip()
 
     CONTINUOUS_RULES = """
-ENHANCE — BALANCED CREATIVE DIRECTION
+ENHANCE — COMPACT ELABORATE, HIGH-CREATIVITY DIRECTION
 Turn the user's idea into exactly the requested number of standalone scene prompts.
-This is the middle ground between Compact and Elaborate: a designed audiovisual beat, not a
-bare paraphrase or an exhaustive production treatment. Spend detail on the main action, readable
-staging, one distinctive visual choice and a useful ending; omit long inventories and audits.
+Think like Elaborate; write economically. Compress the treatment, not the imagination.
+Do not paraphrase the request and decorate it with cinematic adjectives. Design a specific
+piece of footage: an intentional viewpoint, spatial choreography, motivated performance,
+expressive light and a memorable visual payoff within the requested action.
+Treat unspecified choices as creative territory; avoid default medium shots and slow push-ins.
+Make two or three complementary choices work together: occlusion revealing action, reflected
+light responding to movement, or depth carrying choreography. Examples, not a fixed recipe.
+Prefer distinctive, feasible choices over maximum activity. Give scenes distinct visual purposes
+and rhythm within one treatment. Build opening, action/reaction and ending; vary framing, angle,
+depth or emphasis when motivated and unlocked. Keep Elaborate's production value without
+inventories, audits or repeated descriptions. Delete filler before creative decisions.
 Priority: explicit user instructions, assigned reference roles, selected direction, then creative completion.
 A character reference supplies identity and visible wardrobe unless the user changes them;
 it does not impose its background, pose, expression or camera. Use a reference environment,
@@ -1644,13 +1652,21 @@ Establish a readable starting position, action and resulting state; reach the re
 in the final scene. Preserve established identities, wardrobe and spatial continuity unless changed.
 Use present-tense English prose. The duration-specific detail target below overrides defaults;
 up to 260 words only for a genuinely complex required beat, never as a quota. Preserve supplied
-dialogue even when it needs more space. Return only the requested JSON, not analysis, timestamps
+dialogue even when it needs more space. Return only the requested JSON, not analysis
 or a separate plan. Prefer one dominant camera behavior; do not invent cuts in a continuous take.
+Each scene_prompts string keeps the same four H3 sections as Elaborate, including their exact
+headings. Aim for roughly half the developed prose, not half the creative decisions. Definitions
+contain only distinguishing identity/wardrobe traits and canonical source bindings; the integrated
+description concentrates staging, action/reaction, camera, light and ending in one or two dense
+paragraphs. Soundscape and music each need only one precise line, or N/A when absent.
+Preserve essential dialogue and reference assignments even if they exceed the target length.
+Use concise finished-footage descriptions, never instructions addressed to a generator.
 
 SOURCE-TAG CONTRACT
 Each scene explicitly binds every active referenced element to its canonical tag:
 <Picture N>, <Video N>, <Mood Image 1> or <Mood Video 1>.
-Keep angle brackets; never substitute an untagged "same person" or invent <Subject N>.
+Keep angle brackets; never substitute an untagged "same person". Define <Subject N> through
+canonical source tags in subject_definitions, then use those stable subject IDs in the shots.
 Reference only connected sources and only for their assigned roles.
 """.strip()
 
@@ -2019,6 +2035,13 @@ boundary and never repeat the same arc description in every scene.
         return "\n\n".join(lines)
 
     @classmethod
+    def _render_shot_scene(cls, scene, seconds):
+        definitions = scene["subject_definitions"]
+        if not isinstance(definitions, str):
+            raise ValueError("Shot scene requires subject_definitions text.")
+        return "subject_definitions:\n" + (definitions.strip() or "N/A") + "\n\n" + cls._render_storyboard_scene(scene, seconds)
+
+    @classmethod
     def define_schema(cls):
         return io.Schema(
             node_id="H3CompactMultimodalEditDirector",
@@ -2043,8 +2066,8 @@ boundary and never repeat the same arc description in every scene.
                         "strong Context-IR-style source ledger and change/preserve analysis, "
                         "then returns one compact production prompt. Elaborate returns one richer "
                         "cinematic prompt with expanded setting, action, mood, camera and sound. "
-                        "Enhance is the economical middle ground: focused creative direction "
-                        "between Compact and Elaborate, with one prompt per requested scene. "
+                        "Enhance is compact Elaborate: highly creative cinematic direction "
+                        "with concise wording and one prompt per requested scene. "
                         "Continuous Edit applies edit "
                         "rules with one progressive edit prompt per scene. Continuous Elaborate "
                         "uses that same sequence structure with richer direction in every scene."
@@ -2102,7 +2125,7 @@ boundary and never repeat the same arc description in every scene.
                     default=5.0, min=1.0, max=30.0, step=0.5, force_input=True,
                     tooltip=(
                         "Connected FLOAT containing the 1–30 second screen-time budget used by "
-                        "Elaborate, Continuous Elaborate and Storyboard. Other modes ignore it."
+                        "Enhance, Elaborate, Continuous Elaborate and Storyboard, including internal shot timing."
                     ),
                 ),
                 io.String.Input(
@@ -2123,6 +2146,8 @@ boundary and never repeat the same arc description in every scene.
                 ),
                 io.Image.Input("storyboard_image", optional=True,
                     tooltip="Storyboard mode only. Planning sheet, not a numbered generation reference. Connect only to the director, not the sampler's reference inputs."),
+                io.Int.Input("shots", display_name="Shots — Per Scene", default=1, min=1, max=3,
+                    tooltip="Enhance, Elaborate and Continuous Elaborate only. 1 keeps automatic shot design unchanged. 2 or 3 requests that many shots per scene; authorizes internal cuts, not a cut at a scene-chain boundary."),
             ],
             outputs=[
                 io.String.Output("edit_prompt"),
@@ -2147,7 +2172,7 @@ boundary and never repeat the same arc description in every scene.
         continuous_scene_count: int = 3, unique_id=None, direction_context=None,
         llm=None, bypass: bool = False, debug_request: bool = False,
         i2v_mode: bool = False, seconds_per_scene: float = 5.0,
-        storyboard_image=None,
+        storyboard_image=None, shots: int = 1,
     ) -> io.NodeOutput:
         if bool(bypass):
             direct_prompt = str(edit_request if edit_request is not None else "")
@@ -2185,6 +2210,9 @@ boundary and never repeat the same arc description in every scene.
             "continuous_edit", "continuous_elaborate", "storyboard",
         ):
             requested_mode = "compact"
+        shot_count = max(1, min(3, int(shots))) if requested_mode in (
+            "continuous", "elaborate", "continuous_elaborate") else 1
+        planned_shots = shot_count > 1
         creative_control_present = bool(re.search(
             r"(?im)^(?:Genre|Motion style|Visual look):\s*\S", direction_text
         ))
@@ -2270,6 +2298,10 @@ boundary and never repeat the same arc description in every scene.
                         "Hold Edit Prompt belongs to a different director mode. "
                         "Disable Hold once to regenerate."
                     )
+                if int(held.get("shots", 1)) != shot_count:
+                    raise RuntimeError("Shots changed. Disable Hold once to regenerate; no LLM was called.")
+                if planned_shots and held.get("seconds_per_scene") != scene_seconds:
+                    raise RuntimeError("Shot timing duration changed. Disable Hold once to regenerate.")
                 if requested_mode == "storyboard" and held.get("seconds_per_scene") != scene_seconds:
                     raise RuntimeError("Storyboard duration changed. Disable Hold once to regenerate.")
                 if bool(held.get("i2v_mode", False)) != bool(i2v_mode):
@@ -2469,13 +2501,14 @@ boundary and never repeat the same arc description in every scene.
                 "each scene_prompt where its assigned element remains visible."
             )
             resolved_system = "\n\n".join((
-                "You are an economical creative continuation director for MiniMax H3. "
+                "You are an inventive cinematic director for MiniMax H3: Elaborate imagination, concise delivery. "
                 "Inspect the connected visual references and obey the user's chronology. "
                 "Return the required JSON schema with English directions and dialogue in its requested language.",
                 cls.CONTINUOUS_RULES,
+                cls.H3_NATIVE_PROMPT_RULES,
                 persistent_contract,
                 f"Return exactly {max(1, min(12, int(continuous_scene_count)))} "
-                "chronological strings in scene_prompts, one balanced prompt per scene.",
+                "chronological strings in scene_prompts, one concentrated cinematic treatment per scene.",
                 f"Each scene lasts {scene_seconds:g} seconds. Normally use "
                 + ("90–140" if scene_seconds <= 5 else "120–200" if scene_seconds <= 10 else "160–240")
                 + " English words per scene, shorter when sufficient. Fit action and speech to "
@@ -2585,7 +2618,7 @@ boundary and never repeat the same arc description in every scene.
                 "Otherwise realize every selection concretely in the final prompt. "
                 "Blend the second selection as a compatible accent; do not invent a new plot "
                 "or change locked subjects, camera, actions, wardrobe or source audio. "
-                "Express applicable hints through concrete choices inside the existing compact "
+                "Express applicable hints through concrete choices inside the finished "
                 "prompt, never as appended labels, a checklist or extra boilerplate. "
                 "For continuous mode realize the selected camera/motion in every applicable "
                 "scene, not just the first. If two selections conflict, the first is primary; "
@@ -2719,10 +2752,48 @@ boundary and never repeat the same arc description in every scene.
             }
             response_schema["schema"]["required"].append("panels")
 
-        if resolved_mode in ("elaborate", "continuous_elaborate", "continuous"):
-            resolved_system += "\n\n" + cls.CREATIVE_TREATMENT_RULES.format(
-                candidates=2 if resolved_mode == "continuous" else 3,
+        if planned_shots:
+            shot_scene_schema = {
+                "type": "object", "additionalProperties": False,
+                "properties": {
+                    "subject_definitions": {"type": "string"},
+                    "shots": {"type": "array", "minItems": shot_count, "maxItems": shot_count,
+                        "items": {"type": "object", "additionalProperties": False,
+                            "properties": {
+                                "start_seconds": {"type": "number", "minimum": 0, "exclusiveMaximum": scene_seconds},
+                                "description": {"type": "string", "minLength": 1},
+                                "dialogue": {"type": "string"},
+                            }, "required": ["start_seconds", "description", "dialogue"]}},
+                    "overall_soundscape": {"type": "string"},
+                    "non_diegetic_music": {"type": "string"},
+                }, "required": ["subject_definitions", "shots", "overall_soundscape", "non_diegetic_music"],
+            }
+            if is_sequence:
+                response_schema["schema"]["properties"]["scene_prompts"]["items"] = shot_scene_schema
+            else:
+                response_schema["schema"]["properties"]["edit_prompt"] = shot_scene_schema
+            resolved_system += (
+                f"\n\nSHOT COUNT OVERRIDE: exactly {shot_count} shots inside EACH scene, not {shot_count} scenes. "
+                f"Each scene lasts {scene_seconds:g}s in total; divide that time among its shots, never multiply it. "
+                "This explicit Shots selection authorizes internal cuts even if general guidance prefers a continuous take. "
+                "Other source locks, requested actions and camera-control geometry remain binding. "
+                "Design distinct motivated framings with clear cut points, readable screen direction and continuous action; "
+                "do not repeat the same action from its beginning in each shot. Budget speech and movement before choosing "
+                "cut times; for short scenes use brief, simple coverage rather than cramming complex events. "
+                "Shot 1 starts at zero; later starts strictly increase below the scene duration. Time resets in each scene. "
+                "CHAIN HANDOFF: scene N+1 Shot 1 continues scene N's final shot: inherited ongoing action, "
+                "subject/object state, framing, camera axis and motion, light and sound. Do not begin the next scene "
+                "with a cut, a reset to the reference pose or a replay. Establish the continuation before its first "
+                "internal cut. Plan logically in this one call; never claim to have inspected generated tail frames. "
+                "Keep Subject IDs stable across scenes; bind connected references in subject_definitions. "
+                "STRUCTURED OUTPUT OVERRIDE: return the schema's scene objects, not preformatted prompt strings. "
+                "subject_definitions contains definition text only; shots contains start_seconds, finished-footage "
+                "description and dialogue (tagged speech or empty string). Descriptions omit Shot labels, timestamps "
+                "and section headings: the node adds them. Soundscape and music remain separate text fields. "
+                "The mode's prose budget covers the WHOLE scene, not each shot. No alternatives or reasoning."
             )
+        if resolved_mode in ("elaborate", "continuous_elaborate", "continuous"):
+            resolved_system += "\n\n" + cls.CREATIVE_TREATMENT_RULES.format(candidates=3)
         resolved_system += "\n\n" + cls.CINEMATIC_CRAFT
         payload = {
             "model": str(getattr(llm, "model", "") or ""),
@@ -2832,6 +2903,23 @@ boundary and never repeat the same arc description in every scene.
                         + "\n\nATTEMPT 2 — REPAIRED\n" + repaired_text
                     )
                 result = repair_result
+            shot_warnings = []
+            if planned_shots:
+                shot_scenes = parsed["scene_prompts"] if is_sequence else [parsed["edit_prompt"]]
+                for index, scene in enumerate(shot_scenes, 1):
+                    if len(scene["shots"]) != shot_count:
+                        shot_warnings.append(f"scene {index}: requested {shot_count} shots, received {len(scene['shots'])}")
+                    if cls._normalize_storyboard_times(scene, scene_seconds):
+                        shot_warnings.append(f"scene {index}: shot timestamps redistributed within {scene_seconds:g}s")
+                rendered = [cls._render_shot_scene(scene, scene_seconds) for scene in shot_scenes]
+                if bool(i2v_mode) and rendered:
+                    rendered[0] = (
+                        "For the target video, at 0.00 seconds into the target video, <Picture 1> "
+                        "(from [Shot 1]) is fully referenced.\n\n" + rendered[0])
+                if is_sequence:
+                    parsed["scene_prompts"] = rendered
+                else:
+                    parsed["edit_prompt"] = rendered[0]
             if is_sequence:
                 if resolved_mode == "storyboard":
                     cls._prepare_storyboard(parsed, scene_seconds)
@@ -2922,7 +3010,7 @@ boundary and never repeat the same arc description in every scene.
             connected_tags.add("<Mood Image 1>")
         if has_mood_video:
             connected_tags.add("<Mood Video 1>")
-        warnings = []
+        warnings = list(shot_warnings)
         if resolved_mode == "storyboard":
             planning_warnings = parsed.get("planning_warnings")
             if not isinstance(planning_warnings, list) or any(not isinstance(item, str) for item in planning_warnings):
@@ -2955,7 +3043,7 @@ boundary and never repeat the same arc description in every scene.
                     warnings.append(
                         f"Elaborate prompt is underdeveloped ({elaborate_word_count} words)"
                     )
-        if resolved_mode in ("elaborate", "continuous_elaborate"):
+        if resolved_mode in ("elaborate", "continuous_elaborate", "continuous"):
             native_prompts = scene_prompts if is_sequence else [edit_prompt]
             required_sections = (
                 "subject_definitions:", "integrated_multimodal_description:",
@@ -2966,7 +3054,7 @@ boundary and never repeat the same arc description in every scene.
                 if missing_sections:
                     label = f"scene {index} " if is_sequence else ""
                     warnings.append(label + "missing H3 sections: " + ", ".join(missing_sections))
-                if bool(i2v_mode) and "at 0.00 seconds into the target video" not in native_prompt:
+                if bool(i2v_mode) and (not planned_shots or index == 1) and "at 0.00 seconds into the target video" not in native_prompt:
                     warnings.append((f"scene {index} " if is_sequence else "") + "missing I2V alignment")
 
         displayed_mode = {
@@ -2985,6 +3073,7 @@ boundary and never repeat the same arc description in every scene.
             f"{'yes' if has_mood_image else 'no'} · mood video "
             f"{'yes' if has_mood_video else 'no'} · "
             f"I2V {'on' if i2v_mode else 'off'} · "
+            + (f"{shot_count} shots/scene · " if planned_shots else "")
             + (f"{scene_seconds:g}s/scene · " if resolved_mode in ("elaborate", "continuous_elaborate") else "")
             + ("grounding verified" if not warnings else "warnings: " + "; ".join(warnings))
             + (" · JSON repaired after one retry" if repair_retry_used else "")
@@ -3008,6 +3097,7 @@ boundary and never repeat the same arc description in every scene.
             "direction_context": direction_text,
             "resolved_mode": resolved_mode,
             "seconds_per_scene": scene_seconds,
+            "shots": shot_count,
             "i2v_mode": bool(i2v_mode),
             "edit_prompt": edit_prompt,
             "preview_prompt": preview_prompt,

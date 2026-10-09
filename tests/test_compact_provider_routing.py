@@ -531,7 +531,8 @@ class RoutingTests(unittest.TestCase):
                 if mode == "Enhance":
                     self.assertNotIn("orbit", system.lower())
                     self.assertIn("does not impose its background, pose, expression or camera", system)
-                    self.assertLess(len(system.split()), 1500)
+                    self.assertIn(scope["H3CompactMultimodalEditDirector"].H3_NATIVE_PROMPT_RULES, system)
+                    self.assertNotIn(scope["H3CompactMultimodalEditDirector"].ELABORATE_RULES, system)
                 self.assertEqual(calls, ["external"])
 
     def test_sequence_detail_budget_and_causality_without_temperature_change(self):
@@ -556,7 +557,7 @@ class RoutingTests(unittest.TestCase):
 
     def test_creative_exploration_is_scoped_and_does_not_add_calls(self):
         for mode, candidates in (("Elaborate", 3), ("Continuous Elaborate", 3),
-                                 ("Enhance", 2), ("compact", None),
+                                 ("Enhance", 3), ("compact", None),
                                  ("edit", None), ("Continuous Edit", None)):
             scope, calls = load_director()
             args = self.kwargs()
@@ -585,7 +586,19 @@ class RoutingTests(unittest.TestCase):
                 result = scope["H3CompactMultimodalEditDirector"].execute(**args)
                 payload = scope["last_payload"]
                 system = payload["messages"][0]["content"]
-                self.assertIn("middle ground between Compact and Elaborate", system)
+                self.assertIn("Think like Elaborate; write economically", system)
+                self.assertIn("Compress the treatment, not the imagination", system)
+                self.assertIn("two or three complementary choices", system)
+                self.assertIn("Delete filler before creative decisions", system)
+                self.assertIn("when motivated and unlocked", system)
+                self.assertIn("roughly half the developed prose", system)
+                self.assertIn("same four H3 sections as Elaborate", system)
+                self.assertIn("subject_definitions:", system)
+                self.assertIn("integrated_multimodal_description:", system)
+                self.assertIn("overall_soundscape:", system)
+                self.assertIn("non_diegetic_music:", system)
+                self.assertIn("Define <Subject N> through", system)
+                self.assertNotIn('never substitute an untagged "same person" or invent <Subject N>', system)
                 self.assertIn(words, system)
                 self.assertIn(f"Each scene lasts {seconds:g} seconds", system)
                 self.assertIn("Preserve supplied", system)
@@ -603,6 +616,106 @@ class RoutingTests(unittest.TestCase):
         scope["H3CompactMultimodalEditDirector"].execute(**args)
         self.assertEqual(scope["last_payload"]["max_tokens"], 2500)
         self.assertEqual(calls, ["external"])
+
+    def test_enhance_preserves_native_sections_without_extra_calls_or_truncation(self):
+        scope, calls = load_director()
+        prompt = (
+            'subject_definitions:\n<Subject 1> the woman from <Picture 1>, blue jacket.\n\n'
+            'integrated_multimodal_description:\n[Shot 1] <Subject 1> crosses a wet courtyard; '
+            'a low tracking frame follows her reflection into warm doorway light.\n\n'
+            'overall_soundscape:\nFootsteps and falling rain.\n\n'
+            'non_diegetic_music:\nN/A')
+
+        def reply(provider, payload):
+            calls.append('external')
+            return {'choices': [{'message': {'content': json.dumps({'scene_prompts': [prompt]})}}]}
+
+        scope['_external_llm_request'] = reply
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', llm=SimpleNamespace(model='test'), continuous_scene_count=1)
+        result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+        self.assertEqual(json.loads(result[0])['scene_prompts'], ['[reference generation]\n\n' + prompt])
+        self.assertNotIn('missing H3 sections', result[1])
+        self.assertEqual(calls, ['external'])
+
+    def test_selected_shots_render_each_scene_and_repair_local_timing(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate'):
+            for shots in (2, 3):
+                for seconds in (1, 10, 30):
+                    scope, calls = load_director()
+                    recorded = {}
+
+                    def reply(provider, payload):
+                        calls.append('external')
+                        recorded['payload'] = payload
+                        scene = {
+                            'subject_definitions': '<Subject 1> the woman from <Picture 1>, blue jacket.',
+                            'shots': [{'start_seconds': 99 if index else 0,
+                                       'description': f'<Subject 1> continues action beat {index + 1}.',
+                                       'dialogue': '<Subject 1> (S1) says: <d>[Spanish] Hola.</d>' if index == 0 else ''}
+                                      for index in range(shots)],
+                            'overall_soundscape': 'Rain and footsteps.', 'non_diegetic_music': 'N/A'}
+                        content = {'scene_prompts': [scene, scene]} if mode != 'Elaborate' else {
+                            'edit_type': 'general_edit', 'source_roles': ['<Picture 1> identity'],
+                            'visual_evidence': 'blue jacket', 'edit_prompt': scene}
+                        return {'choices': [{'message': {'content': json.dumps(content)}}]}
+
+                    scope['_external_llm_request'] = reply
+                    args = self.kwargs()
+                    args.update(edit_mode=mode, shots=shots, seconds_per_scene=seconds,
+                                llm=SimpleNamespace(model='test'), i2v_mode=True)
+                    result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+                    prompts = json.loads(result[0])['scene_prompts'] if mode != 'Elaborate' else [result[0]]
+                    schema = recorded['payload']['response_format']['json_schema']['schema']['properties']
+                    item = schema['scene_prompts']['items'] if mode != 'Elaborate' else schema['edit_prompt']
+                    self.assertEqual(item['properties']['shots']['minItems'], shots)
+                    self.assertEqual(item['properties']['shots']['maxItems'], shots)
+                    self.assertIn('CHAIN HANDOFF', recorded['payload']['messages'][0]['content'])
+                    self.assertIn('Do not begin the next scene with a cut',
+                                  recorded['payload']['messages'][0]['content'])
+                    for prompt in prompts:
+                        self.assertEqual(re.findall(r'^\[Shot (\d+)\]', prompt, re.MULTILINE), [str(i + 1) for i in range(shots)])
+                        self.assertIn('subject_definitions:', prompt)
+                        self.assertIn('non_diegetic_music:', prompt)
+                        self.assertIn('<d>[Spanish] Hola.</d>', prompt)
+                        self.assertNotIn('01:39', prompt)
+                    self.assertIn('at 0.00 seconds', prompts[0])
+                    if len(prompts) > 1:
+                        self.assertNotIn('at 0.00 seconds', prompts[1])
+                    self.assertIn('timestamps redistributed', result[1])
+                    self.assertEqual(calls, ['external'])
+
+    def test_shots_one_preserves_default_and_other_modes_ignore_shots(self):
+        for mode, shots in (('Enhance', 1), ('Elaborate', 1), ('Continuous Elaborate', 1),
+                            ('compact', 3), ('edit', 3), ('Continuous Edit', 3)):
+            scope, calls = load_director()
+            args = self.kwargs()
+            args.update(edit_mode=mode, shots=shots, llm=SimpleNamespace(model='test'))
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+            self.assertNotIn('SHOT COUNT OVERRIDE', scope['last_payload']['messages'][0]['content'])
+            props = scope['last_payload']['response_format']['json_schema']['schema']['properties']
+            item = props['scene_prompts']['items'] if 'scene_prompts' in props else props['edit_prompt']
+            self.assertEqual(item['type'], 'string')
+            self.assertEqual(calls, ['external'])
+
+    def test_hold_does_not_reuse_a_different_shot_count_or_duration(self):
+        scope, calls = load_director()
+        held = {}
+        scope['_set_held_director_plan'] = lambda key, record: held.update(record)
+        scope['_get_held_director_plan'] = lambda key: held
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', llm=SimpleNamespace(model='test'))
+        scope['H3CompactMultimodalEditDirector'].execute(**args)
+        calls.clear()
+        args.update(hold_prompt=True, shots=2)
+        with self.assertRaisesRegex(RuntimeError, 'Shots changed'):
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+        self.assertEqual(calls, [])
+        held['shots'] = 2
+        args['seconds_per_scene'] = 10
+        with self.assertRaisesRegex(RuntimeError, 'timing duration changed'):
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+        self.assertEqual(calls, [])
 
     def test_enhance_uses_less_input_and_output_budget_than_elaborate_sequence(self):
         payloads = {}
