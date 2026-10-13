@@ -31,6 +31,30 @@ external LLM will return identical text: save and reuse the generated prompt
 when exact prompt recall is needed. Hold data is stored in
 `output/Sexy AI Studio/director_hold/plans.json`.
 
+## Transfer mode
+
+Select `Transfer` in the H3 director for faithful source adaptation rather than creative story
+development. Explicit user changes take priority, then reference identity/Driven Strength, then
+observed Driven action, mood, setting and camera. Creativity is limited to explicitly requested
+changes. A reference woman in jeans plus a video of a running footballer and a request for office
+clothes produces that woman running in office clothes, not an invented football story.
+
+Transfer supports Driven Image, Driven Video and all three strength levels. It uses the existing
+`scene_prompts` sequence output even for one scene; set `Scenes — Sequence` to 1 for a single clip
+or for a workflow that supplies one source-video block at a time. Multiple scenes partition the
+observed/requested action chronologically, without compulsory escalation, new locations or cuts.
+The creative Cut toggle is inactive in this mode; evidenced or explicitly requested cuts remain valid.
+
+Dialogue language alone does not request speech. Unrequested dialogue, lyrics, narration and score
+are excluded; `non_diegetic_music` is `N/A` without a music request. Sampled frames do not provide
+audio or frame-exact motion. Explicitly requested dialogue/creative changes remain supported.
+Transfer uses its own source-faithful system contract instead of the editable base system prompt;
+compatible Direction Controls remain subordinate to the request and observed action. No creative
+treatment or extra review call is added. Normal Driven analysis and JSON repair behavior remain.
+Output-token budgeting scales like Enhance with scene count/duration. Disable Hold once when
+switching modes; cached prompts from another mode cannot be reused. These are LLM instructions,
+not a guarantee of exact motion transfer or perfect downstream model adherence.
+
 ## Cinematic craft
 
 The video and visual directors include compact cinematic-craft instructions: causal progression,
@@ -42,7 +66,7 @@ instructions, not a guarantee of generated continuity or an analysis of audio fr
 Elaborate and Continuous Elaborate now compare three concise creative treatments internally and
 commit to one coherent approach; Enhance compares three within a smaller detail budget. This adds
 no API stages or output fields. Explicit requests, reference roles, locked controls and edit scope
-still take priority. Compact, Edit and faithful Storyboard adaptation do not receive this extra
+still take priority. Compact and Edit do not receive this extra
 exploration layer. These instructions do not guarantee that every LLM explores distinct ideas.
 
 Enhance is compact Elaborate: the same creative exploration with concentrated wording, not
@@ -64,24 +88,40 @@ make one additional call. Actual charges depend on provider pricing and token us
 allowance is not a guaranteed discount. Existing temperature and seed settings remain unchanged.
 Disable Hold to request fresh prompts after updating, and restart ComfyUI to load the new code.
 
-### Shots per scene
+### Cut between scenes
 
-Enhance, Elaborate and Continuous Elaborate expose `Shots — Per Scene` (1–3).
-1 preserves automatic shot design; it does not force a single take. 2 or 3 requests
-exactly that many shots inside each scene's existing duration, not additional scenes.
-The LLM plans structured shots in one request; the node renders the same H3 text
-sections and `[Shot N]` labels with scene-local cut times. Invalid timestamps are
-redistributed locally without dropping shots. A provider returning the wrong shot
-count produces a validation warning rather than discarding generated descriptions.
+Enhance and Continuous Elaborate expose `Cut` (default false). Off preserves
+continuous handoffs. On designs motivated scene-boundary cuts with distinct framing,
+angle or composition while preserving identities, wardrobe, geography, causal order
+and the preceding scene's resulting state. Each scene also develops a distinct
+action, interaction, reveal or consequence, not merely a new view of a repeated beat.
+Open premises allow a coherent mini-story and motivated time/location changes;
+Cut uses separate story-design instructions instead of continuous/edit preservation
+and handoff rules. It plans distinct scene purposes/events and camera strategies,
+using Driven as a starting premise rather than repeating its setting indefinitely.
+An internal `cut_scene_plan` pairs each scene's event, setting and framing before
+writing the prompts; `change_from_previous` specifies the new event/result and
+an unmistakable coverage contrast. Adjacent scenes must develop both activity and coverage.
+This outline is omitted from public outputs and adds no separate LLM call.
+Cut uses a single story contract plus explicit priorities rather than repeated override blocks.
+Each event achieves a visible result; a later scene acts on an earlier discovery instead of
+rediscovering it. Selected genre develops unlocked story/world without changing assigned design.
+All modes budget movement, reactions, dialogue and prop handling against clip duration.
+Fast Motion keeps brisk, readable mechanics rather than packing in extra events.
+Camera direction specifies a concrete viewpoint/path; authorized setting changes
+reinterpret Driven lighting through suitable sources without overriding explicit locks or style.
+Explicit event order, outcomes and source locks remain binding. Non-narrative footage
+varies choreography, play or visual ideas without forced conflict. There is no fixed internal shot count.
+Single-scene Elaborate, Compact and Edit remain unaffected.
 
-Multi-shot selection authorizes internal cuts over general continuous-take guidance;
-other reference, action and direction locks remain active. The next scene's first
-shot inherits the previous scene's final-shot action, framing and audiovisual state
-before its first internal cut. This is logical planning, not generated-frame review
-or a guarantee of pixel-perfect continuity. For I2V, only the first scene is aligned
-to the supplied opening image; subsequent scenes follow the inherited state.
-Compact, Edit and Storyboard keep their existing shot behavior. Disable Hold when
-changing Shots or multi-shot duration. No new output sockets or sampler changes.
+Pair Cut manually with Masked Cut in the workflow. This changes prompts only,
+not context or sampler settings. For I2V only scene 1 aligns to the supplied first
+frame; later scenes inherit story state, not the original pose. H3 sections and
+string prompt outputs remain unchanged, with no generated-frame review.
+Each clip restarts at `[Shot 1]` without a timestamp. Accumulated opening timestamps
+are removed and later shot times are rebased to that clip, including held prompts.
+Disable Hold when changing Cut. Restart ComfyUI and refresh the browser; replace
+an old director instance if its retired Shots widget persists.
 
 ## Pending improvements
 
@@ -184,26 +224,77 @@ More panels may require a larger `max_tokens`; truncated responses fail clearly
 instead of returning an incomplete sheet. Exact rendering and identity retention
 depend on the downstream image model and connected references.
 
-# Storyboard mode
+# Driven Image / Driven Video
 
-Select `Storyboard` in the compact director and connect a planning sheet to
-`storyboard_image`. Use a vision-capable LLM. `continuous_scene_count` selects
-1–12 generated scenes and `seconds_per_scene` sets each scene's duration (1–30 seconds).
-An empty request means faithful adaptation; use the request box for intentional
-changes. Increase `image_max_dimension` when small panel annotations are unreadable.
+The H3 director no longer exposes Mood inputs or a Storyboard mode/planning socket.
+Connect Driven Image or decoded frames to Driven Video with a vision-capable LLM.
+`Driven Strength` applies to both inputs in every active director mode:
 
-The director plans all scenes in one response, with numbered shots inside each
-scene. It uses the existing `scene_prompts` JSON output contract and permits
-storyboard-motivated cuts instead of enforcing continuous-camera boundaries.
-Invalid, missing, duplicated or out-of-range shot timestamps are automatically
-redistributed within each scene, preserving all shots in their supplied order.
-Valid timing is retained to millisecond precision; repairs require no extra LLM call.
-Planning warnings appear in the preview and `validation`; they do not stop the
-workflow. Check them before sampling. Panel interpretation and timing feasibility
-remain LLM judgments, not guarantees.
+- **1 — Identity First:** keep reference face, body proportions, hair, outfit and accessories;
+  use Driven action, pose, interaction, mood, camera and lighting, adapting the setting as needed.
+- **2 — Balanced:** keep reference face and primarily its body proportions; transfer Driven
+  wardrobe, accessories, hair, pose, activity and environment, fitting them to the reference body.
+- **3 — Full Transfer (default):** retain reference facial identity while transferring Driven
+  wardrobe, hair, body proportions, pose, activity and world. This preserves the existing policy.
 
-The sheet is only planning input: do not connect it to H3's reference/first-frame
-inputs. Separate identity references may use the existing reference sockets.
-This mode does not crop panels or rewire the generation workflow automatically.
-Disable Hold after changing the sheet or request. Existing modes ignore the new
-optional socket. No per-scene last-frame inspection is performed.
+Explicit user changes/locks, age and an active I2V opening frame take priority at every level.
+Without character references there is no reference appearance to preserve; observed roles form
+the character descriptions. Without a Driven input the setting has no effect. Strength selects
+prompt rules, not a sampler weight, and does not add LLM calls. Disable Hold once when changing
+strength; a cached prompt from another level is rejected without calling the LLM.
+
+The following full-transfer examples describe level 3; levels 1 and 2 preserve the attributes above.
+These sources drive the full scene: activity, wardrobe/accessories, environment,
+staging, lighting, palette, visual style, mood and visible interactions.
+Driven Video additionally contributes observed motion/progression;
+sparse sampled frames provide neither audio nor exact unsampled choreography.
+
+Numbered character references supply the cast's identities, not automatically locked clothing.
+For example, Picture 1 (woman), Picture 2 (man) and a Driven Image of a football
+match produce those characters playing football in adapted kits and boots, with
+the match's setting, lighting and atmosphere, not new player faces.
+User instructions override conflicting driver evidence; explicit locks and reference
+ownership still apply. Drivers may replace incidental reference outfits and mood,
+but not identity, explicitly assigned wardrobe or preserved audio. The adapted
+wardrobe/world remains consistent across scenes unless the requested progression changes it.
+Driver people supply roles, never additional principal identities: a referenced woman
+and man plus a cheerleader driver means the referenced woman performs that role and
+interacts with the man, not a third cheerleader. Explicit user role assignments take
+priority; ambiguous roles are allocated within the existing cast. Only an explicit
+request may add principal characters. Incidental crowds do not become interacting leads.
+With both sources, compatible image staging and video action are combined; no
+unsupported events or dialogue are invented from missing evidence.
+
+All active director modes receive this scenario-transfer contract, while retaining
+their existing final outputs and detail budgets. Driven uses two LLM stages:
+first image/video-to-prompt analysis produces a structured anonymous scene blueprint
+covering activity, garment design, hair styling, body proportions, pose, setting, lighting,
+mood, style, props and spatial roles. Reference facial identity stays intact while mapped
+Driven hair, build, silhouette/proportions and pose can form the adapted character.
+Explicit body/pose/hair/outfit locks, age and an active I2V opening frame take priority.
+Perspective and garment volume are not anatomical evidence; illustrated proportions are
+adapted to coherent anatomy within the chosen style. The observed interaction supplies
+the premise for a plausible next action, not an unrelated story or a repeated static pose.
+Visible neckline, sleeves, cutout geometry/placement, silhouette, materials and accessories
+are described rather than reduced to a generic garment label; hidden details are not invented.
+The complete mapped outfit persists across scenes. A local user override changes only the
+specified item: requesting a cap does not also discard the Driven sweatshirt or vest.
+Fast Motion specifies readable subject action and concrete camera behavior, not generic
+`responsive camera work` or obligatory camera movement.
+Disable Hold once after this update to replace older Driven analysis without body/pose fields.
+Then the director sees that text and the numbered reference images, not the original
+driver people's images. It assigns each role to an existing Picture tag using a
+validated internal mapping before writing the prompt. This separates scenario extraction
+from identity casting rather than treating Driven as a third character reference.
+Final prompts describe transferred outfits and scenery directly, without Driven
+assignment boilerplate or `from the Driven role` annotations.
+Analysis adds one LLM request with a 700–1200 output-token allowance, using the same
+provider/model and seed. Its usage is reported separately; Hold reuses the finished
+plan without repeating analysis. No paid calls are made by the offline tests.
+Final prose and downstream identity retention remain model-dependent; the mapping
+does not guarantee that the generator perfectly follows the finished prompt.
+
+Restart ComfyUI, refresh the browser and recreate old director instances if retired
+Mood/Storyboard sockets persist. Reconnect those sources to the new Driven sockets
+and disable Hold to generate a fresh interpretation. The separate Visual Director's
+storyboard-sheet creation modes are not changed by this removal.
