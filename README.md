@@ -33,6 +33,36 @@ when exact prompt recall is needed. Hold data is stored in
 
 ## Transfer mode
 
+Transfer has two prompt routes selected by the existing connections. Source Video 1/2 uses
+`<Video 1>` / `<Video 2>` source-linked edit wording: the requested change, assigned Picture
+appearance when present, and unaffected observed performance. Socket numbering is retained,
+including when only Source Video 2 is connected. Driven-only input retains direct scene
+description rather than becoming a numbered video source. No new sockets, analysis calls,
+workflow rewiring or generation settings are introduced; Enhance is unchanged. Restart and
+disable Hold once when testing a different input route.
+
+Numbered-video Transfer returns internal structured scene fields: the source-video selection,
+edit instruction, subject definitions, retention analysis, observed performance and sound/music.
+The node assembles the six full-reference sections in order: `subject_definitions`, `summary`,
+`retention_analysis`, `detailed_description`, `overall_soundscape`, `non_diegetic_music`.
+Summary binds the edit to the selected `<Video n>`; each Subject definition states which source
+owns identity/appearance and which owns performance. Unrequested content is retained, not a
+background or wardrobe the user explicitly changes. No universal adapter trigger is inserted.
+This prevents losing the source label when the LLM writes generic generation prose. It does not
+prove that the model correctly interpreted motion; speech remains disallowed unless requested.
+Public `scene_prompts` are still strings. Driven-only Transfer and Enhance retain their formats.
+This route follows the reference-label/retention structure in the
+[official full-reference guide](https://github.com/MiniMax-AI/MiniMax-H3/blob/main/skills/h3-prompt-writing/references/ref-en.txt).
+It remains prompt guidance, not a guarantee of character identity or frame-exact motion transfer.
+
+Transfer separates a character image's identity/appearance from a video's performance at all
+three existing Driven Strength levels. Keeping the image's appearance does not keep its static
+pose, smile, gaze, framing or background. Observed video action, contacts and physical progression
+govern the footage unless explicitly overridden; user-assigned image roles and I2V frame zero
+remain protected. Driven-only performance is described directly without a fabricated `<Video n>`
+binding. This adjustment is confined to Transfer rules: Driven analysis, strength policies and
+Enhance are unchanged. It does not add speech analysis or guarantee lip sync from sampled frames.
+
 Select `Transfer` in the H3 director for faithful source adaptation rather than creative story
 development. Explicit user changes take priority, then reference identity/Driven Strength, then
 observed Driven action, mood, setting and camera. Creativity is limited to explicitly requested
@@ -43,7 +73,6 @@ Transfer supports Driven Image, Driven Video and all three strength levels. It u
 `scene_prompts` sequence output even for one scene; set `Scenes — Sequence` to 1 for a single clip
 or for a workflow that supplies one source-video block at a time. Multiple scenes partition the
 observed/requested action chronologically, without compulsory escalation, new locations or cuts.
-The creative Cut toggle is inactive in this mode; evidenced or explicitly requested cuts remain valid.
 
 Dialogue language alone does not request speech. Unrequested dialogue, lyrics, narration and score
 are excluded; `non_diegetic_music` is `N/A` without a music request. Sampled frames do not provide
@@ -56,6 +85,70 @@ switching modes; cached prompts from another mode cannot be reused. These are LL
 not a guarantee of exact motion transfer or perfect downstream model adherence.
 
 ## Cinematic craft
+
+### Writer-director development
+
+Direction Controls omit Auto/none categories and keep explicit selections in priority order.
+Creative modes resolve them before designing footage: genre supplies a dramatic/visual mechanism,
+period/world looks guide unlocked appearance and production design, and motion/camera controls
+guide readable physical cadence and coverage rather than blanket exaggeration. A selected era
+does not need to be repeated in the user request. Explicit locks, Driven appearance, I2V and
+faithful edits remain authoritative. Creative modes can develop a story within continuous
+coverage; they are no longer subject to the generic no-new-plot edit rule.
+
+Enhance, Elaborate and Continuous Elaborate now distinguish an open story brief from a faithful
+edit. Open premises authorize a concrete situation, character goal, resistance, choice and payoff,
+with purposeful dialogue when permitted. Explicit action-only briefs, source plates, Driven Video
+chronology, reference roles, I2V opening frames and locked controls remain authoritative. Transfer,
+Compact, Edit and Continuous Edit do not receive this new creative mandate.
+
+The creative modes choose story shape, subtext, performance, viewpoint, blocking, lens perspective,
+light and sound as one coherent treatment, not a mandatory checklist or extra screenplay output.
+They retain their current JSON, scene counts, output budgets and provider calls. The additional
+system instructions consume input tokens; this is not a zero-cost change. Disable Hold once after
+updating to test the new writing. Restart ComfyUI to load it. Offline tests verify routing and
+contracts, not artistic quality or downstream H3 adherence.
+
+Selected period/world looks in creative modes now adapt unlocked wardrobe, grooming, production
+design and sound as well as photography. Color-only/stock looks do not require an era change.
+Explicit locks, Driven appearance policy and I2V opening-frame facts remain protected.
+Sequence blocks continue camera, action and physical state. No additional
+provider calls or output-budget increases are introduced; input instructions are longer.
+Creative responses now resolve a shared `target_design` (separate identity and target appearance
+per subject, plus visual language), then opening framing, action, visible result and sound/music
+fields per scene. The node renders these into the
+same public string prompts with all four H3 headings, reusing the design without requesting a
+separate planning pass. Empty audio fields render as `N/A`, not invented music. Single Elaborate
+uses the same structured compiler; faithful modes and previously held string prompts are unchanged.
+Opening framing and earned end-state fields are compiled into the footage text, not discarded
+planning metadata. A pan is not a new shot marker. Open continuous stories should enact their idea
+and show a consequence rather than end by proposing future action; explicit open endings,
+trailers, faithful chronology and appearance locks remain valid. The period treatment calls for
+intentional unlocked styling rather than copying source clothes under an era label. These are
+writing contracts, not a deterministic check of historical accuracy or narrative quality.
+Dialogue guidance favors short purposeful exchanges with room for
+performance rather than explaining the plot. The existing total output limit includes internal
+design/planning fields; scene count and sockets are unchanged. Artistic adherence still needs
+an actual generation test, and a malformed-JSON repair may still use the existing retry.
+The implementation draws on coordinated art/costume/cinematography described by
+[ASC — Robert Yeoman](https://theasc.com/article/yeoman-asc-awards-honoree/)
+and purposeful coverage planning in
+[StudioBinder — shot-list design](https://www.studiobinder.com/blog/whats-in-your-shot-list/).
+
+Requested formats steer the treatment: drama, trailers, comedy, horror, commercials, music videos
+and other or mixed forms share the same route, not separate mandatory formulas. Factual/product
+briefs do not authorize invented facts or claims. Inspiration from Higgsfield's documented prompt
+enhancement and ByteDance's narrative examples does not reproduce a private system prompt or
+Seedance's model capabilities:
+[Higgsfield Cinema Studio](https://higgsfield.ai/blog/how-we-built-cinema-studio),
+[Seedance 2.5](https://seed.bytedance.com/en/blog/one-take-creation-flexible-referencing-introducing-seedance-2-5).
+
+Research references (original implementation; no external package or copied prompt required):
+[John August — scenes](https://johnaugust.com/2007/write-scene),
+[dialogue](https://johnaugust.com/2007/how-to-write-dialogue),
+[ASC — translating a script into a visual approach](https://theasc.com/article/shot-craft-analyzing-a-script/),
+[Director Skills — scene construction](https://github.com/0xhughs/director-skills/blob/main/skills/screenplay-and-scene-writing/references/scene_construction.md)
+and [cinematic language](https://github.com/0xhughs/director-skills/blob/main/skills/style-cinematography-director/references/cinematic_language.md).
 
 The video and visual directors include compact cinematic-craft instructions: causal progression,
 persistent physical state, motivated framing and concrete staging. Existing mode, source-role,
@@ -88,40 +181,14 @@ make one additional call. Actual charges depend on provider pricing and token us
 allowance is not a guaranteed discount. Existing temperature and seed settings remain unchanged.
 Disable Hold to request fresh prompts after updating, and restart ComfyUI to load the new code.
 
-### Cut between scenes
+### Continuous sequences
 
-Enhance and Continuous Elaborate expose `Cut` (default false). Off preserves
-continuous handoffs. On designs motivated scene-boundary cuts with distinct framing,
-angle or composition while preserving identities, wardrobe, geography, causal order
-and the preceding scene's resulting state. Each scene also develops a distinct
-action, interaction, reveal or consequence, not merely a new view of a repeated beat.
-Open premises allow a coherent mini-story and motivated time/location changes;
-Cut uses separate story-design instructions instead of continuous/edit preservation
-and handoff rules. It plans distinct scene purposes/events and camera strategies,
-using Driven as a starting premise rather than repeating its setting indefinitely.
-An internal `cut_scene_plan` pairs each scene's event, setting and framing before
-writing the prompts; `change_from_previous` specifies the new event/result and
-an unmistakable coverage contrast. Adjacent scenes must develop both activity and coverage.
-This outline is omitted from public outputs and adds no separate LLM call.
-Cut uses a single story contract plus explicit priorities rather than repeated override blocks.
-Each event achieves a visible result; a later scene acts on an earlier discovery instead of
-rediscovering it. Selected genre develops unlocked story/world without changing assigned design.
-All modes budget movement, reactions, dialogue and prop handling against clip duration.
-Fast Motion keeps brisk, readable mechanics rather than packing in extra events.
-Camera direction specifies a concrete viewpoint/path; authorized setting changes
-reinterpret Driven lighting through suitable sources without overriding explicit locks or style.
-Explicit event order, outcomes and source locks remain binding. Non-narrative footage
-varies choreography, play or visual ideas without forced conflict. There is no fixed internal shot count.
-Single-scene Elaborate, Compact and Edit remain unaffected.
-
-Pair Cut manually with Masked Cut in the workflow. This changes prompts only,
-not context or sampler settings. For I2V only scene 1 aligns to the supplied first
-frame; later scenes inherit story state, not the original pose. H3 sections and
-string prompt outputs remain unchanged, with no generated-frame review.
-Each clip restarts at `[Shot 1]` without a timestamp. Accumulated opening timestamps
-are removed and later shot times are rebased to that clip, including held prompts.
-Disable Hold when changing Cut. Restart ComfyUI and refresh the browser; replace
-an old director instance if its retired Shots widget persists.
+The director has no Cut toggle or internal cut plan. Enhance and Continuous Elaborate carry
+camera/action and established physical state forward between blocks. Creativity develops the
+story within that continuous coverage rather than forcing changes of viewpoint or location.
+Existing SimpleH3Chain context modes, including `masked_av`, are unchanged. Restart ComfyUI and
+refresh the browser; recreate the director if an obsolete Cut widget remains. Disable Hold once
+to regenerate rather than reuse a previously stored edited sequence.
 
 ## Pending improvements
 

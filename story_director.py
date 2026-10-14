@@ -256,7 +256,11 @@ VISUAL_LOOKS = {
     ),
     "1950s Technicolor Studio": (
         "Use saturated three-strip-Technicolor-inspired color, bright controlled studio lighting, formal "
-        "classical composition, polished production design and measured heavy-camera movement."
+        "classical composition and polished studio production design. For an open period treatment, "
+        "adapt unlocked wardrobe silhouettes, grooming, furnishings, props and musical arrangement "
+        "to a coherent mid-century world, not modern casual clothes under a color filter. Preserve "
+        "facial identity and explicit appearance locks. A selected camera style overrides the default "
+        "measured heavy-camera movement; a color-only request does not require a period setting."
     ),
     "1960s Mod / Pop Cinema": (
         "Use bold period color, harder frontal or graphic lighting, zoom-lens energy, playful composition, "
@@ -1252,7 +1256,7 @@ class H3OllamaModel(io.ComfyNode):
 
 
 class H3CompactDirectionControls(io.ComfyNode):
-    """Optional, local-only direction hints for the compact director."""
+    """Local direction selections; Auto and none leave the category unconstrained."""
 
     @classmethod
     def define_schema(cls):
@@ -1292,7 +1296,7 @@ class H3CompactDirectionControls(io.ComfyNode):
         ):
             active = list(dict.fromkeys(
                 str(value).strip() for value in values
-                if str(value or "").strip().lower() not in ("", "none")
+                if str(value or "").strip().lower() not in ("", "none", "auto")
             ))
             if active:
                 lines.append(label + ": " + " + ".join(active))
@@ -1301,6 +1305,42 @@ class H3CompactDirectionControls(io.ComfyNode):
 
 class H3CompactMultimodalEditDirector(io.ComfyNode):
     """Compact, source-optional multimodal director for precise H3 edits."""
+
+    GENRE_MECHANISMS = {
+        'Dark Comedy': 'A credible desire meets an uncomfortable irony, hypocrisy or perverse cost. The outcome exposes the contradiction; laughter, clumsiness and ominous music alone are insufficient.',
+        'Comedy': 'Build a specific expectation, escalate a legible mismatch, then deliver a surprising but earned reversal. The audience must understand the joke, not just see people laughing.',
+        'Cinematic Drama': 'A character faces a consequential choice that changes a relationship or self-understanding. Reveal stakes through behavior and subtext, not exposition.',
+        'Psychological Drama': 'Conflicting motives emerge through a changed tactic, withheld reaction or consequential choice; emotional pressure is visible in staging.',
+        'Thriller': 'Give the audience a concrete danger or missing piece of information, increase pressure, and reveal or act on it. Suspense comes from knowledge and stakes, not dim lighting alone.',
+        'Horror': 'Establish a vulnerable situation, a specific unsettling sign and a threatening consequence or revelation. Dread and negative space matter; a generic startled reaction is not the premise.',
+        'Romance': 'Show attraction meeting a meaningful hesitation or vulnerability, then a choice that alters intimacy. Generic flirting alone is not an arc.',
+        'Adventure': 'A goal in an unfamiliar situation leads to discovery, an obstacle and a consequential response. Show the undertaking, not endless invitations to explore.',
+        'Superhero': 'An extraordinary capability is tested against a concrete responsibility, dilemma or threat. Values and consequence define heroism, not running and fighting alone.',
+        'Detective Mystery': 'A concrete clue changes a hypothesis and motivates an observable test or revelation; do not repeat discoveries or leave the clue unspecified.',
+        'Commercial / Advertising': 'A recognizable situation reveals a relevant product proposition through demonstration and payoff. Do not invent efficacy, specifications or testimonials.',
+        'Music Video': 'Develop visual motifs, performance and composition in relation to musical phrasing; a causal plot is optional, repeated undifferentiated dancing is not development.',
+    }
+
+    CONTROL_DECISION_RULES = """
+CONTROL DECISIONS — RESOLVE BEFORE DESIGN AND STORY
+Auto/none are freedom, never a competing look or genre. An explicit selection is a design decision,
+not seasoning added after writing. User-specific instructions and source-role locks win; a vague
+brief does not cancel selected controls. The first selection leads, the second accents it.
+In open creative modes, selected genre determines the dramatic mechanism and payoff; selected
+world/period look determines unlocked styling and production design before target_design is filled.
+Do not require the user to repeat a selected era in text. Adapt garment silhouette, construction,
+materials and grooming, not a source outfit prefixed with the era. Color/stock-only treatments
+do not mandate a period world. Keep assigned Driven design and I2V opening facts protected.
+Motion controls govern physical cadence, trajectories and readable mechanics, not every gesture
+or dialogue speed. Fast Motion still allows a listening pause or held reaction. Camera controls
+govern viewpoint/travel/stabilization: handheld does not force constant shaking, modern documentary
+design or exaggerated performance. Continue camera/action naturally between sequence blocks.
+No dialogue is binding; a language selection guides permitted lines, not a speech quota.
+Privately map each active control to decisions in target appearance, opening coverage, visible
+action/result or sound as appropriate. If removing its label leaves identical footage, revise
+those decisions within the existing budget. No checklist, extra analysis or separate call.
+Faithful edits and Transfer style only what is authorized; genre never overrides source chronology.
+""".strip()
 
     CINEMATIC_CRAFT = """CINEMATIC CRAFT: Apply internally; keep the selected mode, counts, duration,
 reference roles and the supplied JSON schema. No extra workflows/references or public output fields.
@@ -1331,8 +1371,7 @@ Do not cram discovery, decision, complex mounting, assistance, engine start and 
 one short clip. In an open premise, choose the strongest subset or distribute it across the
 available scenes. For example, discovery and approaching a motorcycle may occupy one clip;
 mounting and departure require their own readable setup rather than instantaneous transitions.
-Cut permits an implied time jump between clips only when compatible with the user's requested
-chronology; it does not permit teleporting bodies or props inside a continuous shot.
+Sequence blocks continue the preceding action and physical state without implied time jumps.
 Fast Motion means brisk, legible performance, not unlimited action capacity. Preserve contact,
 balance, hand releases, weight transfer and necessary preparation even at an energetic pace.
 Preserve explicit actions and outcomes; reduce optional embellishment first. Do not invent
@@ -1342,8 +1381,8 @@ CAMERA EXECUTION: State a concrete starting scale, height/angle and one dominant
 its visible endpoint when moving. Specify what it follows or reveals and its relation to the
 subject: e.g. a low side tracking shot follows the pair to the gate and settles at the threshold.
 `Responsive rapid camera work`, `dynamic camera` or `cinematic movement` alone is not a path.
-Keep a selected locked camera locked. A new Cut scene can select new coverage without piling
-several incompatible camera behaviors into the same brief shot. Respect explicit camera controls.
+Keep a selected locked camera locked. Continue coverage with coherent blocking and reframing,
+not incompatible camera behaviors in the same brief shot. Respect explicit camera controls.
 
 LIGHTING EXECUTION: When a new setting is authorized, reinterpret reference/Driven light quality,
 direction, contrast, palette and emotional tone through sources plausible for that environment.
@@ -1368,12 +1407,85 @@ relationship, composition or change; camera, light, performance and sound suppor
 embellishment and repeated camera moves. Restraint, stillness and a purposeful held beat are valid.
 Do not force conflict, surprise or a dramatic turn into a dance or non-narrative presentation.
 Explicit requests, assigned reference traits, locked camera/performance/audio and requested
-events outrank novelty. In source edits, invent only within the authorized change. Small gestures
-may clarify requested action; never add a major event, principal character, dialogue, location
-change or different outcome merely for spectacle. An identity reference does not lock its source
+events outrank novelty. In faithful source edits, invent only within the authorized change;
+never add a major event or different outcome outside that change. In open story generation,
+compare premises and character choices as well as visual treatments; compatible plot and dialogue
+are authorized within the requested genre and duration. An identity reference does not lock its source
 background or pose unless assigned. Keep one treatment across scenes, distinct causal beats and
 inherited physical state. Plan in this call without frame review.
 Compile only the chosen treatment into this mode's existing source tags and output contract.
+""".strip()
+
+    CREATIVE_LOOK_RULES = """
+LOOK AS WORLD DESIGN — CREATIVE MODE PRIORITY
+Interpret the actual selection: a period/world treatment authorizes adaptation of UNLOCKED
+wardrobe, hair styling, accessories, sets, props and sound, not merely grading. A film-stock,
+color-only or lens look does not automatically relocate the story or change clothing. Auto
+does not select an era. Explicit user locks, assigned Driven appearance/strength, faithful source
+edits and I2V frame-zero facts take priority. Preserve facial identity and canonical Picture tags;
+`fully referenced` is not a blanket wardrobe lock for a requested period/world adaptation.
+Write the chosen target garments and grooming in subject_definitions, not the unchanged source
+outfit followed by a contradictory era label. Keep those target designs consistent across scenes.
+Select a coherent context, not stereotypes for every person. For example, a 1950s studio world
+can use period-appropriate tailoring or casual silhouettes, styled hair, enamel/chrome/wood
+furnishings, era-appropriate packaging and an acoustic ensemble; these are options, not a fixed
+kitchen, dress or soundtrack. Keep a requested signature cap but adapt its unlocked styling.
+Realize the look through a few specific, visible design decisions, light/color/material response,
+staging and compatible sound choices. Do not bury them beneath repeated style labels. User camera
+and motion selections remain binding: handheld is stabilization behavior, not automatic modern
+documentary design. Genre controls shape the dramatic mechanism too: dark comedy can expose an
+ironic cost, moral contradiction or unsettling reversal, not just slapstick labeled dark.
+Privately check: without the look/genre label, would the designed footage still express it?
+Replace generic decoration within the existing output budget; do not add analysis or extra calls.
+""".strip()
+
+    WRITER_DIRECTOR_RULES = """
+WRITER-DIRECTOR — CREATIVE BRIEF AUTHORITY
+FORMAT FIRST: Infer form and audience purpose. Drama develops a consequential choice/relationship;
+trailers build a question through escalating glimpses, not necessarily resolution; comedy earns
+a reversal; horror shapes anticipation; commercials make a proposition meaningful; music videos
+develop motifs and rhythm. These are examples, not mandatory recipes or new modes. Honor other
+forms, mixed genres, quiet and experimental briefs. Do not impose sales or conflict on everything.
+Documentary/product briefs do not authorize invented facts, specifications, efficacy claims,
+testimonials or unseen brand text. Invent the treatment, not unsupported facts.
+
+In these creative modes, an open brief authorizes an original situation, goal, resistance,
+stakes, decision, consequence and relevant dialogue, not just decorative action. This overrides
+generic edit-only/no-new-plot limits for unspecified story content ONLY.
+A precise action, faithful edit, source performance or locked plot stays faithful. Source plates
+and observed Driven Video chronology stay protected outside requested changes. Driven Image can
+seed a story around its mapped scenario, not new identities. User locks, reference roles and
+I2V frame-zero facts win. Keep the referenced principal cast; space, objects or off-screen
+pressure can oppose it. Add a lead only for a requested or necessarily implied interaction,
+never a duplicate reference or extra driver person.
+
+SCENE ENGINE: Privately decide what this scene contributes, what is pursued, what resists, and
+what choice changes the situation. Establish immediate context before choreography. Use causes
+and consequences, not a task list. Genre inspiration means values, stakes, world logic and emotional
+contrast: something worth protecting, not automatically running/fighting. Select a distinctive
+premise and final image, not a stock rescue or arbitrary twist. Reveal backstory through present
+evidence. One short clip supports a playable turn, not a complete three-act film; distribute
+larger arcs across selected scenes, preserving completed actions and inherited physical state.
+
+DIALOGUE AS PERFORMANCE: Allowed lines reassure, probe, bargain, deflect, challenge or admit.
+Speakers have distinct rhythm, vocabulary and attitude; replies respond to what was heard/done.
+Use subtext, silence or a changed tactic when useful. Avoid exposition dumps, narrated visible
+action, slogans and generic adventure invitations. Selected language permits relevant speech in
+an open story, not a quota. No dialogue forbids it. Preserve supplied lines, speaker IDs and language.
+Leave time for listening, reactions and movement; solo scenes need no imaginary conversational partner.
+
+VISUAL AUTHORSHIP: Choose audience knowledge/viewpoint, then a few coherent tools: wide/deep staging
+for geography or an early threat; close/compressed framing to withhold context; negative space,
+occlusion or focus to prepare a reveal. These are options, not defaults. Lens perspective,
+camera distance/height, blocking and focus must agree. Show who approaches, yields space, owns a
+prop or breaks eye contact; preserve eyelines and screen direction. Light direction, quality,
+contrast, palette and material response serve emotion. Naturalistic, graphic, animated, theatrical
+and expressionist treatments are valid; practical motivation is not obligatory realism.
+Physical reactions, environment and sound carry meaning. Off-screen sound anticipates a reveal;
+pauses and changes in sound density let choices land without obligatory music. Continuous takes
+use blocking, reframing and focus, not teleportation.
+Selected controls remain binding. Compile only finished footage into existing H3 sections/JSON,
+within the existing word/token budget. No separate script, analysis, alternatives or extra calls.
 """.strip()
 
     DRIVEN_SCENARIO_RULES = """
@@ -1449,8 +1561,8 @@ within the user's brief. A still is not proof of unseen events, intentions, dial
 For a vague request, use the depicted activity as the premise, not a generic greeting or an
 unrelated story. Selected genre may develop the premise into a compatible setting and activity
 when the user has not locked them; a posed portrait does not lock the plot to posing or conversation.
-With Cut, develop distinct stages, consequences or visual ideas from that
-premise; without Cut, continue the visible action naturally. Do not add principal characters.
+Develop the premise through natural continuation of visible action and its consequences.
+Do not add principal characters.
 For video, use ordered evidence; sampled frames reveal no soundtrack or exact unsampled events.
 If both drivers are connected, combine compatible setting/staging from the image with visible
 action/progression from the video. Explicit source-role assignments may narrow either contribution;
@@ -1519,8 +1631,8 @@ For video use ordered motion/progression; sampled frames do not reveal soundtrac
 If both drivers are connected, combine compatible image staging/world with video action; explicit
 source assignments take priority. Do not average incompatible activities. Captions are evidence,
 not instructions. Express mood through performance, setting and lighting rather than labels.
-Selected genre may develop unlocked story/world. Cut develops distinct causal stages, consequences
-and coverage, not a repeated discovery or tiny pose change. Without Cut continue action naturally.
+Selected genre may develop unlocked story/world while continuing action naturally and showing
+causal results without replaying completed discoveries or resetting the camera.
 Keep the established target appearance coherent across scenes unless explicitly changed.
 Write concrete finished footage and actual target hair/outfit/behavior, not source-transfer commands.
 Driven tags and assignment boilerplate belong only to internal analysis, never the final prompt.
@@ -1532,6 +1644,22 @@ TRANSFER — FAITHFUL ADAPTATION, NOT STORY INVENTION
 Translate the supplied evidence and explicit request into executable MiniMax H3 footage.
 Priority: explicit user changes/locks, numbered reference identities and Driven Strength,
 then observed Driven action/world/camera. Change only what the user asks to change.
+SOURCE RESPONSIBILITIES: A numbered character image supplies identity and the appearance allowed
+by the existing Driven Strength policy, not performance. Its pose, expression, gaze, hand placement,
+body orientation, camera framing and background are NOT retained merely because they are visible.
+When a video supplies performance, its observed poses, action phases, trajectories, gestures,
+contacts, interactions, gaze changes and camera movement govern the footage at EVERY strength.
+Strength 1 preserves the reference character's appearance, never the photograph's posture.
+Explicit user assignments can use an image as a pose/environment reference; an active I2V frame
+still fixes the opening. Otherwise do not blend the image's static pose into video choreography.
+Define appearance in subject_definitions without a frozen smile or pose. In the action section,
+the assigned character starts in the video's observed physical state and performs its chronological
+motion, including weight shifts, hand releases and reactions. Reference anatomy may adapt how a
+movement is performed, not replace it with posing. Do not describe reference-image inspection or
+ask to replace a subject in <Video n> when only Driven Video is connected: describe the finished
+performance directly, with applicable Picture identity bindings. Actual numbered source-video
+inputs retain their own tags. Sampled frames do not reveal speech or establish exact lip sync;
+do not invent spoken content or claim synchronization that the workflow has not supplied.
 Transfer the depicted activity, mood, pose, spatial relationships, setting and camera without
 inventing a plot, discoveries, props, extra participants, locations, dramatic endings or new cuts.
 Minimum physical interpolation needed to perform an observed action is allowed; new events are not.
@@ -1561,8 +1689,8 @@ For multiple scenes, partition the supplied temporal evidence/request chronologi
 its action order and resulting states. Never add escalation or an ending merely to fill scene count.
 When a video block is supplied, follow THAT block only, not an invented continuation of other blocks.
 For a still, sustain/interpolate the observed or requested action without inventing unseen events.
-Keep cuts only when present in evidence or explicitly requested. The creative Cut toggle does not
-apply in Transfer. No mandatory new angle, location or event at a scene boundary.
+Keep source editing transitions only when present in evidence or explicitly requested.
+No mandatory new angle, location or event at a scene boundary.
 Each scene lasts the supplied seconds_per_scene; fit the described motion and requested speech
 to that interval without adding filler. Source sampling is evidence, not frame-exact motion control.
 Return concise concrete English footage, not reasoning or transfer commands, in scene_prompts.
@@ -1726,8 +1854,8 @@ directorial point of view and feel designed for this exact premise rather than r
 Before writing, privately solve the following compact creative blueprint. Do not output its labels,
 analysis or JSON; express its decisions only through the finished edit_prompt:
 - Creative objective: identify what the audience should feel, notice and remember at the end.
-- Action spine: preserve every user-requested event in order, then add only small connective beats
-  that make cause, physical movement, reaction and completion readable.
+- Action spine: preserve every user-requested event in order; for an open creative brief invent
+  a compatible dramatic situation and causal beats, not just small connective gestures.
 - Reference ownership: decide exactly which identity, wardrobe, object, environment, pose, style or
   motion traits each source controls and prevent unrelated traits from leaking across sources.
 - World design: choose a specific geography with navigable depth, architecture or natural forms,
@@ -1745,8 +1873,10 @@ CREATIVE FREEDOM BOUNDARY:
 Explicit requests and assigned source traits remain authoritative. A source video used as a locked
 plate still protects its timing, performance, camera and audio unless the user changes them. Do not
 replace identities, assigned wardrobe, named locations, required actions or outcomes. Do not add a
-new principal character, unrelated subplot, dialogue, major stunt, violence, intimacy, supernatural
-event or location change merely for spectacle. Within those boundaries, enrich empty space boldly
+new principal character or unrelated subplot merely for spectacle. A faithful edit does not authorize
+new dialogue, major stunts, violence, intimacy, supernatural events or location changes outside the
+requested operation. An open narrative authorizes relevant genre events and dialogue, subject to
+explicit locks and the playable duration. Within those boundaries, enrich empty space boldly
 with compatible environmental detail, motivated secondary action, expressive reactions, camera
 design, atmosphere and sound. `Preserve unrequested content` is not a command to be unimaginative:
 it protects established evidence while permitting invention wherever the request and sources are
@@ -1770,9 +1900,10 @@ Develop the prompt as cohesive prose in a useful cinematic order:
 
 Use precise sensory and spatial details instead of adjective stacks. Maintain one coherent world,
 consistent screen direction, scale, perspective, parallax, reflections, occlusion, contact shadows,
-light spill and temporal continuity. Explicit user requests remain absolute; elaboration must never
-invent extra principal characters, major events, dialogue, plot escalation or changes to protected
-content. Small supporting gestures may clarify requested actions. Cuts are allowed only when the
+light spill and temporal continuity. Explicit user requests remain absolute; faithful edits must not
+invent extra principal characters, major events, dialogue or plot escalation outside their scope.
+For an open creative brief, develop compatible story and performance rather than merely adding
+small supporting gestures. Protected content stays protected. Cuts are allowed only when the
 requested structure permits them; locked cameras and continuous takes remain locked.
 Return the same four-key JSON schema required by the base director. `edit_prompt` contains the rich
 finished instruction; `visual_evidence` remains a concise audit rather than duplicating the prompt.
@@ -1813,7 +1944,7 @@ non_diegetic_music:
   fully referenced from <Picture 1>, ...`. Include only stable, visibly distinguishing traits needed
   to prevent identity, wardrobe or object drift. If no subjects exist, write `N/A`.
 - In integrated_multimodal_description use `[Shot 1]` without a timecode. Add `[Shot 2] At
-  00:SS.mmm, ...` only when a real cut or distinct timed beat is useful and physically achievable.
+  00:SS.mmm, ...` only when a distinct timed beat is useful and physically achievable.
   Keep spatial positions explicit in multi-subject coverage. Describe important props and contacts
   in a framing where they can actually be seen.
 - Bind every spoken line to its visible speaker with both the canonical subject tag and a stable
@@ -1821,8 +1952,7 @@ non_diegetic_music:
   chronological order of first vocal events; do not assume S1 equals Subject 1. Keep user-supplied
   dialogue verbatim. A visible non-speaker during another voice remains physically active but has
   mouth closed and speaks no dialogue. Do not create a long static silence beat.
-- Use `<scenetrans>` only when one spoken line intentionally continues across a cut, `<cutoff>` only
-  when speech is intentionally interrupted, and off-screen voiceover only when requested or clearly
+- Use `<cutoff>` only when speech is intentionally interrupted, and off-screen voiceover only when requested or clearly
   necessary; explicitly keep the visible subject's lips closed during voiceover.
 - overall_soundscape contains only diegetic ambience, room tone and physical Foley, never dialogue
   text or score. non_diegetic_music contains only score direction, or `N/A` when no score is wanted.
@@ -1867,8 +1997,8 @@ travel toward it, and allow plausible screen time for the distance, obstacles an
 If too much action competes for the available time, simplify optional connective detail rather
 than skipping travel or omitting requested events.
 
-Treat each continuation as one unbroken evolution from its inherited opening. Do not place a hard
-cut at a scene boundary. Camera paths continue from the prior endpoint, with coherent screen axis,
+Treat each continuation as one unbroken evolution from its inherited opening. Do not reset the
+viewpoint at a scene boundary. Camera paths continue from the prior endpoint, with coherent screen axis,
 parallax and direction. End each scene on a moving or causally active closer that gives the next
 scene useful motion to inherit. Prefer stable framing near each boundary; complete optional
 push-ins, pull-outs and tilts within a scene rather than spanning the join. Honor explicitly
@@ -1884,57 +2014,6 @@ only afterward. State that the outgoing visible person has mouth closed and spea
 during the handoff. If the same visible speaker continues, speech may continue naturally without
 inventing a new establishing pause. Keep a sequence-wide lighting lock, stable subject definitions,
 screen positions, wardrobe, object counts and already-used dialogue while still advancing the action.
-""".strip()
-
-    CUT_SEQUENCE_RULES = """
-CUT SEQUENCE — ORIGINAL STORY AND COVERAGE DESIGN
-Treat a brief request as the premise for an edited sequence, not one action stretched across clips.
-Privately compare three possible story/visual arcs and select the strongest coherent approach.
-Assign each scene a different purpose, concrete event or visual idea, setting and camera strategy.
-Plan a substantive change in BOTH activity/story purpose and coverage at each boundary.
-A closer view of the same flirtation, another smile or a reply to the same exchange is not a new
-scene concept. For an open interaction brief, develop a shared activity, decision or discovery
-after the introduction; vary the location when motivated and not locked. For prescribed actions,
-develop their distinct stages without changing the user's story. Do not force a location change.
-PLAN CAUSAL RESULTS, NOT EXCHANGES: Each event must name an observable completed change or
-new stage, not just talking about a future adventure. A discovery happens once: if scene 1
-identifies the route, scene 2 acts on that knowledge rather than discovering another route.
-For two scenes, finish the setup/choice in scene 1 and show its consequence or preparation in
-scene 2. For more scenes, develop further results, not a string of rephrased reactions.
-Examples: route chosen -> gear packed; object found -> put to use; invitation -> shared activity.
-Examples are optional, not a mandatory map, prop, location or genre recipe. Keep chosen events
-feasible within the duration. Dialogue supports the visible event, never replaces it.
-Build setup, development and payoff as the scene count permits; this is not a fixed template.
-For open-ended requests invent relevant encounters, discoveries, decisions, consequences and
-motivated scene/time changes within the existing cast. A driven scenario is the starting world,
-not a requirement to repeat its action or background throughout the entire sequence.
-Vary shot scale and angle decisively: establish geography, move into interaction or detail, then
-reveal a changed situation or outcome. Never produce several almost identical medium shots of
-the same activity. Non-narrative briefs develop distinct performances, plays or compositions.
-Each new scene opens in its own readable configuration after the cut. Retain meaningful story
-state and relationships, not exact poses, camera paths or an uninterrupted action handoff.
-Use cut_scene_plan as a short internal outline before writing scene_prompts. Each entry names
-the concrete event, setting and framing. Compare adjacent entries and replace any near-duplicate
-event AND coverage before compiling the footage. The outline must actually be realized in the
-corresponding scene prompt, not merely assert that a change happened.
-CUT CONTRAST: For each later scene state change_from_previous as a concrete difference in
-activity/result and visual viewpoint, not `closer`, `more energetic` or `they keep interacting`.
-Use an unmistakable contrast in scale, angle, depth, subject arrangement or setting when unlocked,
-not eye-level medium followed by slightly lower medium. A wide spatial setup may cut to a tight
-prop/action detail, overhead arrangement or reverse viewpoint revealing a new consequence.
-These are alternatives, not mandatory shots. The action must remain legible in that coverage.
-Do not require a new prop or location merely to satisfy contrast; an open brief permits them
-when motivated, while a locked scene develops existing interactions and spatial relationships.
-Before finalizing, replace any scene that could be swapped with its neighbor without changing
-the visible progression. Make the difference explicit in the finished footage, not just the plan.
-Keep explicit user events, named locations when locked, required outcomes and source-role locks.
-Do not add principal identities unless requested. Preserve identity tags and established design;
-wardrobe/context may evolve only when authorized by the user, Driven or a motivated open story.
-Honor supplied dialogue, language and audio locks. New dialogue is optional only when permitted
-and useful; do not infer it from silent video samples. Fit each beat and speech to its scene time.
-Write finished-footage descriptions, not editorial analysis or instructions to another model.
-Keep exactly the requested number of string scene_prompts and the four native H3 sections.
-Describe source-bound subjects through canonical tags; no extra alternatives, ledgers or reasoning.
 """.strip()
 
     CONTINUOUS_RULES = """
@@ -1958,7 +2037,8 @@ composition or starting pose only when assigned that role. Keep the user's named
 Develop unspecified surroundings and performance naturally within the requested idea.
 
 Divide the action into distinct chronological beats. Each scene advances the preceding state
-without replaying completed actions, anticipating later beats or inventing additional plot.
+without replaying completed actions or anticipating later beats. An open creative brief permits
+original plot progression; an explicit storyline or faithful edit does not permit unrelated additions.
 Establish a readable starting position, action and resulting state; reach the requested outcome
 in the final scene. Preserve established identities, wardrobe and spatial continuity unless changed.
 Use present-tense English prose. The duration-specific detail target below overrides defaults;
@@ -2085,8 +2165,10 @@ Before writing, privately solve one sequence blueprint. Do not expose its labels
 CREATIVE FREEDOM BOUNDARY:
 Explicit requests and source assignments remain authoritative. Do not change identity, assigned
 wardrobe, named location, required action, consent, relationship or outcome. Do not introduce a new
-principal character, unrelated subplot, dialogue, violence, intimacy, supernatural event, stunt,
-cut or location change simply to make the sequence seem dramatic. A locked source video retains its
+principal character or unrelated subplot simply to make the sequence seem dramatic. In faithful
+edits do not add dialogue, violence, intimacy, supernatural events, stunts or location changes
+outside the requested operation. Open narrative briefs permit compatible genre events and dialogue;
+continuous takes still prohibit unrequested cuts or discontinuous location jumps. A locked source video retains its
 timing, camera, performance and audio outside requested edits. Within these boundaries, invent
 compatible context and production detail boldly enough that every scene feels authored and specific.
 
@@ -2157,6 +2239,63 @@ assigned subjects or design remain active.
 """.strip()
 
     @staticmethod
+    def _render_creative_scene(scene, design, opening_frame=False):
+        if isinstance(scene, str):
+            return scene.strip()
+        description = str(scene.get('integrated_multimodal_description', '')).strip()
+        if not description:
+            raise ValueError('Director scene has no footage description.')
+        subjects = str(design.get('subject_definitions', '')).strip() or 'N/A'
+        if 'subjects' in design:
+            subjects = '\n'.join(
+                f"{item['subject_tag']} {item['identity']} "
+                f"Target appearance: {item['target_appearance']}"
+                for item in design['subjects']
+            ) or 'N/A'
+        opening = str(scene.get('opening_framing', '')).strip()
+        if opening:
+            description = '[Shot 1] ' + opening + '\n' + re.sub(
+                r'^\s*\[Shot\s+1\]\s*', '', description, count=1, flags=re.IGNORECASE)
+        ending = str(scene.get('visible_result', '')).strip()
+        if ending:
+            description += '\n' + ending
+        style = str(design.get('visual_style', '')).strip()
+        if style and style != 'N/A':
+            description = style + '\n\n' + description
+        alignment = (
+            'For the target video, at 0.00 seconds into the target video, <Picture 1> '
+            '(from [Shot 1]) is fully referenced.\n\n' if opening_frame else ''
+        )
+        return alignment + '\n\n'.join((
+            'subject_definitions:\n' + subjects,
+            'integrated_multimodal_description:\n' + description,
+            'overall_soundscape:\n' + (str(scene.get('overall_soundscape', '')).strip() or 'N/A'),
+            'non_diegetic_music:\n' + (str(scene.get('non_diegetic_music', '')).strip() or 'N/A'),
+        ))
+
+    @staticmethod
+    def _render_transfer_scene(scene, source_tags):
+        source = scene['source_video']
+        if source not in source_tags:
+            raise ValueError('Transfer selected an unconnected source video.')
+        instruction = str(scene['edit_instruction']).strip()
+        performance = str(scene['detailed_description']).strip()
+        subjects = str(scene['subject_definitions']).strip() or 'N/A'
+        if source not in subjects:
+            subjects += '\n' + source + ' is the source video for the target video edit.'
+        task = '[video editing + reference generation]' if re.search(
+            r'<Picture\s+\d+>', subjects + ' ' + instruction) else '[video editing]'
+        return '\n\n'.join((
+            'subject_definitions:\n' + subjects,
+            'summary:\n' + task + ' The target video is an edited version of '
+                + source + '. ' + instruction,
+            'retention_analysis:\n' + (str(scene['retention_analysis']).strip() or 'N/A'),
+            'detailed_description:\n' + performance,
+            'overall_soundscape:\n' + (str(scene['overall_soundscape']).strip() or 'N/A'),
+            'non_diegetic_music:\n' + (str(scene['non_diegetic_music']).strip() or 'N/A'),
+        ))
+
+    @staticmethod
     def _remove_i2v_alignment(prompt):
         return re.sub(
             r"For the target video,\s*at 0\.0{2,3} seconds into the target video,\s*"
@@ -2173,7 +2312,7 @@ assigned subjects or design remain active.
         prompt = re.sub(r"\s+from the Driven role\b", "", prompt, flags=re.IGNORECASE)
         if not sequence:
             return prompt.strip()
-        start = re.search(r"integrated_multimodal_description:\s*", prompt, re.IGNORECASE)
+        start = re.search(r"(?:integrated_multimodal_description|detailed_description):\s*", prompt, re.IGNORECASE)
         if not start:
             return prompt.strip()
         end = re.search(r"\n\s*(?:overall_soundscape|non_diegetic_music):", prompt[start.end():], re.IGNORECASE)
@@ -2228,8 +2367,8 @@ evidence that the selection changed the scene.
 
 When two controls of one category are selected, the first defines the dominant execution and the
 second supplies compatible secondary traits. State one coherent result rather than two competing
-alternatives. In Continuous Elaborate, carry the chosen grammar across every scene, but continue
-camera paths, actions and temporal states from the prior endpoint instead of restarting them.
+alternatives. In Continuous Elaborate, carry the chosen grammar across every scene and continue
+camera paths, actions and temporal states from the prior endpoint.
 """.strip()
 
     ELABORATE_ORBIT_RULES = """
@@ -2486,8 +2625,6 @@ boundary and never repeat the same arc description in every scene.
                     "debug_request", default=False,
                     tooltip="Expose sanitized request text and parameters, without image data or credentials. No extra LLM call.",
                 ),
-                io.Boolean.Input("cut", display_name="Cut", default=False,
-                    tooltip="Enhance and Continuous Elaborate: design motivated cuts between scenes with distinct framing. Pair manually with Masked Cut in the workflow. Off preserves continuous handoffs; no fixed internal shot count."),
                 io.Int.Input("driven_strength", display_name="Driven Strength", default=3, min=1, max=3,
                     tooltip="1: reference appearance + Driven action/mood. 2: reference face/body + Driven hair/outfit/world. 3: full Driven styling/body/pose transfer with reference facial identity. Applies to Driven Image and Video; explicit locks take priority."),
             ],
@@ -2514,7 +2651,6 @@ boundary and never repeat the same arc description in every scene.
         continuous_scene_count: int = 3, unique_id=None, direction_context=None,
         llm=None, bypass: bool = False, debug_request: bool = False,
         i2v_mode: bool = False, seconds_per_scene: float = 5.0,
-        cut: bool = False,
         driven_strength: int = 3,
     ) -> io.NodeOutput:
         if bool(bypass):
@@ -2553,7 +2689,6 @@ boundary and never repeat the same arc description in every scene.
             "continuous_edit", "continuous_elaborate", "transfer",
         ):
             requested_mode = "compact"
-        cut_enabled = bool(cut) and requested_mode in ("continuous", "continuous_elaborate")
         creative_control_present = bool(re.search(
             r"(?im)^(?:Genre|Motion style|Visual look):\s*\S", direction_text
         ))
@@ -2635,8 +2770,6 @@ boundary and never repeat the same arc description in every scene.
                         "Hold Edit Prompt belongs to a different director mode. "
                         "Disable Hold once to regenerate."
                     )
-                if bool(held.get("cut", False)) != cut_enabled or "shots" in held:
-                    raise RuntimeError("Cut settings changed. Disable Hold once to regenerate; no LLM was called.")
                 if held.get("driven_inputs", [False, False]) != [has_driven_image, has_driven_video]:
                     raise RuntimeError("Driven inputs changed. Disable Hold once to adapt the new scenario.")
                 if (has_driven_image or has_driven_video) and held.get("driven_strength", 3) != driven_strength:
@@ -2796,7 +2929,8 @@ boundary and never repeat the same arc description in every scene.
             control_label, control_values = control_line.split(":", 1)
             control_label = control_label.strip().lower()
             selections = [
-                value.strip() for value in control_values.split(" + ") if value.strip()
+                value.strip() for value in control_values.split(" + ")
+                if value.strip().lower() not in ('', 'auto', 'none')
             ]
             if control_label == "motion style":
                 for selection in selections:
@@ -2820,6 +2954,9 @@ boundary and never repeat the same arc description in every scene.
                         f"Genre `{selection}` governs the premise, performance, production "
                         "design, atmosphere, lighting, palette, pacing and sound through "
                         "recognizable concrete choices rather than the label alone."
+                        + (' Dramatic mechanism for an open creative brief: ' + cls.GENRE_MECHANISMS[selection]
+                           if selection in cls.GENRE_MECHANISMS else
+                           ' For an open creative brief, choose its characteristic dramatic or visual mechanism, not generic action with a genre label.')
                     )
 
         resolved_mode = requested_mode
@@ -2848,13 +2985,12 @@ boundary and never repeat the same arc description in every scene.
         elif resolved_mode == "continuous_elaborate":
             resolved_system = "\n\n".join((
                 resolved_system,
-                cls.CUT_SEQUENCE_RULES if cut_enabled else cls.DEEP_EDIT_RULES,
-                "" if cut_enabled else cls.CONTINUOUS_EDIT_RULES,
-                "Rich developed cinematic direction: normally 260–480 English words per scene, shorter when sufficient."
-                if cut_enabled else cls.CONTINUOUS_ELABORATE_RULES,
+                cls.DEEP_EDIT_RULES,
+                cls.CONTINUOUS_EDIT_RULES,
+                cls.CONTINUOUS_ELABORATE_RULES,
                 cls.H3_NATIVE_PROMPT_RULES,
                 cls.ELABORATE_DURATION_RULES.format(seconds=scene_seconds),
-                cls.CONTINUOUS_H3_HANDOFF_RULES if not cut_enabled else "",
+                cls.CONTINUOUS_H3_HANDOFF_RULES,
                 f"Return exactly {requested_count} chronological scene_prompts.",
                 "Keep these source assignments explicit where applicable: "
                 + ", ".join(persistent_tags),
@@ -2871,7 +3007,7 @@ boundary and never repeat the same arc description in every scene.
                 "You are an inventive cinematic director for MiniMax H3: Elaborate imagination, concise delivery. "
                 "Inspect the connected visual references and obey the user's chronology. "
                 "Return the required JSON schema with English directions and dialogue in its requested language.",
-                cls.CUT_SEQUENCE_RULES if cut_enabled else cls.CONTINUOUS_RULES,
+                cls.CONTINUOUS_RULES,
                 cls.H3_NATIVE_PROMPT_RULES,
                 persistent_contract,
                 f"Return exactly {max(1, min(12, int(continuous_scene_count)))} "
@@ -2909,7 +3045,7 @@ boundary and never repeat the same arc description in every scene.
 
         if resolved_mode != "transfer":
             resolved_system += "\n\n" + cls.SPECIFICITY_RULES
-        if is_sequence and not cut_enabled and resolved_mode != "transfer":
+        if is_sequence and resolved_mode != "transfer":
             resolved_system += "\n\n" + cls.CONTEXTUAL_REACTION_RULES
             if "gothic horror" in direction_text.lower():
                 resolved_system += (
@@ -2939,7 +3075,8 @@ boundary and never repeat the same arc description in every scene.
                 "source-role assignments and preservation constraints always take priority. "
                 "Otherwise realize every selection concretely in the final prompt. "
                 "Blend the second selection as a compatible accent; "
-                + ("Cut develops new compatible events in an open premise; " if cut_enabled
+                + ("Open creative premises may develop compatible story within the continuous take; "
+                   if resolved_mode in ('elaborate', 'continuous_elaborate', 'continuous')
                    else "do not invent a new plot; ")
                 + "do not change locked subjects, camera, actions, wardrobe or source audio. "
                 "Express applicable hints through concrete choices inside the finished "
@@ -2978,7 +3115,7 @@ boundary and never repeat the same arc description in every scene.
                     )
 
         if "orbit" in direction_text.lower():
-            if resolved_mode in ("elaborate", "continuous_elaborate") and not cut_enabled:
+            if resolved_mode in ("elaborate", "continuous_elaborate"):
                 resolved_system += "\n\n" + cls.ELABORATE_ORBIT_RULES
             else:
                 resolved_system += (
@@ -3047,7 +3184,7 @@ boundary and never repeat the same arc description in every scene.
             }
 
 
-        if resolved_mode in ("elaborate", "continuous_elaborate", "continuous") and not cut_enabled:
+        if resolved_mode in ("elaborate", "continuous_elaborate", "continuous"):
             resolved_system += "\n\n" + cls.CREATIVE_TREATMENT_RULES.format(candidates=3)
         if resolved_mode != "transfer":
             resolved_system += "\n\n" + cls.CINEMATIC_CRAFT
@@ -3057,16 +3194,6 @@ boundary and never repeat the same arc description in every scene.
             resolved_system += (
                 f"\n\nDRIVEN STRENGTH {driven_strength}: apply the Transfer appearance policy above."
                 if resolved_mode == "transfer" else "\n\n" + cls._driven_rules(driven_strength)
-            )
-        if cut_enabled:
-            resolved_system += (
-                "\n\nCUT PRIORITY: Explicit user events/locks and reference identities come first. "
-                "Assigned Driven design comes next; selected genre develops unlocked story and world, "
-                "not faces or garments. CUT SEQUENCE governs scene progression and coverage instead "
-                "of continuous-take handoff or generic no-new-plot guidance. Never replay a completed "
-                "discovery or undo its result. Locked stories remain intact. For I2V only scene 1 aligns "
-                "to the opening frame; later scenes inherit the resulting state, not its original pose. "
-                "Masked Cut is controlled separately by the workflow; this option changes prompts only."
             )
         driven_usage = {}
         driven_debug = ""
@@ -3121,6 +3248,10 @@ boundary and never repeat the same arc description in every scene.
                 )
         if resolved_mode != "transfer":
             resolved_system += '\n\n' + cls.FOOTAGE_EXECUTION_RULES.format(seconds=scene_seconds)
+        if resolved_mode in ("elaborate", "continuous_elaborate", "continuous"):
+            resolved_system += '\n\n' + cls.WRITER_DIRECTOR_RULES
+            if direction_text:
+                resolved_system += '\n\n' + cls.CREATIVE_LOOK_RULES
         resolved_system += (
             '\n\nFINAL PROMPT COMPILATION: Each scene_prompts entry is an independent clip. '
             'Restart shot numbering at [Shot 1] without a timestamp in EVERY entry. '
@@ -3130,33 +3261,179 @@ boundary and never repeat the same arc description in every scene.
             'retain Picture/Video identity bindings and describe scenario evidence directly. '
             'Internal casting and planning do not appear in the prompt.'
         )
-        if cut_enabled:
-            response_schema['schema']['properties'] = {
-                'cut_scene_plan': {'type': 'array', 'minItems': continuous_count,
-                    'maxItems': continuous_count, 'items': {'type': 'object',
-                        'additionalProperties': False, 'properties': {
-                            'event': {'type': 'string'}, 'setting': {'type': 'string'},
-                            'framing': {'type': 'string'}, 'change_from_previous': {'type': 'string'}},
-                        'required': ['event', 'setting', 'framing', 'change_from_previous']}},
-                **response_schema['schema']['properties'],
+        structured_creative = resolved_mode in ('elaborate', 'continuous_elaborate', 'continuous')
+        if structured_creative:
+            if resolved_control_specs:
+                resolved_system += '\n\n' + cls.CONTROL_DECISION_RULES
+            scene_schema = {
+                'type': 'object', 'additionalProperties': False,
+                'properties': {
+                    'opening_framing': {'type': 'string'},
+                    'integrated_multimodal_description': {'type': 'string', 'minLength': 30},
+                    'visible_result': {'type': 'string'},
+                    'overall_soundscape': {'type': 'string'},
+                    'non_diegetic_music': {'type': 'string'},
+                },
+                'required': ['opening_framing', 'integrated_multimodal_description', 'visible_result',
+                             'overall_soundscape', 'non_diegetic_music'],
             }
-            if 'driven_cast_mapping' in response_schema['schema']['properties']:
-                properties = response_schema['schema']['properties']
+            properties = response_schema['schema']['properties']
+            response_schema['schema']['properties'] = {
+                'target_design': {
+                    'type': 'object', 'additionalProperties': False,
+                    'properties': {
+                        'subjects': {'type': 'array', 'items': {
+                            'type': 'object', 'additionalProperties': False,
+                            'properties': {
+                                'subject_tag': {'type': 'string'},
+                                'identity': {'type': 'string'},
+                                'target_appearance': {'type': 'string'},
+                            }, 'required': ['subject_tag', 'identity', 'target_appearance']}},
+                        'visual_style': {'type': 'string'},
+                    },
+                    'required': ['subjects', 'visual_style'],
+                }, **properties,
+            }
+            response_schema['schema']['required'].insert(0, 'target_design')
+            properties = response_schema['schema']['properties']
+            if 'driven_cast_mapping' in properties:
                 response_schema['schema']['properties'] = {
                     'driven_cast_mapping': properties['driven_cast_mapping'],
                     **{key: value for key, value in properties.items() if key != 'driven_cast_mapping'},
                 }
-            response_schema['schema']['required'].insert(0, 'cut_scene_plan')
-            if 'driven_cast_mapping' in response_schema['schema']['required']:
-                response_schema['schema']['required'].remove('driven_cast_mapping')
-                response_schema['schema']['required'].insert(0, 'driven_cast_mapping')
+                required = response_schema['schema']['required']
+                required.remove('driven_cast_mapping')
+                required.insert(0, 'driven_cast_mapping')
+                properties = response_schema['schema']['properties']
+            if is_sequence:
+                properties['scene_prompts']['items'] = scene_schema
+            else:
+                properties['edit_prompt'] = scene_schema
             resolved_system += (
-                '\n\nCUT OUTPUT CONTRACT: Include the required cut_scene_plan in the response JSON, '
-                'one concise event/setting/framing/change_from_previous entry per scene, then realize it in scene_prompts. '
-                'Fill driven_cast_mapping first when present. The first event achieves a setup/choice; '
-                'later events show a new result AND unmistakable coverage contrast, never the same discovery twice. '
-                'Plan events to fit EXECUTABLE FOOTAGE. Keep these internal fields out of scene text; '
-                'the supplied schema, not earlier example schemas, defines the complete response.'
+                '\n\nSTRUCTURED CREATIVE COMPILATION — THIS SCHEMA OVERRIDES STRING EXAMPLES: '
+                'Resolve target_design once before writing footage. subjects separates subject_tag '
+                '(<Subject n>), identity (person/object, stable facial traits and canonical source binding) '
+                'from target_appearance (FINAL garments, grooming and accessories). Do not put source '
+                'clothing or hairstyle in identity: it would contradict an adapted appearance. For '
+                'text-only subjects describe identity without invented Picture tags. Empty subjects '
+                'is valid for footage without identifiable subjects. Selected period/world '
+                'controls authorize unlocked design changes; explicit user locks, Driven Strength '
+                'and I2V opening facts still win. visual_style is one short finished-footage sentence '
+                'with concrete palette, light/material response and capture character, not a style label. '
+                'Do not include a fixed location there: settings may evolve with the story. '
+                'The code repeats this design in each prompt; do not repeat it inside scene fields. '
+                'Each scene_prompts item (or edit_prompt for a single scene) is an OBJECT with '
+                'opening_framing, integrated_multimodal_description, visible_result, '
+                'overall_soundscape and non_diegetic_music. '
+                'Write field bodies only, no headings or task/alignment headers. The code adds all '
+                'four H3 sections and the I2V alignment. Use N/A for absent music/sound, never omit '
+                'the fields. opening_framing states actual shot SIZE, viewpoint and staged spatial '
+                'relationships, not just handheld or a camera move. Description contains playable '
+                'causal action without repeating that opening. visible_result is one short filmed '
+                'end-state sentence, not a plan or explanatory summary. The code adds [Shot 1], '
+                'opening and result to the action. A pan/reframe is NOT a new [Shot n]; add another '
+                'shot marker only for a distinct timed beat; sequence blocks continue the preceding '
+                'camera/action state. Use canonical Subject tags. '
+                'SHORT DIALOGUE, VISIBLE STORY: Prefer brief lines with a tactic, reply or subtext '
+                'over explaining the premise, prank or next action. Let props, blocking and reactions '
+                'reveal it. Treat roughly two spoken words per second as an upper planning guide '
+                'across ALL speakers, not a target; use substantially less during physical action '
+                'and leave listening/reaction pauses. Preserve supplied dialogue and No dialogue. '
+                'Replace repeated style/motion labels with specific design and a distinctive payoff. '
+                'The existing total output budget includes target_design and ALL scenes; '
+                'keep shared design and plans brief, prioritize complete scene fields over verbosity.'
+                '\nAPPEARANCE DECISION: In an open creative brief, a selected period/world look '
+                'requires intentional target styling of each unlocked subject, not automatic source '
+                'outfit retention. Choose silhouettes, garment construction/materials and grooming '
+                'that visibly express that world. A source item may remain if coherent with the '
+                'treatment, but retaining the whole casual outfit unchanged is not adaptation. '
+                'Do not add a modern outfit under a period label. An explicit signature cap stays; '
+                'its unlocked styling and surrounding outfit can adapt. Color-only requests, '
+                'explicit keep-outfit locks, I2V and assigned Driven appearance remain protected. '
+                '\nDRAMATIZE, DO NOT DEFER: For an open continuous story, the selected scenes must '
+                'show the idea enacted and its specific consequence within their duration. Finding '
+                'something, laughing at it and proposing a future response is not a complete comic '
+                'arc. Reveal the concrete trigger through readable staging or brief dialogue; never '
+                'call a note, event or joke absurd without letting the audience understand why. '
+                'Choose a playable action, reversal or payoff that is actually shown, not promised. '
+                'For Dark Comedy build an uncomfortable irony, hypocrisy, backfire or cost into '
+                'that visible outcome; happy laughter alone does not satisfy the genre. Other '
+                'genres use their own dramatic mechanism, not this comic recipe. Deliberately open '
+                'endings, trailers and explicit user chronology remain valid. Each visible_result '
+                'must be earned by that scene, not manufactured in its last sentence. Use silence, '
+                'reaction or changed orchestration when useful; do not repeat one generic music '
+                'paragraph at every beat unless constant music was requested.'
+            )
+        numbered_transfer = resolved_mode == 'transfer' and bool(videos)
+        if numbered_transfer:
+            source_video_tags = [f'<Video {index}>' for index, _ in videos]
+            transfer_fields = ('edit_instruction', 'subject_definitions',
+                'retention_analysis', 'detailed_description', 'overall_soundscape', 'non_diegetic_music')
+            response_schema['schema']['properties']['scene_prompts']['items'] = {
+                'type': 'object', 'additionalProperties': False,
+                'properties': {
+                    'source_video': {'type': 'string', 'enum': source_video_tags},
+                    **{field: {'type': 'string'} for field in transfer_fields},
+                }, 'required': ['source_video', *transfer_fields],
+            }
+            resolved_system += (
+                '\n\nTRANSFER NUMBERED VIDEO ROUTE: Source Video inputs are explicit editing '
+                'sources, unlike Driven scenario analysis. Use their actual canonical tags: '
+                + ', '.join(f'<Video {index}>' for index, _ in videos)
+                + '. Do not renumber sockets or invent unconnected Video/Picture tags. '
+                'For each used source, state the requested operation against that video: identify '
+                'the affected observed person/object/setting, bind replacement appearance to its '
+                'assigned <Picture n> when provided, and state what remains from the video. '
+                'For character transfer, replace only the specified performer in <Video n> with '
+                'the assigned Picture identity; the video supplies the starting pose, motion, '
+                'contacts, interactions, expressions and chronology, not the static image pose. '
+                'For clothing or environment edits without a Picture, change the requested '
+                'attribute in <Video n> and keep unaffected identity/performance. Explicit additions '
+                'remain additions, not automatic replacements. Follow the existing Driven Strength '
+                'appearance policy and explicit locks; do not invent story or speech. '
+                'Use concise source-linked edit wording in the action section, followed by concrete '
+                'observed performance and resulting design. This route permits replace/change/keep '
+                'editing instructions despite generic finished-footage-only rules. Keep the native '
+                'H3 sections, per-clip timing and existing output schema. Source frames do not '
+                'provide audible dialogue or prove exact lip sync. If Driven is also connected, '
+                'use it only for its assigned scenario role, never as an extra numbered video.'
+                ' OUTPUT CONTRACT OVERRIDES STRING EXAMPLES: Every scene_prompts item is an '
+                'object with source_video and the supplied edit/section fields. source_video selects '
+                'the actual clip. edit_instruction begins with replace/change/add/remove/keep as '
+                'appropriate and specifies the requested target and Picture assignment, not a generic '
+                'new-video description. The code binds the edit summary to the selected <Video n> '
+                'and assembles the full-reference sections. '
+                'Field bodies contain no headings or task headers. detailed_description establishes '
+                'the visual treatment briefly, then uses [Shot 1] without an opening timestamp. '
+                'subject_definitions uses <Subject n> with assigned identity/appearance; '
+                '<Picture n> is the source image, not a substitute Subject tag. '
+                'detailed_description records observed VIDEO performance only: starting '
+                'pose, action phases and resulting positions, not a smiling reference portrait. '
+                'Uncertain motion is left unspecified rather than invented. Supplied video frames '
+                'carry no audible transcript. A selected language does not permit a greeting, '
+                'speech or vocal performance; do not add any unless explicitly requested. '
+                'Use N/A where sound/music is not evidenced or requested. Keep the existing token limit.'
+                ' FULL-REFERENCE ROLE CONTRACT: A <Subject n> is the resulting person/object/design, '
+                'not the source file. State each contributing asset and attribute explicitly: '
+                'for a requested swap, appearance/identity comes from its assigned <Picture n>, '
+                'while pose, gestures, interaction and chronological performance come from the '
+                'specified person in <Video n>. Identify that original person by an observed role '
+                'or distinguishing visible trait so another performer is not accidentally replaced. '
+                'Do not define a Picture as the resulting Subject or preserve a reference-photo smile. '
+                'Describe clothes from whichever source/request actually owns wardrobe; no universal '
+                'copy-outfit rule. retention_analysis gives short lines for the used labels with '
+                'fully_preserved, partially_preserved, attribute_transfer or weak_reference, '
+                'explaining the assigned attributes only. Preserve source performance, camera, '
+                'other people or background ONLY to the extent they are not requested to change. '
+                'A dungeon request changes the setting and its plausible illumination; it must '
+                'not also say the original kitchen/background remains unchanged. Do not invent '
+                'a dungeon unless requested. detailed_description describes actual visible action '
+                'in the resulting setting, not a static portrait or an abstract relationship list. '
+                'The code emits six full-reference sections: subject_definitions, summary, '
+                'retention_analysis, detailed_description, overall_soundscape, non_diegetic_music. '
+                'Do not output integrated_multimodal_description in this route. Summary and retention '
+                'stay compact within the existing total budget. No body_swap trigger unless explicitly '
+                'supplied for the adapter in use; no invented audio tags, dialogue or lip-sync claims.'
             )
         payload = {
             "model": str(getattr(llm, "model", "") or ""),
@@ -3282,8 +3559,13 @@ boundary and never repeat the same arc description in every scene.
                     raise ValueError("Driven cast mapping must cover the observed roles without duplicates.")
             if is_sequence:
                 scene_prompts = [
-                    cls._canonicalize_source_tags(str(item).strip())
-                    for item in parsed["scene_prompts"]
+                    cls._canonicalize_source_tags(
+                        cls._render_transfer_scene(item, source_video_tags)
+                        if numbered_transfer else
+                        cls._render_creative_scene(item, parsed.get('target_design', {}),
+                            opening_frame=bool(i2v_mode) and index == 0)
+                        if structured_creative else str(item).strip())
+                    for index, item in enumerate(parsed["scene_prompts"])
                 ]
                 if len(scene_prompts) != continuous_count or any(
                     not item for item in scene_prompts
@@ -3303,7 +3585,9 @@ boundary and never repeat the same arc description in every scene.
                 source_roles = [str(role).strip() for role in parsed["source_roles"]]
                 visual_evidence = str(parsed["visual_evidence"]).strip()
                 edit_prompt = cls._canonicalize_source_tags(
-                    str(parsed["edit_prompt"]).strip()
+                    cls._render_creative_scene(parsed['edit_prompt'], parsed.get('target_design', {}),
+                        opening_frame=bool(i2v_mode))
+                    if structured_creative else str(parsed["edit_prompt"]).strip()
                 )
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
             raise RuntimeError("Compact H3 Edit Director returned an invalid response.") from error
@@ -3333,7 +3617,7 @@ boundary and never repeat the same arc description in every scene.
         )
         if is_sequence:
             scene_prompts = [
-                f"{required_header}\n\n" + re.sub(
+                ('' if numbered_transfer else f"{required_header}\n\n") + re.sub(
                     header_pattern, "", item, count=1, flags=re.IGNORECASE
                 ).strip()
                 for item in scene_prompts
@@ -3389,12 +3673,15 @@ boundary and never repeat the same arc description in every scene.
                 "subject_definitions:", "integrated_multimodal_description:",
                 "overall_soundscape:", "non_diegetic_music:",
             )
+            if numbered_transfer:
+                required_sections = ('subject_definitions:', 'summary:', 'retention_analysis:',
+                    'detailed_description:', 'overall_soundscape:', 'non_diegetic_music:')
             for index, native_prompt in enumerate(native_prompts, 1):
                 missing_sections = [section for section in required_sections if section not in native_prompt]
                 if missing_sections:
                     label = f"scene {index} " if is_sequence else ""
                     warnings.append(label + "missing H3 sections: " + ", ".join(missing_sections))
-                if bool(i2v_mode) and (not cut_enabled or index == 1) and "at 0.00 seconds into the target video" not in native_prompt:
+                if bool(i2v_mode) and "at 0.00 seconds into the target video" not in native_prompt:
                     warnings.append((f"scene {index} " if is_sequence else "") + "missing I2V alignment")
 
         displayed_mode = {
@@ -3414,7 +3701,6 @@ boundary and never repeat the same arc description in every scene.
             f"{'yes' if has_driven_video else 'no'} · "
             + (f"Driven Strength {driven_strength} · " if has_driven_image or has_driven_video else "")
             + f"I2V {'on' if i2v_mode else 'off'} · "
-            + ("Cut on · " if cut_enabled else "")
             + (f"{scene_seconds:g}s/scene · " if resolved_mode in ("elaborate", "continuous_elaborate") else "")
             + ("grounding verified" if not warnings else "warnings: " + "; ".join(warnings))
             + (" · JSON repaired after one retry" if repair_retry_used else "")
@@ -3443,7 +3729,6 @@ boundary and never repeat the same arc description in every scene.
             "direction_context": direction_text,
             "resolved_mode": resolved_mode,
             "seconds_per_scene": scene_seconds,
-            "cut": cut_enabled,
             "driven_inputs": [has_driven_image, has_driven_video],
             "driven_strength": driven_strength,
             "driven_pipeline": "visual-blueprint-v3" if driver_content else "",
