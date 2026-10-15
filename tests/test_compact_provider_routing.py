@@ -169,6 +169,81 @@ class RoutingTests(unittest.TestCase):
                              scope['last_payload']['messages'][0]['content'])
             self.assertEqual(calls, ['external', 'external'] if source == 'driven_video' else ['external'])
 
+    def test_source_transfer_owns_appearance_independently_of_unused_driven_strength(self):
+        payloads = []
+        for strength in (1, 2, 3):
+            scope, calls = load_director()
+            args = self.kwargs()
+            args.update(edit_mode='Transfer', source_video_1=Frame(), driven_strength=strength,
+                edit_request='Transfer the video actions to the reference woman; her image predominates.',
+                llm=SimpleNamespace(model='test'))
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+            payloads.append(scope['last_payload'])
+            system = scope['last_payload']['messages'][0]['content']
+            self.assertIn(scope['H3CompactMultimodalEditDirector'].SOURCE_TRANSFER_RULES, system)
+            self.assertNotIn(scope['H3CompactMultimodalEditDirector'].TRANSFER_RULES, system)
+            self.assertNotIn('existing Driven Strength appearance policy', system)
+            self.assertIn('Do not mix the source performer', system)
+            self.assertIn('incidental handheld objects', system)
+            self.assertIn('Mouth movement alone', system)
+            self.assertEqual(calls, ['external'])
+        self.assertEqual(payloads[0], payloads[1])
+        self.assertEqual(payloads[1], payloads[2])
+
+    def test_source_transfer_supports_scoped_edits_with_or_without_character_image(self):
+        for request, has_picture in (
+            ('Transfer actions to the reference woman wearing office clothes in a dungeon.', True),
+            ('Change only the environment to a dungeon.', False),
+            ('Change the outfit to office clothes and add a guard.', False),
+            ('Swap only the face; retain the original clothes and body.', True),
+        ):
+            scope, calls = load_director()
+            args = self.kwargs()
+            args.update(edit_mode='Transfer', source_video_1=Frame(), edit_request=request,
+                llm=SimpleNamespace(model='test'))
+            if not has_picture:
+                args['reference_image_1'] = None
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+            payload = scope['last_payload']
+            system = payload['messages'][0]['content']
+            self.assertIn(request, json.dumps(payload['messages'][1]['content']))
+            self.assertIn('face-only swap instead preserves the source body/outfit', system)
+            self.assertIn('Without an assigned replacement image', system)
+            self.assertIn('Never also lock the old background', system)
+            self.assertIn('remain additions, not automatic replacements', system)
+            self.assertEqual(calls, ['external'])
+
+    def test_source_transfer_excludes_selfie_props_and_requests_moving_footage(self):
+        scope, calls = load_director()
+        args = self.kwargs()
+        args.update(edit_mode='Transfer', source_video_1=Frame(),
+            edit_request='Transfer the video actions to the reference woman and add reggaeton music.',
+            llm=SimpleNamespace(model='test'))
+        scope['H3CompactMultimodalEditDirector'].execute(**args)
+        system = scope['last_payload']['messages'][0]['content']
+        self.assertIn('worn accessories such as jewelry, not every object', system)
+        self.assertIn('Exclude incidental handheld objects from subject_definitions,', system)
+        self.assertIn('observed video action uses them', system)
+        self.assertIn('do not invent a phone interaction or put-down event', system)
+        self.assertIn('track hand occupancy and contact chronologically', system)
+        self.assertIn("not 'video stills'", system)
+        self.assertIn('unless the user explicitly requests that treatment', system)
+        self.assertEqual(calls, ['external'])
+
+    def test_source_transfer_rules_do_not_leak_into_driven_or_enhance(self):
+        for mode, source in (('Transfer', 'driven_video'), ('Enhance', 'source_video_1')):
+            scope, _ = load_director()
+            cls = scope['H3CompactMultimodalEditDirector']
+            args = self.kwargs()
+            args.update(edit_mode=mode, llm=SimpleNamespace(model='test'))
+            args[source] = Frame()
+            cls.execute(**args)
+            original = json.loads(json.dumps(scope['payloads']))
+            cls.SOURCE_TRANSFER_RULES += '\nSOURCE-TRANSFER-ONLY TEST MARKER'
+            scope['payloads'] = []
+            cls.execute(**args)
+            self.assertEqual(original, scope['payloads'])
+
     def test_transfer_assigns_image_appearance_and_video_performance_at_all_strengths(self):
         for strength in (1, 2, 3):
             scope, calls = load_director()

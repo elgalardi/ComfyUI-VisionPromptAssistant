@@ -51,6 +51,16 @@ background or wardrobe the user explicitly changes. No universal adapter trigger
 This prevents losing the source label when the LLM writes generic generation prose. It does not
 prove that the model correctly interpreted motion; speech remains disallowed unless requested.
 Public `scene_prompts` are still strings. Driven-only Transfer and Enhance retain their formats.
+Numbered-video Transfer uses its own attribute-ownership rules, not Driven Strength defaults.
+For whole-character transfer, the assigned image supplies visible identity, hair, body, outfit
+and accessories; the video supplies performance, not the photograph's pose or incidental phone.
+Accessories here means worn items such as jewelry, not incidental handheld props. Source-video
+Transfer excludes photo-only props throughout the prompt, checks hand/contact consistency, and
+describes moving footage rather than video stills unless that treatment is requested.
+Face-only swaps and explicit wardrobe/environment changes override only their named attributes.
+Without a replacement image, source appearance is retained except for requested changes.
+The [adapter author's guidance](https://huggingface.co/akatz-ai/MiniMax-H3-Character-Swap-LoRA)
+also separates replacement appearance from source performance; no extra trigger word was trained.
 This route follows the reference-label/retention structure in the
 [official full-reference guide](https://github.com/MiniMax-AI/MiniMax-H3/blob/main/skills/h3-prompt-writing/references/ref-en.txt).
 It remains prompt guidance, not a guarantee of character identity or frame-exact motion transfer.

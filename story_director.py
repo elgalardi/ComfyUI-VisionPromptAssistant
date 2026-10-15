@@ -1701,6 +1701,57 @@ speech to its canonical Subject and a stable speaker ID with <d>[Language] exact
 retain user-supplied lines verbatim, never put production instructions into spoken text.
 """.strip()
 
+    SOURCE_TRANSFER_RULES = """
+TRANSFER — NUMBERED SOURCE VIDEO EDITING
+Inspect the supplied images and chronological video frames. Execute only the user's requested
+edits; do not invent a plot, events, participants or speech. Resolve attribute ownership before
+writing. Explicit user assignments override defaults, attribute by attribute, not all at once.
+For a whole-character transfer or a request that the reference woman/man predominate, the assigned
+Picture supplies the visible face, age, hair color/length/style, body proportions, clothing and
+worn accessories such as jewelry, not every object visible in the photograph.
+The selected video performer supplies starting pose, position/scale in the scene,
+action phases, trajectories, gestures, interactions, gaze changes and expression progression.
+Do not mix the source performer's hair, anatomy or clothes into that reference character by default.
+A face-only swap instead preserves the source body/outfit; an explicit request to retain video
+clothing overrides clothing only. Unseen reference details stay unspecified, not invented.
+The reference photograph's pose, smile, framing, background, mirror and incidental handheld objects
+are NOT part of identity. Exclude incidental handheld objects from subject_definitions,
+retention_analysis and detailed_description unless the user explicitly requests them or the
+observed video action uses them. A phone visible only in a reference selfie is not an accessory
+to preserve; do not invent a phone interaction or put-down event to justify importing it.
+For objects actually retained, track hand occupancy and contact chronologically: a hand holding
+an object cannot simultaneously support body weight or perform an incompatible gesture.
+Adapt the observed movement to the resulting body/clothes without freezing the reference pose.
+Without an assigned replacement image, preserve source identity/appearance except requested edits.
+An image assigned to setting, wardrobe, style or an added person is not automatically a replacement.
+Change only the selected performer; keep other video participants unless explicitly edited.
+For an environment edit, replace the setting and adjust light, shadows, reflections and contact
+to that setting while retaining the requested cast/performance. Never also lock the old background.
+For combined edits, apply each independently: image character + office clothes + dungeon means
+the referenced character in office clothes performing the observed video action in a dungeon.
+Do not invent that combination unless requested. Preserve all other source elements.
+Driven Strength governs connected Driven evidence only; it does not choose ownership for numbered
+Source Video inputs. If Driven is connected, explicit user appearance/environment locks still win.
+Keep source labels and resulting descriptions consistent across subject_definitions, edit_instruction,
+retention_analysis and detailed_description. Never declare video hair/body/outfit fully_preserved
+when those attributes come from a Picture or a requested edit. Name the owning source explicitly,
+not ambiguous phrases such as 'preserve her exact appearance'. Keep retention concise and scoped;
+do not lock every micro-expression so strongly that replacement identity is contradicted.
+Partition supplied evidence chronologically across scenes; follow only the supplied block.
+No mandatory new angle, location, cut or event at a boundary. Use local [Shot 1] and clip-local
+timestamps inside seconds_per_scene. An active I2V opening frame still constrains frame zero.
+Sampled frames are motion evidence, not a transcript or frame-exact control. Mouth movement alone
+does not establish speech, words or exact lip sync. Do not add dialogue merely for a language setting.
+Only requested/provided dialogue, narration or music is permitted. Use N/A for unsupported sound
+and unrequested music. Requested dialogue uses stable Subject/speaker bindings and <d> tags.
+Describe continuous moving footage, not 'video stills', a photograph, a slideshow or frozen poses,
+unless the user explicitly requests that treatment. Sampled still frames are input evidence,
+not the output medium. Before returning, silently check that all sections agree on resulting
+appearance, retained props and hand contacts; remove accidental reference-photo props rather
+than inventing new actions. Return concise English structured scene fields using the
+numbered-video output contract below.
+""".strip()
+
     DEFAULT_SYSTEM_PROMPT = """
 You are a precise multimodal edit director for MiniMax H3. Inspect the actual pixels of every
 connected source before writing. Return English only as one JSON object with exactly four keys:
@@ -2963,7 +3014,7 @@ boundary and never repeat the same arc description in every scene.
         resolved_system = str(system_prompt or cls.DEFAULT_SYSTEM_PROMPT).strip()
         if resolved_mode == "transfer":
             resolved_system = "\n\n".join((
-                cls.TRANSFER_RULES,
+                cls.SOURCE_TRANSFER_RULES if videos else cls.TRANSFER_RULES,
                 f"Return exactly {requested_count} chronological scene_prompts, each lasting {scene_seconds:g} seconds.",
                 "Keep each applicable reference identity explicit in its scene: " + ", ".join(persistent_tags),
             ))
@@ -3193,7 +3244,7 @@ boundary and never repeat the same arc description in every scene.
                 raise ValueError("Driven Strength must be 1, 2 or 3.")
             resolved_system += (
                 f"\n\nDRIVEN STRENGTH {driven_strength}: apply the Transfer appearance policy above."
-                if resolved_mode == "transfer" else "\n\n" + cls._driven_rules(driven_strength)
+                if resolved_mode == "transfer" and not videos else "\n\n" + cls._driven_rules(driven_strength)
             )
         driven_usage = {}
         driven_debug = ""
@@ -3389,8 +3440,8 @@ boundary and never repeat the same arc description in every scene.
                 'contacts, interactions, expressions and chronology, not the static image pose. '
                 'For clothing or environment edits without a Picture, change the requested '
                 'attribute in <Video n> and keep unaffected identity/performance. Explicit additions '
-                'remain additions, not automatic replacements. Follow the existing Driven Strength '
-                'appearance policy and explicit locks; do not invent story or speech. '
+                'remain additions, not automatic replacements. Follow the source-attribute ownership '
+                'contract and explicit locks; do not invent story or speech. '
                 'Use concise source-linked edit wording in the action section, followed by concrete '
                 'observed performance and resulting design. This route permits replace/change/keep '
                 'editing instructions despite generic finished-footage-only rules. Keep the native '
@@ -3420,8 +3471,9 @@ boundary and never repeat the same arc description in every scene.
                 'specified person in <Video n>. Identify that original person by an observed role '
                 'or distinguishing visible trait so another performer is not accidentally replaced. '
                 'Do not define a Picture as the resulting Subject or preserve a reference-photo smile. '
-                'Describe clothes from whichever source/request actually owns wardrobe; no universal '
-                'copy-outfit rule. retention_analysis gives short lines for the used labels with '
+                'State concrete resulting hair, body and clothing from their assigned sources; '
+                'do not merely append a Picture label to source-performer descriptions. '
+                'retention_analysis gives short lines for the used labels with '
                 'fully_preserved, partially_preserved, attribute_transfer or weak_reference, '
                 'explaining the assigned attributes only. Preserve source performance, camera, '
                 'other people or background ONLY to the extent they are not requested to change. '
