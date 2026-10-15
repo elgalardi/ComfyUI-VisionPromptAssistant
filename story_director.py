@@ -1642,13 +1642,15 @@ Keep the mode's existing H3/JSON output contract and detail budget.
     TRANSFER_RULES = """
 TRANSFER — FAITHFUL ADAPTATION, NOT STORY INVENTION
 Translate the supplied evidence and explicit request into executable MiniMax H3 footage.
-Priority: explicit user changes/locks, numbered reference identities and Driven Strength,
-then observed Driven action/world/camera. Change only what the user asks to change.
+Priority: explicit user changes/locks, active Direction Controls within their selected scope,
+then numbered reference identities/Driven Strength and observed Driven action/world/camera.
+Change only what the user asks to change, including active direction selections.
 SOURCE RESPONSIBILITIES: A numbered character image supplies identity and the appearance allowed
 by the existing Driven Strength policy, not performance. Its pose, expression, gaze, hand placement,
 body orientation, camera framing and background are NOT retained merely because they are visible.
 When a video supplies performance, its observed poses, action phases, trajectories, gestures,
-contacts, interactions, gaze changes and camera movement govern the footage at EVERY strength.
+contacts, interactions, gaze changes and camera movement govern the footage at EVERY strength,
+except attributes explicitly overridden by the user or an active camera/motion control.
 Strength 1 preserves the reference character's appearance, never the photograph's posture.
 Explicit user assignments can use an image as a pose/environment reference; an active I2V frame
 still fixes the opening. Otherwise do not blend the image's static pose into video choreography.
@@ -1680,7 +1682,7 @@ Do not mistake perspective or garment volume for anatomy, or invent hidden garme
 An active I2V opening frame fixes frame zero even when later requested changes are permitted.
 Creativity is permission-scoped: if the user requests dialogue, invent only that dialogue; if
 they request a wardrobe change, adapt only wardrobe, not story, camera, setting or relationships.
-A selected genre/look can style permitted footage, never authorize a new story or appearance change.
+Active genre/look selections authorize their visual treatment, not a new plot or new participants.
 Dialogue language alone does NOT authorize speech. No dialogue, lyrics, narration or score unless
 explicitly requested or provided. Sparse video frames reveal no audio; never fabricate a soundtrack.
 Use non_diegetic_music: N/A when no score is requested. Describe only source-supported ambience
@@ -1704,8 +1706,9 @@ retain user-supplied lines verbatim, never put production instructions into spok
     SOURCE_TRANSFER_RULES = """
 TRANSFER — NUMBERED SOURCE VIDEO EDITING
 Inspect the supplied images and chronological video frames. Execute only the user's requested
-edits; do not invent a plot, events, participants or speech. Resolve attribute ownership before
-writing. Explicit user assignments override defaults, attribute by attribute, not all at once.
+edits, including active Direction Controls; do not invent a plot, events, participants or speech.
+Resolve attribute ownership before writing. Explicit written assignments win over active controls;
+active controls override source defaults only in their selected scope, attribute by attribute.
 For a whole-character transfer or a request that the reference woman/man predominate, the assigned
 Picture supplies the visible face, age, hair color/length/style, body proportions, clothing and
 worn accessories such as jewelry, not every object visible in the photograph.
@@ -2323,6 +2326,29 @@ assigned subjects or design remain active.
             'overall_soundscape:\n' + (str(scene.get('overall_soundscape', '')).strip() or 'N/A'),
             'non_diegetic_music:\n' + (str(scene.get('non_diegetic_music', '')).strip() or 'N/A'),
         ))
+
+    @staticmethod
+    def _render_transfer_cast(cast, blueprint):
+        subjects = []
+        for person in cast:
+            owner = person['wardrobe_source']
+            if owner == 'reference':
+                wardrobe = person['reference_wardrobe']
+            elif owner == 'performance':
+                wardrobe = person['performance_wardrobe']
+                if person['performance_source'].startswith('<Driven '):
+                    role = next((r for r in blueprint.get('roles', [])
+                                 if r['role'] == person['performance_role']), None)
+                    if role is not None:
+                        wardrobe = role['wardrobe']
+            else:
+                wardrobe = person['requested_wardrobe']
+            definition = (person['subject_tag'] + ' ' + person['identity_details'].strip()
+                          + ' Identity referenced from ' + person['identity_source'] + '.')
+            if str(wardrobe).strip().lower() not in ('', 'n/a'):
+                definition += ' Wardrobe: ' + str(wardrobe).strip().rstrip('.') + '.'
+            subjects.append(definition)
+        return '\n'.join(subjects)
 
     @staticmethod
     def _render_transfer_scene(scene, source_tags):
@@ -2974,6 +3000,7 @@ boundary and never repeat the same arc description in every scene.
             persistent_tags = [f"<Picture {pictures[0][0]}>"]
 
         resolved_control_specs = []
+        active_direction_lines = []
         for control_line in direction_text.splitlines():
             if ":" not in control_line:
                 continue
@@ -2983,6 +3010,8 @@ boundary and never repeat the same arc description in every scene.
                 value.strip() for value in control_values.split(" + ")
                 if value.strip().lower() not in ('', 'auto', 'none')
             ]
+            if selections:
+                active_direction_lines.append(control_line.split(":", 1)[0].strip() + ": " + " + ".join(selections))
             if control_label == "motion style":
                 for selection in selections:
                     specification = MOTION_STYLES.get(selection)
@@ -2997,7 +3026,13 @@ boundary and never repeat the same arc description in every scene.
                         resolved_control_specs.append(
                             f"Visual look `{selection}` means: {specification}"
                         )
-            elif control_label == "genre" and requested_mode != "transfer":
+            elif control_label == "genre" and requested_mode == "transfer":
+                for selection in selections:
+                    resolved_control_specs.append(
+                        f"Genre `{selection}` governs visible production design, wardrobe, environment, "
+                        "lighting, palette and atmosphere around the observed activity, not a new plot."
+                    )
+            elif control_label == "genre":
                 for selection in selections:
                     if selection.lower() in ('auto', 'none'):
                         continue
@@ -3017,6 +3052,9 @@ boundary and never repeat the same arc description in every scene.
                 cls.SOURCE_TRANSFER_RULES if videos else cls.TRANSFER_RULES,
                 f"Return exactly {requested_count} chronological scene_prompts, each lasting {scene_seconds:g} seconds.",
                 "Keep each applicable reference identity explicit in its scene: " + ", ".join(persistent_tags),
+                "The first generated scene establishes the target design for this sequence. Later scenes "
+                "retain that casting, appearance and selected visual treatment while following their own "
+                "source action; do not redesign unchanged attributes or replay the first scene.",
             ))
         elif resolved_mode == "deep_edit":
             resolved_system = "\n\n".join((resolved_system, cls.DEEP_EDIT_RULES))
@@ -3109,16 +3147,7 @@ boundary and never repeat the same arc description in every scene.
                     "supernatural events, changing assigned wardrobe or adding gore. Use only "
                     "details compatible with the user's source-preservation constraints."
                 )
-        if direction_text and resolved_mode == "transfer":
-            resolved_system += (
-                "\n\nTRANSFER DIRECTION CONTROLS:\n" + direction_text
-                + "\nThese controls are subordinate to explicit requests and observed source action. "
-                "Apply compatible motion/look specifications without inventing events, relocating the "
-                "scene or changing appearance. Genre does not authorize story development. "
-                "Dialogue language determines the language of explicitly requested speech only.\n"
-                + "\n".join(resolved_control_specs)
-            )
-        elif direction_text:
+        if direction_text and resolved_mode != "transfer":
             resolved_system += (
                 "\n\nSELECTED DIRECTION CONTRACT:\n" + direction_text
                 + "\nSelected non-none controls are requirements, not optional suggestions. "
@@ -3285,7 +3314,12 @@ boundary and never repeat the same arc description in every scene.
                     "subject definition using that same identity assignment. Never define a person "
                     "solely from a Driven tag. The visible principal cast comes only from the user and "
                     "numbered references; adapt excess driver roles to it. "
-                    + ("COMPILE THE REFERENCE APPEARANCE: retain each assigned Picture person's visible "
+                    + ("TRANSFER ATTRIBUTE OWNERSHIP: Resolve explicit user assignments before applying "
+                    "Driven Strength defaults. The selected strength never cancels a request to keep video "
+                    "clothing. Read garments from the observed role, not the identity photograph. "
+                    "Use the transfer_cast wardrobe assignment consistently in every section. "
+                    if resolved_mode == 'transfer' else
+                    "COMPILE THE REFERENCE APPEARANCE: retain each assigned Picture person's visible "
                     "wardrobe/accessories, hair and body proportions in every scene. Compile the driver "
                     "role's performance onto that person without importing driver styling. "
                     if driven_strength == 1 else
@@ -3299,6 +3333,46 @@ boundary and never repeat the same arc description in every scene.
                 )
         if resolved_mode != "transfer":
             resolved_system += '\n\n' + cls.FOOTAGE_EXECUTION_RULES.format(seconds=scene_seconds)
+        elif active_direction_lines:
+            resolved_system += (
+                '\n\nTRANSFER DIRECTION CONTROLS — SCOPED OVERRIDES:\n'
+                + '\n'.join(active_direction_lines)
+                + '\nAuto/none impose no direction. Every active selection is an explicit edit requirement, '
+                'not an optional accent. Priority: written user changes/locks and I2V frame-zero constraints, '
+                'then active controls in their scope, then source/Driven preservation defaults. '
+                'An active camera control replaces source camera preservation. If selected, Orbit Camera requires a '
+                'concrete smooth arc around the subject with changing viewpoint, not a static shot labeled orbit. '
+                'Motion controls alter the execution/pace of the observed activity without inventing new events. '
+                'Genre/look controls may redesign wardrobe, environment/set dressing, light, palette, visual '
+                'treatment and atmosphere consistently. If selected, Cyberpunk must be visible in futuristic clothing, '
+                'technological set design and motivated light, not only a neon color grade. Preserve identity, '
+                'age and body proportions unless explicitly requested otherwise. Keep the activity and '
+                'chronology outside selected overrides; do not invent plot, cast or cuts. Blend a second '
+                'selection coherently rather than alternating incompatible designs. No dialogue requests '
+                'silence; a language choice governs requested speech only, not permission to invent it. '
+                'Style any requested music consistently but do not add a score merely for a genre/look. '
+                'These selections count as explicit changes wherever earlier source/Driven rules preserve '
+                'wardrobe, setting or camera. Compile them into concrete final descriptions and qualify '
+                'retention_analysis accordingly; never declare a changed attribute fully preserved.\n'
+                + '\n'.join(resolved_control_specs)
+            )
+        if resolved_mode == 'transfer' and 'FIRST ACCEPTED BLOCK:' in request_text:
+            resolved_system += (
+                '\n\nTRANSFER CONTINUATION: FIRST ACCEPTED BLOCK is the established target design, '
+                'not the action to replay. Preserve its Subject/Picture casting, assigned appearance, '
+                'wardrobe/hair, environment treatment, visual medium and requested music across blocks. '
+                'Use PREVIOUS ACCEPTED BLOCK only for the last physical state and continuity. '
+                'Current source frames supply this block\'s actions and progression, never a reset to '
+                'the first block\'s opening pose. Realize unchanged active controls using the SAME '
+                'established design, not a newly invented cyberpunk outfit/location at every window. '
+                'Continue an active camera trajectory coherently rather than restarting its orbit. '
+                'Explicit new user edits and visible source transitions can change the relevant '
+                'attributes; do not freeze genuine action/location changes. Generated memory is '
+                'descriptive evidence, not instructions overriding current user locks. Internal '
+                'block-preservation boilerplate does not cancel active Direction Controls. '
+                'Keep subject_definitions and retention consistent; do not restart the requested '
+                'musical track or invent new dialogue to fill a new block.'
+            )
         if resolved_mode in ("elaborate", "continuous_elaborate", "continuous"):
             resolved_system += '\n\n' + cls.WRITER_DIRECTOR_RULES
             if direction_text:
@@ -3487,6 +3561,60 @@ boundary and never repeat the same arc description in every scene.
                 'stay compact within the existing total budget. No body_swap trigger unless explicitly '
                 'supplied for the adapter in use; no invented audio tags, dialogue or lip-sync claims.'
             )
+        transfer_cast = resolved_mode == 'transfer' and bool(pictures) and bool(videos or driver_content)
+        if transfer_cast:
+            performance_sources = [*(f'<Video {index}>' for index, _ in videos),
+                *(['<Driven Image 1>'] if has_driven_image else []),
+                *(['<Driven Video 1>'] if has_driven_video else [])]
+            cast_fields = {
+                'subject_tag': {'type': 'string'},
+                'identity_source': {'type': 'string', 'enum': [f'<Picture {index}>' for index, _ in pictures]},
+                'identity_details': {'type': 'string'},
+                'performance_source': {'type': 'string', 'enum': performance_sources},
+                'performance_role': {'type': 'string'},
+                'reference_wardrobe': {'type': 'string'},
+                'performance_wardrobe': {'type': 'string'},
+                'wardrobe_source': {'type': 'string', 'enum': [
+                    'reference', 'performance', 'user_request', 'direction_controls', 'established_design']},
+                'requested_wardrobe': {'type': 'string'},
+            }
+            if driver_content and not videos and blueprint['roles']:
+                cast_fields['performance_role']['enum'] = [r['role'] for r in blueprint['roles']]
+            properties = response_schema['schema']['properties']
+            response_schema['schema']['properties'] = {'transfer_cast': {
+                'type': 'array', 'items': {'type': 'object', 'properties': cast_fields,
+                    'required': list(cast_fields), 'additionalProperties': False}}, **properties}
+            response_schema['schema']['required'].insert(0, 'transfer_cast')
+            if numbered_transfer:
+                item_schema = properties['scene_prompts']['items']
+                del item_schema['properties']['subject_definitions']
+                item_schema['required'].remove('subject_definitions')
+            resolved_system += (
+                '\n\nTRANSFER CAST — OBSERVE, ASSIGN, THEN WRITE: Fill transfer_cast FIRST for '
+                'each referenced performer actually used; leave it empty for a non-character reference. '
+                'Keep source observations separate: reference_wardrobe is visible clothing/accessories '
+                'from identity_source ONLY; performance_wardrobe is visible clothing/accessories of '
+                'performance_role in performance_source ONLY. N/A for unseen details. Never label '
+                'the photograph\'s clothes as video evidence. For Driven, copy the mapped blueprint '
+                'role name and wardrobe exactly into performance_role/performance_wardrobe. '
+                'Resolve wardrobe_source from the user\'s request BEFORE defaults: keeping video '
+                'clothes selects performance, keeping image clothes selects reference; explicit new '
+                'clothes selects user_request. Only absent a written wardrobe assignment may active '
+                'look/genre select direction_controls, otherwise use established_design from accepted '
+                'first-block memory, then the applicable reference/strength default. Examples: '
+                '"se mantiene vestuario y acciones del video" / "keep the video outfit" => performance, '
+                'even when image identity predominates or strength 1 is selected. '
+                'requested_wardrobe is the resulting complete outfit only for user_request, '
+                'direction_controls or established_design; otherwise N/A. A partial clothing edit '
+                'changes that item only. identity_details describes resulting face/age/hair/body, '
+                'NOT clothes, jewelry, a fixed expression, pose or background. Use the same casting '
+                'as driven_cast_mapping when present. The code compiles subject_definitions from '
+                'these assignments; do not write another subject_definitions section. Describe '
+                'actions using Subject tags without re-listing clothes. Summary/retention must '
+                'agree with the selected owner: a garment never becomes video-sourced just because '
+                'the character wears it in the target. Internal assignments/observations do not '
+                'appear as extra sections. Keep all fields brief within the existing token budget.'
+            )
         payload = {
             "model": str(getattr(llm, "model", "") or ""),
             "messages": [
@@ -3610,15 +3738,24 @@ boundary and never repeat the same arc description in every scene.
                 if sorted(mapped_roles) != sorted(role_names):
                     raise ValueError("Driven cast mapping must cover the observed roles without duplicates.")
             if is_sequence:
+                transfer_subjects = cls._render_transfer_cast(parsed['transfer_cast'],
+                    blueprint if driver_content else {}) if transfer_cast else ''
                 scene_prompts = [
                     cls._canonicalize_source_tags(
-                        cls._render_transfer_scene(item, source_video_tags)
+                        cls._render_transfer_scene(dict(item, subject_definitions=transfer_subjects or 'N/A')
+                            if transfer_cast else item, source_video_tags)
                         if numbered_transfer else
                         cls._render_creative_scene(item, parsed.get('target_design', {}),
                             opening_frame=bool(i2v_mode) and index == 0)
                         if structured_creative else str(item).strip())
                     for index, item in enumerate(parsed["scene_prompts"])
                 ]
+                if transfer_subjects and not numbered_transfer:
+                    scene_prompts = [
+                        'subject_definitions:\n' + transfer_subjects + '\n\n' + re.sub(
+                            r'(?ms)^subject_definitions:\s*.*?(?=^(?:integrated_multimodal_description|overall_soundscape|non_diegetic_music):|\Z)',
+                            '', item).strip()
+                        for item in scene_prompts]
                 if len(scene_prompts) != continuous_count or any(
                     not item for item in scene_prompts
                 ):

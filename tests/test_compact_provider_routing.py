@@ -63,6 +63,15 @@ def load_director():
                            visual_evidence="blue jacket",
                            edit_prompt="Preserve the blue jacket from <Picture 1>.")
         properties = payload['response_format']['json_schema']['schema']['properties']
+        if 'transfer_cast' in properties:
+            cast = properties['transfer_cast']['items']['properties']
+            performance = cast['performance_source']['enum'][0]
+            content['transfer_cast'] = [dict(subject_tag='<Subject 1>',
+                identity_source=cast['identity_source']['enum'][0], identity_details='the woman',
+                performance_source=performance,
+                performance_role='cheerleader' if performance.startswith('<Driven ') else 'performer',
+                reference_wardrobe='Blue jacket', performance_wardrobe='Team uniform and trainers',
+                wardrobe_source='performance', requested_wardrobe='N/A')]
         transfer_item = properties.get('scene_prompts', {}).get('items', {})
         if 'source_video' in transfer_item.get('properties', {}):
             content['scene_prompts'] = [dict(
@@ -116,6 +125,147 @@ class Frame:
 
 
 class RoutingTests(unittest.TestCase):
+    def test_transfer_cast_compiles_only_the_selected_outfit(self):
+        scope, _ = load_director()
+        cls = scope['H3CompactMultimodalEditDirector']
+        person = dict(subject_tag='<Subject 1>', identity_source='<Picture 1>',
+            identity_details='the woman with dark hair', performance_source='<Video 1>',
+            performance_role='woman seated on the bed', reference_wardrobe='Black strapless top and trousers',
+            performance_wardrobe='White long-sleeve crop top and white socks',
+            wardrobe_source='performance', requested_wardrobe='Incorrect black outfit')
+        for owner, expected in (
+            ('performance', person['performance_wardrobe']),
+            ('reference', person['reference_wardrobe']),
+            ('user_request', 'Red office suit'),
+            ('direction_controls', 'Cyberpunk jacket'),
+            ('established_design', 'Established blue suit'),
+        ):
+            person['wardrobe_source'] = owner
+            if owner not in ('reference', 'performance'):
+                person['requested_wardrobe'] = expected
+            definition = cls._render_transfer_cast([person], {})
+            self.assertIn('Wardrobe: ' + expected, definition)
+            self.assertIn('Identity referenced from <Picture 1>', definition)
+            if owner == 'performance':
+                self.assertNotIn('Black strapless', definition)
+                self.assertNotIn('Incorrect black', definition)
+        person.update(wardrobe_source='performance', performance_source='<Driven Video 1>',
+            performance_wardrobe='Wrongly copied reference clothing')
+        definition = cls._render_transfer_cast([person], {'roles': [dict(
+            role=person['performance_role'], wardrobe='Observed white video outfit')]})
+        self.assertIn('Wardrobe: Observed white video outfit', definition)
+        self.assertNotIn('Wrongly copied', definition)
+
+    def test_transfer_cast_contract_covers_video_and_driven_without_extra_calls(self):
+        for source in ('source_video_1', 'driven_video'):
+            for strength in (1, 2, 3):
+                scope, calls = load_director()
+                args = self.kwargs()
+                args.update(edit_mode='Transfer', driven_strength=strength, llm=SimpleNamespace(model='test'),
+                    edit_request='transfiere a la mujer del video por la mujer de la imagen, se mantiene vestuario y acciones del video')
+                args[source] = Frame()
+                result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+                payload = scope['last_payload']
+                props = payload['response_format']['json_schema']['schema']['properties']
+                self.assertEqual(next(iter(props)), 'transfer_cast')
+                system = payload['messages'][0]['content']
+                self.assertIn('se mantiene vestuario y acciones del video', system)
+                self.assertIn('even when image identity predominates or strength 1', system)
+                self.assertNotIn('COMPILE THE REFERENCE APPEARANCE', system)
+                if source == 'source_video_1':
+                    self.assertNotIn('subject_definitions', props['scene_prompts']['items']['properties'])
+                for prompt in json.loads(result[0])['scene_prompts']:
+                    self.assertEqual(prompt.count('subject_definitions:'), 1)
+                    self.assertIn('Wardrobe: Team uniform and trainers', prompt)
+                    self.assertNotIn('transfer_cast', prompt)
+                    self.assertNotIn('Blue jacket', prompt)
+                self.assertEqual(calls, ['external'] if source == 'source_video_1' else ['external', 'external'])
+
+    def test_transfer_replaces_conflicting_driven_subject_definition(self):
+        scope, _ = load_director()
+        original = scope['_external_llm_request']
+        def reply(provider, payload):
+            result = original(provider, payload)
+            if 'transfer_cast' in payload['response_format']['json_schema']['schema']['properties']:
+                parsed = json.loads(result['choices'][0]['message']['content'])
+                parsed['scene_prompts'] = [
+                    'subject_definitions:\n<Subject 1> wearing the wrong black photo outfit.\n\n'
+                    'integrated_multimodal_description:\n[Shot 1] <Subject 1> follows the seated video action.\n\n'
+                    'overall_soundscape:\nN/A\n\nnon_diegetic_music:\nN/A'
+                    for _ in parsed['scene_prompts']]
+                result['choices'][0]['message']['content'] = json.dumps(parsed)
+            return result
+        scope['_external_llm_request'] = reply
+        args = self.kwargs()
+        args.update(edit_mode='Transfer', driven_video=Frame(), llm=SimpleNamespace(model='test'),
+            edit_request='Keep the video clothing and actions, replace the performer identity.')
+        result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+        for prompt in json.loads(result[0])['scene_prompts']:
+            self.assertEqual(prompt.count('subject_definitions:'), 1)
+            self.assertNotIn('wrong black photo outfit', prompt)
+            self.assertIn('Wardrobe: Team uniform and trainers', prompt)
+            self.assertIn('follows the seated video action', prompt)
+
+    def test_transfer_auto_none_controls_are_neutral(self):
+        for source in ('source_video_1', 'driven_video'):
+            scope, _ = load_director()
+            cls = scope['H3CompactMultimodalEditDirector']
+            args = self.kwargs()
+            args.update(edit_mode='Transfer', llm=SimpleNamespace(model='test'))
+            args[source] = Frame()
+            cls.execute(**args, direction_context='')
+            original = json.loads(json.dumps(scope['payloads']))
+            scope['payloads'] = []
+            cls.execute(**args, direction_context='Genre: Auto + none\nMotion style: none\nVisual look: Auto\nDialogue: none')
+            self.assertEqual(original, scope['payloads'])
+
+    def test_transfer_active_controls_override_only_selected_attributes(self):
+        for source in ('source_video_1', 'driven_video'):
+            scope, calls = load_director()
+            args = self.kwargs()
+            args.update(edit_mode='Transfer', llm=SimpleNamespace(model='test'),
+                edit_request='Keep her red shirt and identity. Transfer the observed action.',
+                direction_context='Genre: Cyberpunk + Auto\nMotion style: Orbit Camera + none\nVisual look: Cinematic\nDialogue: No dialogue')
+            args[source] = Frame()
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+            system = scope['last_payload']['messages'][0]['content']
+            self.assertIn('TRANSFER DIRECTION CONTROLS — SCOPED OVERRIDES', system)
+            self.assertIn('Genre: Cyberpunk\nMotion style: Orbit Camera', system)
+            self.assertNotIn('Cyberpunk + Auto', system)
+            self.assertIn('Circle around the main subject', system)
+            self.assertIn('feature-film composition', system)
+            self.assertIn('Genre `Cyberpunk` governs visible production design', system)
+            self.assertIn('not only a neon color grade', system)
+            self.assertIn('Priority: written user changes/locks', system)
+            self.assertIn('Orbit Camera requires a concrete smooth arc', system)
+            self.assertIn('never declare a changed attribute fully preserved', system)
+            self.assertNotIn('without inventing events, relocating the scene or changing appearance', system)
+            self.assertEqual(calls, ['external'] if source == 'source_video_1' else ['external', 'external'])
+
+    def test_transfer_continuation_uses_first_design_and_current_block_motion(self):
+        for mode in ('Transfer', 'Enhance'):
+            scope, calls = load_director()
+            args = self.kwargs()
+            memory = ('Transfer the action.\nSOURCE BLOCK 3/3: 20.000..30.000s.\n'
+                'CONTINUITY MEMORY\nFIRST ACCEPTED BLOCK:\nRed-haired woman in a blue cyberpunk suit.\n'
+                'PREVIOUS ACCEPTED BLOCK:\nShe reaches the doorway.')
+            args.update(edit_mode=mode, source_video_1=Frame(), edit_request=memory,
+                direction_context='Genre: Cyberpunk\nMotion style: Orbit Camera',
+                llm=SimpleNamespace(model='test'))
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+            system = scope['last_payload']['messages'][0]['content']
+            if mode == 'Transfer':
+                self.assertIn('TRANSFER CONTINUATION:', system)
+                self.assertIn('not the action to replay', system)
+                self.assertIn('Use PREVIOUS ACCEPTED BLOCK only for the last physical state', system)
+                self.assertIn('Current source frames supply this block', system)
+                self.assertIn('do not freeze genuine action/location changes', system)
+                self.assertIn('The first generated scene establishes the target design', system)
+            else:
+                self.assertNotIn('TRANSFER CONTINUATION:', system)
+            self.assertIn(memory, json.dumps(scope['last_payload']['messages'][1]['content']).replace('\\n', '\n'))
+            self.assertEqual(calls, ['external'])
+
     def test_reference_transfer_renderer_uses_roles_and_six_sections(self):
         scope, _ = load_director()
         cls = scope['H3CompactMultimodalEditDirector']

@@ -51,6 +51,16 @@ background or wardrobe the user explicitly changes. No universal adapter trigger
 This prevents losing the source label when the LLM writes generic generation prose. It does not
 prove that the model correctly interpreted motion; speech remains disallowed unless requested.
 Public `scene_prompts` are still strings. Driven-only Transfer and Enhance retain their formats.
+With character references and video/Driven evidence, Transfer first returns an internal
+`transfer_cast`: separate observed reference/performance outfits and the selected wardrobe owner.
+The node builds shared Subject definitions from that selection rather than free-form definitions.
+For a Driven-owned outfit it uses the mapped blueprint role's observed garments directly.
+Explicit video-clothing requests override strength defaults and styling controls. User-designed
+outfits, reference outfits and established first-block designs remain selectable independently.
+Actions refer to those Subjects rather than repeating garment descriptions. This adds no LLM
+call; the small internal fields share the existing output budget. Source-video observations and
+ownership choices still depend on the LLM's visual/language interpretation, not a verified vision
+measurement. Other modes and Driven analysis are unchanged.
 Numbered-video Transfer uses its own attribute-ownership rules, not Driven Strength defaults.
 For whole-character transfer, the assigned image supplies visible identity, hair, body, outfit
 and accessories; the video supplies performance, not the photograph's pose or incidental phone.
@@ -87,12 +97,23 @@ observed/requested action chronologically, without compulsory escalation, new lo
 Dialogue language alone does not request speech. Unrequested dialogue, lyrics, narration and score
 are excluded; `non_diegetic_music` is `N/A` without a music request. Sampled frames do not provide
 audio or frame-exact motion. Explicitly requested dialogue/creative changes remain supported.
-Transfer uses its own source-faithful system contract instead of the editable base system prompt;
-compatible Direction Controls remain subordinate to the request and observed action. No creative
+Transfer uses its own source-faithful system contract instead of the editable base system prompt.
+Auto/none Direction Controls are neutral. Active selections explicitly override source defaults
+within their scope: camera/motion controls affect capture/performance; genre/look can redesign
+wardrobe, environment, lighting, palette and atmosphere without inventing a plot or cast.
+Written user locks and I2V frame zero take priority; unselected attributes retain their source
+assignments. Language alone does not add speech, and genre/look alone does not add music. No creative
 treatment or extra review call is added. Normal Driven analysis and JSON repair behavior remain.
 Output-token budgeting scales like Enhance with scene count/duration. Disable Hold once when
 switching modes; cached prompts from another mode cannot be reused. These are LLM instructions,
 not a guarantee of exact motion transfer or perfect downstream model adherence.
+
+For per-block continuous Transfer, connect the Source Video Block `request` output to the
+director request and keep the existing Prompt Override/Save checkpoint path. The block supplies
+the first accepted prompt as the established design and the previous prompt as ending-state
+context. Transfer retains casting, appearance and selected styling while following new source
+action; it does not restart the first pose, redesign each window or restart requested music.
+No extra LLM call is added. Without that request/state wiring, independent runs have no history.
 
 ## Cinematic craft
 
