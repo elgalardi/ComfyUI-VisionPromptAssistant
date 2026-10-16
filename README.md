@@ -221,6 +221,19 @@ Existing SimpleH3Chain context modes, including `masked_av`, are unchanged. Rest
 refresh the browser; recreate the director if an obsolete Cut widget remains. Disable Hold once
 to regenerate rather than reuse a previously stored edited sequence.
 
+## Selective directing craft
+
+Transfer resolves identity, wardrobe, body performance, camera and world as independent
+responsibilities. Performer bindings follow the original role through crossings, not a fixed
+screen position. Camera-only and body-only requests remain scoped; no compulsory camera style,
+beautification, mouth closure or invented transcript is added. Driven analysis is unchanged.
+Enhance, Elaborate and Continuous Elaborate use a small internal narrative canon (role, want,
+pressure, voice, movement and relationship), observable subtext, listener reactions and
+framing-aware detail. Delivery notes stay outside dialogue tags. These are selective principles,
+not imported platform templates or mandatory aesthetics. Existing JSON/source tags, output
+budgets and request counts are unchanged; no separate bible or interview is required.
+Disable Hold once to regenerate with the revised instructions. Model results still need testing.
+
 ## Pending improvements
 
 - Visual director for chained video: inspect the actual generated tail frames before writing

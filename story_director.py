@@ -1459,31 +1459,37 @@ I2V frame-zero facts win. Keep the referenced principal cast; space, objects or 
 pressure can oppose it. Add a lead only for a requested or necessarily implied interaction,
 never a duplicate reference or extra driver person.
 
-SCENE ENGINE: Privately decide what this scene contributes, what is pursued, what resists, and
-what choice changes the situation. Establish immediate context before choreography. Use causes
-and consequences, not a task list. Genre inspiration means values, stakes, world logic and emotional
-contrast: something worth protecting, not automatically running/fighting. Select a distinctive
-premise and final image, not a stock rescue or arbitrary twist. Reveal backstory through present
-evidence. One short clip supports a playable turn, not a complete three-act film; distribute
-larger arcs across selected scenes, preserving completed actions and inherited physical state.
+SCENE ENGINE: Privately choose a playable want, resistance and consequential tactic, not a task
+list. Establish context before choreography: something worth protecting, not automatically running/fighting.
+For an open story, hold a tiny narrative canon: each lead's function, immediate want, concealed
+pressure, voice and movement habit, plus the relationship and period/world treatment. Derive it
+from supplied canon or invent only unlocked fiction; never infer a real person's personality from
+their photograph. Express the gap between intention and behavior through a prop, eyeline, gesture
+or withheld reply, not a biography. Each beat changes knowledge, leverage, distance or commitment.
+One short clip supports a playable turn, not a complete three-act film. Across scenes retain this
+canon and completed events; update the emotional state instead of resetting it. Quiet or non-narrative
+briefs need no forced conflict. No additional bible, interview or output fields.
 
-DIALOGUE AS PERFORMANCE: Allowed lines reassure, probe, bargain, deflect, challenge or admit.
-Speakers have distinct rhythm, vocabulary and attitude; replies respond to what was heard/done.
-Use subtext, silence or a changed tactic when useful. Avoid exposition dumps, narrated visible
-action, slogans and generic adventure invitations. Selected language permits relevant speech in
-an open story, not a quota. No dialogue forbids it. Preserve supplied lines, speaker IDs and language.
-Leave time for listening, reactions and movement; solo scenes need no imaginary conversational partner.
+DIALOGUE AS PERFORMANCE: Allowed lines pursue a tactic: reassure, probe, bargain, deflect or admit.
+Speakers keep distinct rhythm, vocabulary and attitude across scenes; replies react to what was
+heard/done, with subtext rather than narrated visible action, exposition or generic invitations.
+Keep exact supplied words separate from delivery: pace, stress, breath and audible intention stay
+outside <d> tags. Give the listener a readable nonverbal response without mouthing the other line.
+Selected language permits relevant speech in an open story, not a quota. No dialogue forbids it.
+Preserve supplied lines, speaker IDs and language. Budget listening and movement; no imaginary partner
+for a solo scene, repeated script copies, phoneme instructions or speech crammed into every beat.
 
-VISUAL AUTHORSHIP: Choose audience knowledge/viewpoint, then a few coherent tools: wide/deep staging
-for geography or an early threat; close/compressed framing to withhold context; negative space,
-occlusion or focus to prepare a reveal. These are options, not defaults. Lens perspective,
-camera distance/height, blocking and focus must agree. Show who approaches, yields space, owns a
-prop or breaks eye contact; preserve eyelines and screen direction. Light direction, quality,
-contrast, palette and material response serve emotion. Naturalistic, graphic, animated, theatrical
-and expressionist treatments are valid; practical motivation is not obligatory realism.
-Physical reactions, environment and sound carry meaning. Off-screen sound anticipates a reveal;
-pauses and changes in sound density let choices land without obligatory music. Continuous takes
-use blocking, reframing and focus, not teleportation.
+VISUAL AUTHORSHIP: Choose audience knowledge/viewpoint, then coherent tools: wide/deep staging for
+geography, close framing to withhold context, or negative space, occlusion and focus for a reveal.
+These are options, not defaults. Define lateral/depth placement, eyeline targets and meaningful
+contacts; label screen-relative versus the character's own directions. Lens, distance, blocking and
+focus must agree. Describe only details resolvable at this framing, light and motion: a distant
+figure needs silhouette/posture, not pores or tiny jewelry. Light direction, quality, temperature,
+contrast and material response serve the moment without obligatory grain, haze, matte skin or lens.
+Naturalistic, graphic, animated, theatrical and expressionist treatments are valid. Weight, contact,
+fabric lag and environment response ground relevant action, not a physics checklist. Sound and
+silence carry meaning without obligatory music. Continuous takes use blocking/reframing/focus,
+not teleportation or a new camera at every boundary; inherit motion already underway, not a posing hold.
 Selected controls remain binding. Compile only finished footage into existing H3 sections/JSON,
 within the existing word/token budget. No separate script, analysis, alternatives or extra calls.
 """.strip()
@@ -1701,6 +1707,19 @@ in every scene; canonical Picture/Subject bindings remain explicit. Restart [Sho
 Additional shot timestamps are local to the clip and strictly inside its duration. Bind requested
 speech to its canonical Subject and a stable speaker ID with <d>[Language] exact dialogue</d>;
 retain user-supplied lines verbatim, never put production instructions into spoken text.
+""".strip()
+
+    TRANSFER_OWNERSHIP_RULES = """
+TRANSFER OWNERSHIP — INDEPENDENT AXES
+Resolve identity, wardrobe, body performance, camera and world independently; output footage,
+not this ledger. Bind initial position/visible role through crossings or occlusion, not current
+screen-left. Retain distinguishing marks, not automatic beautification. Outside requested edits,
+keep observed timing, gestures and expression progression, not invented individual micro-timing.
+Camera-only transfer copies camera, not source actions; use the requested target action.
+Body-only transfer protects the established camera. A new camera changes coverage, not choreography.
+Requests include active Direction Controls within their scope. Do not infer a new camera from
+a character photograph. No compulsory handheld, mouth closure or music suppression. User speech
+instructions win; exact words require a supplied transcript or analyzed audio, never a guess from sampled lips.
 """.strip()
 
     SOURCE_TRANSFER_RULES = """
@@ -3050,6 +3069,7 @@ boundary and never repeat the same arc description in every scene.
         if resolved_mode == "transfer":
             resolved_system = "\n\n".join((
                 cls.SOURCE_TRANSFER_RULES if videos else cls.TRANSFER_RULES,
+                cls.TRANSFER_OWNERSHIP_RULES,
                 f"Return exactly {requested_count} chronological scene_prompts, each lasting {scene_seconds:g} seconds.",
                 "Keep each applicable reference identity explicit in its scene: " + ", ".join(persistent_tags),
                 "The first generated scene establishes the target design for this sequence. Later scenes "

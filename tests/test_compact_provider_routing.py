@@ -125,6 +125,70 @@ class Frame:
 
 
 class RoutingTests(unittest.TestCase):
+    def test_transfer_ownership_separates_motion_camera_and_appearance_without_new_calls(self):
+        for source in ('source_video_1', 'driven_video'):
+            with self.subTest(source=source):
+                scope, calls = load_director()
+                args = self.kwargs()
+                args.update(edit_mode='Transfer', llm=SimpleNamespace(model='test'),
+                            edit_request='Transfer her movement, keep the image outfit, and change the setting.')
+                args[source] = Frame()
+                scope['H3CompactMultimodalEditDirector'].execute(**args)
+                payload = scope['last_payload']
+                system = payload['messages'][0]['content']
+                self.assertIn('TRANSFER OWNERSHIP — INDEPENDENT AXES', system)
+                for instruction in ('initial position/visible role', 'through crossings or occlusion',
+                                    'Camera-only transfer', 'Body-only transfer',
+                                    'not automatic beautification', 'never a guess from sampled lips',
+                                    'Do not infer a new camera', 'active Direction Controls within their scope'):
+                    self.assertIn(instruction, system)
+                self.assertEqual(calls, ['external'] * (2 if source == 'driven_video' else 1))
+                self.assertEqual(payload['max_tokens'], 1200)
+                if source == 'driven_video':
+                    self.assertNotIn('TRANSFER OWNERSHIP',
+                                     scope['payloads'][0]['messages'][0]['content'])
+
+    def test_story_canon_and_performance_craft_stay_in_creative_modes(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate',
+                     'compact', 'edit', 'Continuous Edit', 'Transfer'):
+            with self.subTest(mode=mode):
+                scope, calls = load_director()
+                args = self.kwargs()
+                args.update(edit_mode=mode, llm=SimpleNamespace(model='test'),
+                            edit_request='Create a quiet comic scene with this woman.')
+                scope['H3CompactMultimodalEditDirector'].execute(**args)
+                system = scope['last_payload']['messages'][0]['content']
+                creative = mode in ('Enhance', 'Elaborate', 'Continuous Elaborate')
+                self.assertEqual('tiny narrative canon' in system, creative)
+                self.assertEqual('TRANSFER OWNERSHIP' in system, mode == 'Transfer')
+                if creative:
+                    for instruction in ('never infer a real person', 'update the emotional state',
+                                        'Keep exact supplied words separate from delivery',
+                                        'outside <d> tags', 'without mouthing the other line',
+                                        'details resolvable at this framing',
+                                        'not a physics checklist', 'not a posing hold',
+                                        'no forced conflict'):
+                        self.assertIn(instruction, system)
+                    self.assertIn('No additional bible, interview or output fields', system)
+                self.assertEqual(calls, ['external'])
+                self.assertEqual(scope['last_payload']['max_tokens'], 1800 if mode == 'edit' else 1200)
+
+    def test_craft_rules_keep_existing_detail_budgets_and_no_platform_templates(self):
+        for mode, ceiling in (('Transfer', 1200), ('Enhance', 3500),
+                              ('Elaborate', 4800), ('Continuous Elaborate', 5600)):
+            with self.subTest(mode=mode):
+                scope, calls = load_director()
+                args = self.kwargs()
+                args.update(edit_mode=mode, llm=SimpleNamespace(model='test'))
+                scope['H3CompactMultimodalEditDirector'].execute(**args)
+                system = scope['last_payload']['messages'][0]['content']
+                self.assertLess(len(system.split()), ceiling)
+                for platform_rule in ('<<<image_', '@image1', 'PHOTOREAL FLAT CLOSE',
+                                      'THE SPINE (LOCKED ORDER)', 'Age-blind'):
+                    self.assertNotIn(platform_rule, system)
+                self.assertEqual(calls, ['external'])
+                self.assertEqual(scope['last_payload']['max_tokens'], 1200)
+
     def test_transfer_cast_compiles_only_the_selected_outfit(self):
         scope, _ = load_director()
         cls = scope['H3CompactMultimodalEditDirector']
