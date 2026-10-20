@@ -127,7 +127,7 @@ does not need to be repeated in the user request. Explicit locks, Driven appeara
 faithful edits remain authoritative. Creative modes can develop a story within continuous
 coverage; they are no longer subject to the generic no-new-plot edit rule.
 
-Enhance, Elaborate and Continuous Elaborate now distinguish an open story brief from a faithful
+Enhance, Elaborate and Elaborate Plus now distinguish an open story brief from a faithful
 edit. Open premises authorize a concrete situation, character goal, resistance, choice and payoff,
 with purposeful dialogue when permitted. Explicit action-only briefs, source plates, Driven Video
 chronology, reference roles, I2V opening frames and locked controls remain authoritative. Transfer,
@@ -187,7 +187,7 @@ scene/panel-count and JSON contracts take priority. Video sequences are still pl
 image prompts use static viewpoints, and local edits preserve untargeted content. These are prompt
 instructions, not a guarantee of generated continuity or an analysis of audio from sampled frames.
 
-Elaborate and Continuous Elaborate now compare three concise creative treatments internally and
+Elaborate and Elaborate Plus now compare three concise creative treatments internally and
 commit to one coherent approach; Enhance compares three within a smaller detail budget. This adds
 no API stages or output fields. Explicit requests, reference roles, locked controls and edit scope
 still take priority. Compact and Edit do not receive this extra
@@ -214,7 +214,7 @@ Disable Hold to request fresh prompts after updating, and restart ComfyUI to loa
 
 ### Continuous sequences
 
-The director has no Cut toggle or internal cut plan. Enhance and Continuous Elaborate carry
+The director has no Cut toggle. Enhance and Elaborate Plus carry
 camera/action and established physical state forward between blocks. Creativity develops the
 story within that continuous coverage rather than forcing changes of viewpoint or location.
 Existing SimpleH3Chain context modes, including `masked_av`, are unchanged. Restart ComfyUI and
@@ -223,11 +223,156 @@ to regenerate rather than reuse a previously stored edited sequence.
 
 ## Selective directing craft
 
+General narrative/world/form/rendering genres have distinct mechanisms rather than one generic
+genre instruction: crime needs a specific consequential crime/clue, heist an objective/security
+constraint, documentary evidence without invented facts, animation a coherent rendering grammar.
+Compatible genres develop one situation, not unrelated alternating clips. Period looks can style
+unlocked garments/grooming/props/world; capture/grade-only looks do not independently change those
+attributes. Cinematic does not imply darkness or slow motion, and camera selections override a
+look's default operator behavior. Keep Reference, user/source locks and requested action still win.
+
+Selected controls compile into observable behavior on independent axes: body cadence/force,
+camera mechanics, look, genre and design. Fast Motion requests faster-than-everyday primary action
+with quick initiation and compact recovery, not more events, sped-up speech or slow-motion posing.
+Fast subjects can combine with a locked camera or orbit; smooth/fluid camera motion need not slow
+the acting. Orbit specifies pivot/arc/parallax; dolly translates, crash zoom changes focal length,
+and whip pan does not imply a cut. User/source locks and faithful audio/choreography remain protected.
+Creative Plus receives the resolved control definitions in its existing text-only planning request.
+No new widgets/options, extra calls or output budgets; only active controls add these instructions.
+
+Requested fictional conversations need concrete spoken lines, not generic talking instructions.
+The creative director chooses a relevant topic, connected replies and stable voice habits; words
+appear once in the integrated description, with delivery outside dialogue tags and active listeners.
+Subject N uses speaker SN regardless of speaking order. A language selection alone does not require
+speech, and silence/source-audio locks remain protected. No extra calls or output fields are added.
+
+Standard keeps continuous coverage by default; written requests can direct cuts and montage.
+In both Standard and Creative Plus, active Direction Controls resolve into final design and
+performance choices before footage: look/era into unlocked appearance/world, genre into situation,
+motion into cadence and camera into coverage. Selected period looks receive only their own brief
+production-design options, not all eras' examples; capture-only looks and Auto/none do not authorize
+restyling. Existing scene/design fields ask for concrete garments, materials, settings and behavior.
+Plus may improve provisional story beats but retains the resolved art direction across shots/blocks.
+Explicit user/reference/source locks and I2V facts win. No new calls, fields or output budget are added;
+the selected options add a small amount of instruction input. These are prompt contracts, not a
+guarantee that the model realizes the look. Transfer's request path is unchanged.
+Creative Plus decides motivated coverage in its existing treatment: one sustained shot or
+edited views for location/time changes, reveals, details and reactions. There is no coverage
+selector, fixed shot count or midpoint cut. Explicit single takes and locked source coverage win.
+It shares Standard's private scene fields: `opening_framing`, `integrated_multimodal_description`,
+`visible_result` and sound/music. Timed `[Shot N]` cuts belong in the integrated description;
+the renderer does not force a shot count or split generation clips. Shot-number and clip-local
+timestamp normalization remains in place. Sampler/context behavior and Transfer are unchanged.
+Character references have exclusive role ownership: supporting people and background extras
+do not inherit a lead's identity. Recognizable invented supporting cast receive independent
+visual handles; distant extras use scale-appropriate silhouettes, uniforms and activity.
+These instructions also apply to Creative Plus planning, without another request. Faithful
+video edits preserve existing source participants and replace only the assigned performer.
+This mitigates prompt ambiguity, not model-level global reference conditioning or guaranteed
+identity separation in the generated video.
+Reference numbering follows `Picture N → Subject N → (SN)` rather than entrance or
+speaking order. For explicit unambiguous subject definitions, the compiler reorders
+definitions and renumbers Subject/speaker mentions together, leaving Picture tags
+and spoken words unchanged. Ambiguous multi-picture identities are not guessed.
+
+### Creative Profile
+
+`Elaborate Plus` is the renamed `Continuous Elaborate` edit mode, with the same sequence behavior.
+Saved UI workflows migrate the old label on load; the backend retains its internal mode identifier.
+This is separate from the `Creative Plus` profile described below.
+
+Creative modes budget the narrative across the selected scene count and duration: one scene
+contains a mini-arc, two share setup/development and resolution, and longer sequences distribute
+changing beats toward a visible payoff. The last scene reserves time for completion and reaction,
+not another setup. Standard and Creative Plus share this contract without additional calls.
+Explicit open endings, trailers, loops and source-locked chronology remain protected; source-block
+continuations do not invent a fresh story or forced finale for every block. This is prompt guidance,
+not a guarantee that the video model executes every beat.
+
+The director's appended **Creative Profile** widget defaults to `Standard` (unchanged).
+`Creative Plus` adds one text-only treatment request before the normal prompt-writing request
+in Enhance, Elaborate and Elaborate Plus. It prepares a compact premise, character
+wants/relationships/voice/movement, production design, scene beats and continuity locks.
+The planner gets the brief, controls, source-slot roles and any existing Driven blueprint,
+not another batch of image/video tokens. It cannot inspect reference pixels; final direction
+reconciles the treatment against the actual references and explicit locks. The planning output
+budget is 770–1540 tokens for 1–12 scenes; the existing final-prompt budget is unchanged.
+Normal runs use two requests, or three when Driven analysis is connected. Planning input/output
+usage is reported separately. Quality and actual credit cost require comparison runs.
+
+Creative Plus uses the same writing/craft tools and final scene schema as Standard. Its compact
+treatment suggests character voices, purposeful coverage, authorized design and causal development;
+the final writer can improve or replace weak suggestions after seeing the references. A few better
+decisions matter more than extra events or complexity. Tone and stakes follow the user's brief,
+not an obligatory threat, conspiracy or new subplot. The continuity notes retain established facts,
+not provisional camera/pose choices. Closed scripts and source performance remain protected.
+Plus no longer stacks the faithful-edit/continuous-take rule sets over its creative brief or uses
+a separate structured shot list. Shared control execution still applies without Standard's generic
+no-new-cuts footer. Custom system instructions remain authoritative. Standard/Transfer behavior,
+request counts, output budgets and public fields are unchanged.
+
+For open fictional stories, a short user idea is the required core, not one literal clause per
+scene. Creative Plus aims to fulfill a brief core early when physically feasible, then develops
+causal consequences, decisions and changing relationships rather than stretching setup. It plans
+readable acting/viewpoint changes and reserves time inside the last clip for a visible payoff and
+reaction. This is duration-aware guidance, not a fixed scene quota, mandatory cuts/new locations
+or a forced happy ending. Closed scripts, isolated action studies, faithful source chronology,
+supplied endings and deliberate open forms stay protected. The same guidance survives an invalid
+extra-treatment fallback and does not add calls, fields or output-token allowance.
+
+Creative Plus distinguishes narrative continuity from an unbroken camera take. Its existing
+production-design/continuity notes retain recurring location layouts and progressive wardrobe,
+props and actions. Scene beats choose whether and why to cut. A change of location establishes
+the complete destination after the cut rather than gradually blending sets; unimportant travel
+can be elided when coverage is unlocked. Shot actions own their dialogue once, and the final
+result belongs to the last shot. In AV continuations, inherited footage remains the opening;
+planned cuts belong later in the generated interval, not inside the protected prefix. The
+director does not inspect generated endpoints or know an arbitrary workflow's prefix duration:
+these are prompt instructions, not timeline enforcement or a guarantee against model morphing.
+No extra model call or output-token allowance is added; more coverage shares the existing budget.
+
+Malformed planning JSON is repaired locally only for trailing commas and unescaped control
+characters inside strings. Unrecoverable or structurally invalid treatments are skipped: the
+normal director request uses Standard's creative treatment instructions, with no planning retry.
+Validation and usage report this fallback and still count the attempted planning call. Provider
+and transport failures remain explicit; no incomplete story text is fabricated to close JSON.
+
+Source-block continuations with `FIRST ACCEPTED BLOCK` reuse the matching node's cached
+treatment. After a cold resume they use that accepted first prompt as the established design
+instead of paying for another planning call; a complete private bible is not reconstructed.
+New first-block runs plan again. Hold reuses the saved result without any model call; changing
+profile requires disabling Hold once. Bypass skips both stages. Transfer, Compact and faithful
+Edit modes do not activate Creative Plus. No new public output ports or prompt headings are added.
+
+Direction Controls includes independent **Wardrobe** and **Environment** choices:
+`Auto` keeps existing behavior; `Keep Reference` preserves the assigned source design;
+`Create New` authorizes a concrete new outfit or setting suited to the brief and selected look.
+These override source/Driven defaults only on the selected axis. Written user assignments
+and I2V frame-zero constraints win; Keep Reference protects that axis from genre restyling.
+A new design is chosen for the sequence and carried into subsequent blocks, not regenerated
+per scene. New wardrobes do not replace facial identity or video choreography. The controls
+are appended after Dialogue, preserving existing widget order. No extra LLM stage is added.
+With Create New in Enhance/Elaborate, the existing structured response includes a brief internal
+source-to-outfit contrast and/or a concrete per-scene environment field. The renderer emits the
+chosen garments and setting, not the contrast audit; Picture bindings are identity-scoped for
+redesigned outfits. Named venue categories and explicit garment details stay protected while
+unlocked silhouette, material, layout and lighting choices can change. These checks improve
+instruction specificity, not a deterministic guarantee of novelty or a new validation failure.
+
+**Body Proportions** is independent: `Auto` leaves the existing policy unchanged;
+`Keep Reference` retains the assigned reference's visible build; `Creative Adaptation`
+permits a coherent target build/proportion treatment within the brief, without automatic
+exaggeration or facial/age changes. Pose and choreography remain assigned to their original
+sources, and clothing fits the chosen body without replacing a protected outfit. Written
+body locks and I2V frame-zero facts win. The chosen body persists across blocks. Creative
+modes compile a concise `target_body` into subject definitions; Transfer uses its existing
+identity-details field. No extra LLM stage or changed default behavior is introduced.
+
 Transfer resolves identity, wardrobe, body performance, camera and world as independent
 responsibilities. Performer bindings follow the original role through crossings, not a fixed
 screen position. Camera-only and body-only requests remain scoped; no compulsory camera style,
 beautification, mouth closure or invented transcript is added. Driven analysis is unchanged.
-Enhance, Elaborate and Continuous Elaborate use a small internal narrative canon (role, want,
+Enhance, Elaborate and Elaborate Plus use a small internal narrative canon (role, want,
 pressure, voice, movement and relationship), observable subtext, listener reactions and
 framing-aware detail. Delivery notes stay outside dialogue tags. These are selective principles,
 not imported platform templates or mandatory aesthetics. Existing JSON/source tags, output

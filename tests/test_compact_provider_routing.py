@@ -22,25 +22,28 @@ def load_director():
         json=json, math=math, os=os, re=re, DEFAULT_MODEL="internal-test",
         io=SimpleNamespace(ComfyNode=object, NodeOutput=lambda *v, **kw: v),
         ui=SimpleNamespace(PreviewText=lambda v: v),
-        MOTION_STYLES={
-            "Orbit Camera": "Circle around the main subject on a smooth controlled arc.",
-            "Fast Motion": next(ast.literal_eval(node.value)['Fast Motion'] for node in tree.body
+        MOTION_STYLES=next(ast.literal_eval(node.value) for node in tree.body
                 if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
                 and target.id == 'MOTION_STYLES' for target in node.targets)),
-        },
-        VISUAL_LOOKS={
-            "Cinematic": "Use deliberate feature-film composition and controlled lighting.",
-            "1950s Technicolor Studio": next(ast.literal_eval(node.value)['1950s Technicolor Studio']
+        VISUAL_LOOKS=next(ast.literal_eval(node.value)
                 for node in tree.body if isinstance(node, ast.Assign)
                 and any(isinstance(target, ast.Name) and target.id == 'VISUAL_LOOKS'
                         for target in node.targets)),
-        },
         _get_held_director_plan=lambda key: None,
         _set_held_director_plan=lambda key, record: None,
         _image_data_url=lambda *args: "data:image/png;base64,TEST",
         _credits=lambda *args: calls.append("credits") or "balance",
     )
     def reply(payload):
+        if payload['response_format']['json_schema']['name'] == 'h3_creative_plus_treatment':
+            count = payload['response_format']['json_schema']['schema']['properties']['scene_beats']['minItems']
+            content = dict(premise='A hesitant reunion becomes a shared decision.',
+                cast_and_relationships=['<Picture 1>: wants reconciliation; measured voice and restrained gestures.'],
+                production_design='Warm practical light, coherent venue and permitted wardrobe design.',
+                scene_beats=[f'Beat {i + 1}: a small choice changes their distance.' for i in range(count)],
+                continuity_locks=['Keep reference ownership and completed actions.'])
+            return {'choices': [{'message': {'content': json.dumps(content)}}],
+                    'usage': {'prompt_tokens': 250, 'completion_tokens': 150, 'total_tokens': 400}}
         if payload['response_format']['json_schema']['name'] == 'h3_driven_visual_blueprint':
             content = dict(activity='Cheerleading performance beside a conversation partner.',
                 setting='Football sideline', lighting='Daylight', visual_style='Natural sports coverage',
@@ -87,11 +90,20 @@ def load_director():
                     identity='the woman fully referenced from <Picture 1>.',
                     target_appearance='wearing a blue jacket.')],
                 visual_style='Soft directional light and restrained blue color.')
+            subject_fields = properties['target_design']['properties']['subjects']['items']['properties']
+            if 'wardrobe_contrast' in subject_fields:
+                content['target_design']['subjects'][0]['wardrobe_contrast'] = 'Reference top -> blue tailored jacket.'
+            if 'target_body' in subject_fields:
+                content['target_design']['subjects'][0]['target_body'] = 'an athletic build with balanced limb proportions.'
             def scene_body(text):
-                return dict(opening_framing='An eye-level wide shot of the courtyard.',
+                body = dict(opening_framing='An eye-level wide shot of the courtyard.',
                             integrated_multimodal_description=text,
                             visible_result='She reaches the far doorway.',
                             overall_soundscape='Quiet footsteps.', non_diegetic_music='N/A')
+                body_schema = properties.get('scene_prompts', {}).get('items', properties.get('edit_prompt', {}))
+                if 'environment' in body_schema.get('properties', {}):
+                    body['environment'] = 'A courtyard with pale stone arches and a shaded fountain.'
+                return body
             if 'scene_prompts' in content:
                 content['scene_prompts'] = [scene_body(text) for text in content['scene_prompts']]
             else:
@@ -125,6 +137,1110 @@ class Frame:
 
 
 class RoutingTests(unittest.TestCase):
+    def test_context_controls_shape_concrete_design_in_standard_and_plus(self):
+        for mode in ('Enhance', 'Elaborate', 'Elaborate Plus'):
+            for profile in ('Standard', 'Creative Plus'):
+                with self.subTest(mode=mode, profile=profile):
+                    scope, calls = load_director()
+                    cls = scope['H3CompactMultimodalEditDirector']
+                    args = self.kwargs()
+                    args.update(edit_mode=mode, creative_profile=profile,
+                        edit_request='Two friends meet on a rooftop and decide where to go next.',
+                        direction_context='Genre: Romance\nMotion style: Fast Motion + Locked-Off Camera\nVisual look: 2000s Y2K Digital Camera\nWardrobe: Create New\nEnvironment: Create New',
+                        llm=SimpleNamespace(model='test'), max_tokens=2400, seed=42)
+                    cls.execute(**args)
+                    payload = scope['last_payload']
+                    system = payload['messages'][0]['content']
+                    cue = cls.PERIOD_DESIGN_CUES['2000s Y2K Digital Camera']
+                    self.assertIn(cue, system)
+                    self.assertIn('Carry those decisions through every block', system)
+                    for other, other_cue in cls.PERIOD_DESIGN_CUES.items():
+                        if other != '2000s Y2K Digital Camera':
+                            self.assertNotIn(other_cue, system)
+                    props = payload['response_format']['json_schema']['schema']['properties']
+                    appearance = props['target_design']['properties']['subjects']['items']['properties']['target_appearance']
+                    self.assertIn('silhouette, materials', appearance['description'])
+                    self.assertIn('not an era label', appearance['description'])
+                    scene = props['edit_prompt'] if mode == 'Elaborate' else props['scene_prompts']['items']
+                    self.assertIn('active period/world controls', scene['properties']['environment']['description'])
+                    self.assertIn('physical cadence and camera behavior', scene['properties']['integrated_multimodal_description']['description'])
+                    self.assertEqual(payload['max_tokens'], 2400)
+                    self.assertEqual(payload['seed'], 42)
+                    self.assertEqual(calls, ['external'] * (2 if profile == 'Creative Plus' else 1))
+                    if profile == 'Creative Plus':
+                        brief = json.loads(scope['payloads'][0]['messages'][1]['content'])
+                        self.assertIn(cue, '\n'.join(brief['resolved_direction_controls']))
+                        self.assertIn('ART DIRECTION IS A DECISION', system)
+                        self.assertIn('revisable beats do not make selected controls optional', system)
+
+    def test_period_design_cues_are_selected_only_and_preserve_locks(self):
+        scope, _ = load_director()
+        cls = scope['H3CompactMultimodalEditDirector']
+        self.assertEqual(set(cls.PERIOD_DESIGN_CUES), set(cls.PERIOD_LOOKS))
+        for profile in ('Standard', 'Creative Plus'):
+            for mode, look in (('Enhance', 'Auto + none'), ('Enhance', 'VHS / Analog Tape'),
+                               ('Transfer', '2000s Y2K Digital Camera')):
+                args = self.kwargs()
+                args.update(edit_mode=mode, creative_profile=profile,
+                            direction_context='Visual look: ' + look,
+                            llm=SimpleNamespace(model='test'))
+                cls.execute(**args)
+                for payload in scope['payloads']:
+                    text = json.dumps(payload['messages'])
+                    for cue in cls.PERIOD_DESIGN_CUES.values():
+                        self.assertNotIn(cue, text)
+                scope['payloads'] = []
+            args.update(edit_mode='Enhance', i2v_mode=True,
+                direction_context='Visual look: 2000s Y2K Digital Camera\nWardrobe: Keep Reference\nEnvironment: Keep Reference')
+            cls.execute(**args)
+            system = scope['last_payload']['messages'][0]['content']
+            self.assertIn('explicit Keep Reference, user locks, source responsibilities and I2V opening facts win', system)
+            self.assertNotIn('WARDROBE DESIGN CHECK', system)
+            self.assertNotIn('ENVIRONMENT DESIGN CHECK', system)
+            scope['payloads'] = []
+
+    def test_plus_preserves_standard_scene_schema_craft_and_output_budget(self):
+        for mode in ('Enhance', 'Elaborate', 'Elaborate Plus'):
+            schemas, budgets, system_sizes = [], [], []
+            for profile in ('Standard', 'Creative Plus'):
+                scope, calls = load_director()
+                cls = scope['H3CompactMultimodalEditDirector']
+                args = self.kwargs()
+                args.update(edit_mode=mode, creative_profile=profile,
+                    edit_request='A student leaves university, takes the bus and reaches home.',
+                    direction_context='Wardrobe: Create New\nEnvironment: Create New\nMotion style: Fast Motion',
+                    llm=SimpleNamespace(model='test'))
+                cls.execute(**args)
+                payload = scope['last_payload']
+                system = payload['messages'][0]['content']
+                schemas.append(payload['response_format'])
+                budgets.append(payload['max_tokens'])
+                system_sizes.append(len(system.split()))
+                for rule in (cls.CREATIVE_TREATMENT_RULES.format(candidates=3),
+                             cls.WRITER_DIRECTOR_RULES, cls.CINEMATIC_CRAFT,
+                             cls.H3_NATIVE_PROMPT_RULES):
+                    self.assertEqual(system.count(rule), 1)
+                self.assertEqual(calls, ['external'] * (2 if profile == 'Creative Plus' else 1))
+            self.assertEqual(schemas[0], schemas[1])
+            self.assertEqual(budgets[0], budgets[1])
+            self.assertLess(system_sizes[1] - system_sizes[0], 800)
+
+    def test_plus_drops_blanket_edit_and_continuous_camera_rules_not_user_locks(self):
+        for mode in ('Enhance', 'Elaborate', 'Elaborate Plus'):
+            scope, _ = load_director()
+            cls = scope['H3CompactMultimodalEditDirector']
+            args = self.kwargs()
+            args.update(edit_mode=mode, creative_profile='Creative Plus',
+                system_prompt=cls.DEFAULT_SYSTEM_PROMPT,
+                direction_context='Motion style: Fast Motion + Orbit Camera',
+                llm=SimpleNamespace(model='test'))
+            cls.execute(**args)
+            system = scope['last_payload']['messages'][0]['content']
+            for obsolete in (cls.DEFAULT_SYSTEM_PROMPT, cls.DEEP_EDIT_RULES,
+                             cls.CONTINUOUS_EDIT_RULES, cls.CONTINUOUS_ELABORATE_RULES,
+                             cls.CONTINUOUS_H3_HANDOFF_RULES, cls.CONTROL_CONTINUOUS_OUTPUT_RULES,
+                             'within the continuous take', 'without implied time jumps',
+                             'PRIVATE SHOT SCHEMA', 'start_seconds'):
+                self.assertNotIn(obsolete, system)
+            for protected in ('An explicit single take/no cuts, locked source coverage',
+                              'Inherited AV/prefix footage owns the opening',
+                              'after the protected prefix, never at frame zero',
+                              scope['MOTION_STYLES']['Fast Motion'], scope['MOTION_STYLES']['Orbit Camera']):
+                self.assertIn(protected, system)
+            for payload in scope['payloads']:
+                self.assertNotIn('Do not add cuts, new output sections', payload['messages'][0]['content'])
+            args['system_prompt'] = 'One continuous take, no cuts. Keep the exact supplied dialogue.'
+            cls.execute(**args)
+            self.assertIn(args['system_prompt'], scope['last_payload']['messages'][0]['content'])
+
+    def test_plus_supports_creative_decisions_without_inflating_the_premise(self):
+        scope, calls = load_director()
+        cls = scope['H3CompactMultimodalEditDirector']
+        args = self.kwargs()
+        args.update(edit_mode='Elaborate Plus', creative_profile='Creative Plus',
+                    edit_request='A quiet reunion over coffee, with a warm resolved ending.',
+                    llm=SimpleNamespace(model='test'))
+        cls.execute(**args)
+        planner, writer = scope['payloads']
+        self.assertLess(len(planner['messages'][0]['content'].split()), 1200)
+        system = writer['messages'][0]['content']
+        for phrase in ('optional creative support', 'not a mandatory screenplay',
+                       'not a replacement premise', 'may improve its dialogue, acting, beats',
+                       'A simple\npremise can stay simple', 'not exaggeration',
+                       'do not manufacture a threat', 'each block change something concrete'):
+            self.assertIn(phrase, system)
+        self.assertEqual(calls, ['external', 'external'])
+
+    def test_elaborate_plus_renames_the_mode_without_changing_legacy_behavior(self):
+        for profile in ('Standard', 'Creative Plus'):
+            results = []
+            schemas = []
+            for mode in ('Elaborate Plus', 'Continuous Elaborate', 'Elaborate Continuo', 'continuous_elaborate'):
+                scope, calls = load_director()
+                args = self.kwargs()
+                args.update(edit_mode=mode, creative_profile=profile,
+                            llm=SimpleNamespace(model='test'))
+                result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+                self.assertTrue(result[1].startswith('Elaborate Plus '))
+                self.assertEqual(calls, ['external'] * (2 if profile == 'Creative Plus' else 1))
+                results.append(result[0])
+                schemas.append(scope['last_payload']['response_format'])
+            self.assertTrue(all(value == results[0] for value in results))
+            self.assertTrue(all(value == schemas[0] for value in schemas))
+
+    def test_reference_subject_order_renumbers_actions_and_speakers_simultaneously(self):
+        scope, _ = load_director()
+        order = scope['H3CompactMultimodalEditDirector']._order_reference_subjects
+        prompt = ('subject_definitions:\n'
+                  '<Subject 1> the man from <Picture 2>, wearing a coat.\n'
+                  '<Subject 2> the woman from <Picture 1>, wearing a jacket.\n\n'
+                  'integrated_multimodal_description:\n'
+                  '[Shot 1] <Subject 2> Woman (S2) says: <d>[Spanish] Hola.</d> '
+                  '<Subject 1> Man (S1) listens.\n'
+                  '[Shot 2] <Subject 1> Man (S1) says: <d>[Spanish] Vamos.</d>\n\n'
+                  'overall_soundscape:\nFootsteps.\n\nnon_diegetic_music:\nN/A')
+        result = order(prompt)
+        self.assertLess(result.index('<Subject 1> the woman'), result.index('<Subject 2> the man'))
+        self.assertIn('<Subject 1> Woman (S1) says: <d>[Spanish] Hola.</d>', result)
+        self.assertIn('<Subject 2> Man (S2) says: <d>[Spanish] Vamos.</d>', result)
+        self.assertEqual(result.count('<d>'), 2)
+        self.assertEqual(order(result), result)
+
+    def test_reference_subject_order_avoids_extra_collisions_and_preserves_unknown_bindings(self):
+        scope, _ = load_director()
+        order = scope['H3CompactMultimodalEditDirector']._order_reference_subjects
+        prompt = ('subject_definitions:\n<Subject 1> an independent waiter.\n'
+                  '<Subject 3> the woman from <Picture 1>.\n\n'
+                  'integrated_multimodal_description:\n<Subject 1> (S1) serves <Subject 3> (S3).')
+        result = order(prompt)
+        self.assertIn('<Subject 1> the woman from <Picture 1>', result)
+        self.assertIn('<Subject 4> an independent waiter', result)
+        self.assertIn('<Subject 4> (S4) serves <Subject 1> (S1)', result)
+        for original in ('A plain prompt.', 'subject_definitions:\nN/A\n\nsummary:\nA landscape.',
+                         'subject_definitions:\n<Subject 1> a blend of <Picture 1> and <Picture 2>.\n\nsummary:\nA portrait.'):
+            self.assertEqual(order(original), original)
+
+    def test_creative_arc_scales_to_scene_budget_without_more_calls(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate'):
+            for count in (1, 2, 3, 12):
+                with self.subTest(mode=mode, count=count):
+                    scope, calls = load_director()
+                    args = self.kwargs()
+                    args.update(edit_mode=mode, continuous_scene_count=count,
+                                seconds_per_scene=5, llm=SimpleNamespace(model='test'))
+                    scope['H3CompactMultimodalEditDirector'].execute(**args)
+                    system = scope['last_payload']['messages'][0]['content']
+                    actual_count = 1 if mode == 'Elaborate' else count
+                    self.assertIn(f'Budget: {actual_count} scene(s), 5s each, {actual_count * 5}s total.', system)
+                    self.assertIn('One scene contains setup/turn/payoff', system)
+                    self.assertIn('two establish/develop then resolve', system)
+                    self.assertIn('Reserve time INSIDE the last scene', system)
+                    self.assertIn('close only at the global end', system)
+                    self.assertEqual(calls, ['external'])
+
+    def test_plus_planner_shares_arc_budget_but_faithful_modes_do_not(self):
+        scope, calls = load_director()
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', continuous_scene_count=3, seconds_per_scene=10,
+                    creative_profile='Creative Plus', llm=SimpleNamespace(model='test'))
+        scope['H3CompactMultimodalEditDirector'].execute(**args)
+        for payload in scope['payloads']:
+            system = payload['messages'][0]['content']
+            self.assertIn('Budget: 3 scene(s), 10s each, 30s total.', system)
+            self.assertIn('Source-locked performance is not rewritten', system)
+            self.assertIn('Trailers, loops, deliberate open', system)
+        self.assertEqual(calls, ['external', 'external'])
+        for mode in ('Transfer', 'edit', 'Continuous Edit', 'compact'):
+            scope, calls = load_director()
+            args.update(edit_mode=mode)
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+            self.assertNotIn('DRAMATIZE, DO NOT DEFER — FINITE SEQUENCE',
+                             scope['last_payload']['messages'][0]['content'])
+            self.assertEqual(calls, ['external'])
+
+    def test_reference_identity_is_exclusive_without_extra_requests(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate', 'Transfer',
+                     'compact', 'edit', 'Continuous Edit'):
+            with self.subTest(mode=mode):
+                scope, calls = load_director()
+                args = self.kwargs()
+                args.update(edit_mode=mode, llm=SimpleNamespace(model='test'),
+                            edit_request='The referenced couple have dinner; a waiter serves them.')
+                scope['H3CompactMultimodalEditDirector'].execute(**args)
+                system = scope['last_payload']['messages'][0]['content']
+                for rule in ('CAST IDENTITY — EXCLUSIVE REFERENCE OWNERSHIP',
+                             'One reference identity, one character across blocks',
+                             'not merely different uniforms',
+                             'Bind Picture tags locally, never to groups/extras',
+                             'silhouette/uniform/activity, not facial detail',
+                             'preserve source population/role tracking',
+                             'replace only assigned performers',
+                             'duplicates require explicit requests'):
+                    self.assertIn(rule, system)
+                self.assertEqual(calls, ['external'])
+
+    def test_creative_plus_plans_independent_supporting_cast(self):
+        scope, calls = load_director()
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', creative_profile='Creative Plus',
+                    llm=SimpleNamespace(model='test'),
+                    edit_request='The referenced couple have dinner; a waiter serves them.')
+        scope['H3CompactMultimodalEditDirector'].execute(**args)
+        for payload in scope['payloads']:
+            self.assertIn('CAST IDENTITY — EXCLUSIVE REFERENCE OWNERSHIP',
+                          payload['messages'][0]['content'])
+            self.assertIn('independent\nfaces/hair/silhouettes',
+                          payload['messages'][0]['content'])
+        self.assertEqual(calls, ['external', 'external'])
+
+    def test_creative_plus_adds_one_text_only_treatment_in_creative_modes(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate', 'Transfer',
+                     'compact', 'edit', 'Continuous Edit'):
+            with self.subTest(mode=mode):
+                scope, calls = load_director()
+                args = self.kwargs()
+                args.update(edit_mode=mode, creative_profile='Creative Plus',
+                            llm=SimpleNamespace(model='test'), temperature=0.35, seed=42)
+                result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+                active = mode in ('Enhance', 'Elaborate', 'Continuous Elaborate')
+                self.assertEqual(calls, ['external'] * (2 if active else 1))
+                if active:
+                    planner, director = scope['payloads']
+                    self.assertEqual(planner['response_format']['json_schema']['name'], 'h3_creative_plus_treatment')
+                    self.assertIn('Return a compact JSON treatment matching the schema', planner['messages'][0]['content'])
+                    embedded_schema = planner['messages'][0]['content'].split('JSON Schema:\n', 1)[1]
+                    self.assertEqual(json.loads(embedded_schema), planner['response_format']['json_schema']['schema'])
+                    self.assertIsInstance(planner['messages'][1]['content'], str)
+                    self.assertNotIn('base64', json.dumps(planner))
+                    self.assertLessEqual(planner['max_tokens'], 1600)
+                    self.assertEqual(planner['temperature'], 0.35)
+                    self.assertEqual(planner['seed'], 42)
+                    self.assertFalse(planner['reasoning']['enabled'])
+                    self.assertEqual(director['max_tokens'], 1200)
+                    self.assertEqual(director['messages'][0]['content'].count('CREATIVE TREATMENT SELECTION'), 1)
+                    self.assertIn('CREATIVE PLUS EXECUTION', director['messages'][0]['content'])
+                    self.assertIn('Creative Plus planning input: 250 / output: 150', result[2])
+                    self.assertIn('2 stages', result[2])
+                    self.assertNotIn('cast_and_relationships', result[0])
+                else:
+                    self.assertIn('Creative Plus inactive', result[1])
+
+    def test_creative_plus_unifies_authorship_without_new_fields_calls_or_output_budget(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate'):
+            for profile in ('Standard', 'Creative Plus'):
+                with self.subTest(mode=mode, profile=profile):
+                    scope, calls = load_director()
+                    args = self.kwargs()
+                    args.update(edit_mode=mode, creative_profile=profile,
+                                edit_request='Create a light comedy about two travelers at a rural station.',
+                                direction_context='Wardrobe: Keep Reference\nEnvironment: Create New\nDialogue: Spanish',
+                                llm=SimpleNamespace(model='test'), max_tokens=1200)
+                    scope['H3CompactMultimodalEditDirector'].execute(**args)
+                    director = scope['last_payload']
+                    active = profile == 'Creative Plus'
+                    self.assertEqual('CREATIVE PLUS REALIZATION' in director['messages'][0]['content'], active)
+                    self.assertEqual(calls, ['external'] * (2 if active else 1))
+                    self.assertEqual(director['max_tokens'], 1200)
+                    self.assertIn('Keep Reference', director['messages'][0]['content'])
+                    if not active:
+                        continue
+                    planner = scope['payloads'][0]
+                    system = planner['messages'][0]['content']
+                    for instruction in ('one central idea worth filming',
+                                        'without returning alternatives',
+                                        'Match the requested form', 'no forced palette',
+                                        'Keep requested uniforms/signatures',
+                                        'Details must be resolvable',
+                                        'Honor deliberate wardrobe/location changes',
+                                        'silence and source-audio locks remain protected'):
+                        self.assertIn(instruction, system)
+                    fields = planner['response_format']['json_schema']['schema']['properties']
+                    self.assertEqual(set(fields), {'premise', 'cast_and_relationships',
+                        'production_design', 'scene_beats', 'continuity_locks'})
+                    self.assertTrue(all('description' in field for field in fields.values()))
+                    self.assertLessEqual(planner['max_tokens'], 1600)
+                    self.assertNotIn('image_url', json.dumps(planner))
+                    for instruction in ('no replay or rewind', 'Resolve incompatible plan suggestions',
+                                        'retaining required events and the existing output budget',
+                                        'optional creative support', 'not a mandatory screenplay',
+                                        'not transient acting poses'):
+                        self.assertIn(instruction, director['messages'][0]['content'])
+
+    def test_creative_plus_authorship_does_not_leak_into_faithful_modes(self):
+        for mode in ('Transfer', 'edit', 'Continuous Edit', 'compact'):
+            scope, calls = load_director()
+            args = self.kwargs()
+            args.update(edit_mode=mode, creative_profile='Creative Plus',
+                        llm=SimpleNamespace(model='test'))
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+            self.assertEqual(calls, ['external'])
+            self.assertNotIn('CREATIVE PLUS REALIZATION', scope['last_payload']['messages'][0]['content'])
+            self.assertNotIn('CREATIVE PLUS AUTHORSHIP', scope['last_payload']['messages'][0]['content'])
+
+    def test_general_genres_have_specific_mechanisms_not_only_generic_fallback(self):
+        scope, _ = load_director()
+        cls = scope['H3CompactMultimodalEditDirector']
+        tree = ast.parse((ROOT / 'story_director.py').read_text(encoding='utf-8'))
+        genres = next(ast.literal_eval(node.value) for node in tree.body
+                      if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+                      and target.id == 'GENRES' for target in node.targets))
+        general = genres[1:genres.index('Sensual Romance (Adults 18+)')]
+        self.assertFalse(set(general) - set(cls.GENRE_MECHANISMS))
+        self.assertEqual(len(set(cls.GENRE_MECHANISMS[name] for name in general)), len(general))
+        for name, phrase in (('Crime', 'evidence'), ('Heist', 'security constraint'),
+                             ('Science Fiction', 'speculative rule'), ('Anime', 'rendering grammar'),
+                             ('Documentary', 'Do not invent factual events'),
+                             ('Product Showcase', 'no fabricated specifications')):
+            self.assertIn(phrase, cls.GENRE_MECHANISMS[name])
+
+    def test_genre_look_motion_combine_in_one_treatment_and_reach_plus_planner(self):
+        for profile in ('Standard', 'Creative Plus'):
+            scope, calls = load_director()
+            cls = scope['H3CompactMultimodalEditDirector']
+            args = self.kwargs()
+            args.update(edit_mode='Enhance', creative_profile=profile,
+                        edit_request='The two travelers retrieve a missing suitcase. Keep their clothes.',
+                        direction_context='Genre: Science Fiction + Heist\nVisual look: Cinematic\nMotion style: Fast Motion + Locked-Off Camera',
+                        llm=SimpleNamespace(model='test'), max_tokens=1200)
+            cls.execute(**args)
+            director = scope['last_payload']
+            system = director['messages'][0]['content']
+            for genre in ('Science Fiction', 'Heist'):
+                self.assertIn(cls.GENRE_MECHANISMS[genre], system)
+            self.assertIn(scope['VISUAL_LOOKS']['Cinematic'], system)
+            self.assertIn(scope['MOTION_STYLES']['Fast Motion'], system)
+            for phrase in ('one causal situation', 'not alternating unrelated scenes',
+                           'not story or wardrobe', "override a look's default camera",
+                           'first-selection priority', 'Keep explicit reference/design locks'):
+                self.assertIn(phrase.lower(), system.lower())
+            self.assertEqual(director['max_tokens'], 1200)
+            self.assertEqual(calls, ['external'] * (2 if profile == 'Creative Plus' else 1))
+            if profile == 'Creative Plus':
+                brief = json.loads(scope['payloads'][0]['messages'][1]['content'])
+                resolved = '\n'.join(brief['resolved_direction_controls'])
+                self.assertIn(cls.GENRE_MECHANISMS['Heist'], resolved)
+                self.assertIn(scope['VISUAL_LOOKS']['Cinematic'], resolved)
+
+    def test_period_looks_and_capture_grades_have_different_design_authority(self):
+        for look, period in (('1940s Black-and-White Studio', True),
+                             ('1960s Mod / Pop Cinema', True),
+                             ('2000s Y2K Digital Camera', True),
+                             ('VHS / Analog Tape', False),
+                             ('Teal and Orange Blockbuster', False),
+                             ('Dreamlike / Soft Focus', False)):
+            with self.subTest(look=look):
+                scope, calls = load_director()
+                args = self.kwargs()
+                args.update(edit_mode='Enhance', llm=SimpleNamespace(model='test'),
+                            direction_context=f'Visual look: {look}\nWardrobe: Keep Reference')
+                scope['H3CompactMultimodalEditDirector'].execute(**args)
+                system = scope['last_payload']['messages'][0]['content']
+                self.assertIn(scope['VISUAL_LOOKS'][look], system)
+                self.assertEqual('For an open period treatment, realize the era' in system, period)
+                self.assertEqual('This is a capture/grade treatment' in system, not period)
+                self.assertIn('An explicit Keep Reference beats genre restyling', system)
+                self.assertEqual(calls, ['external'])
+
+    def test_genre_story_mechanism_does_not_rewrite_faithful_transfer(self):
+        scope, calls = load_director()
+        cls = scope['H3CompactMultimodalEditDirector']
+        args = self.kwargs()
+        args.update(edit_mode='Transfer', llm=SimpleNamespace(model='test'), source_video_1=Frame(),
+                    direction_context='Genre: Crime\nVisual look: Film Print Emulation')
+        cls.execute(**args)
+        system = scope['last_payload']['messages'][0]['content']
+        self.assertNotIn(cls.GENRE_MECHANISMS['Crime'], system)
+        self.assertIn('around the observed activity, not a new plot', system)
+        self.assertIn('faithful source modes preserve choreography', system)
+        self.assertEqual(calls, ['external'])
+
+    def test_motion_controls_describe_distinct_body_and_camera_mechanics(self):
+        scope, _ = load_director()
+        motion = scope['MOTION_STYLES']
+        for name, evidence in (
+                ('Fast Motion', ('visibly faster than everyday pace', 'No slow motion',
+                                 'not the event count, dialogue or playback', 'Respect a locked camera')),
+                ('Super Fast Motion', ('explosive high-speed bursts', 'near-immediate launch',
+                                       'add neither events nor cuts')),
+                ('Slow Motion', ('visibly expanded time', 'not merely slow', 'do not stretch spoken words')),
+                ('Fluid Motion', ('not necessarily slow', 'selected fast cadence')),
+                ('Gimbal Camera', ('smooth does not mean slow', 'natural parallax')),
+                ('Locked-Off Camera', ('position, orientation and focal length fixed', 'no pan, tilt')),
+                ('Orbit Camera', ('named pivot', 'radius', 'background parallax', 'full 360 unless requested')),
+                ('Crash Zoom Energy', ('optical focal length', 'not a dolly translation')),
+                ('Dolly / Tracking Shot', ('Translate the camera', 'do not substitute optical zoom')),
+                ('Whip Pan Energy', ('not a new shot/cut', 'readable landing'))):
+            with self.subTest(name=name):
+                for phrase in evidence:
+                    self.assertIn(phrase, motion[name])
+
+    def test_active_controls_reach_execution_without_canceling_independent_axes(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate', 'Transfer', 'edit'):
+            for choices in ('Fast Motion + Locked-Off Camera', 'Locked-Off Camera + Fast Motion'):
+                with self.subTest(mode=mode, choices=choices):
+                    scope, calls = load_director()
+                    args = self.kwargs()
+                    args.update(edit_mode=mode, llm=SimpleNamespace(model='test'),
+                                edit_request='The traveler crosses the station platform.',
+                                direction_context='Motion style: ' + choices,
+                                max_tokens=2500, temperature=0.35, seed=42)
+                    scope['H3CompactMultimodalEditDirector'].execute(**args)
+                    payload = scope['last_payload']
+                    system = payload['messages'][0]['content']
+                    rules = scope['H3CompactMultimodalEditDirector'].CONTROL_EXECUTION_RULES
+                    self.assertEqual(system.count(rules), 1)
+                    self.assertIn(scope['MOTION_STYLES']['Fast Motion'], system)
+                    self.assertIn(scope['MOTION_STYLES']['Locked-Off Camera'], system)
+                    for phrase in ('SAME axis', 'fixed or slow camera',
+                                   'faithful source modes preserve choreography',
+                                   'audio timing unless retiming is explicitly requested',
+                                   'not labels', 'Do not add cuts'):
+                        self.assertIn(phrase, system)
+                    self.assertEqual(calls, ['external'])
+                    self.assertEqual(payload['max_tokens'], 2500)
+                    self.assertEqual(payload['temperature'], 0.35)
+                    self.assertEqual(payload['seed'], 42)
+
+    def test_plus_planner_gets_resolved_motion_specs_without_more_stages(self):
+        scope, calls = load_director()
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', creative_profile='Creative Plus',
+                    direction_context='Motion style: Fast Motion + Orbit Camera',
+                    llm=SimpleNamespace(model='test'))
+        scope['H3CompactMultimodalEditDirector'].execute(**args)
+        planner, director = scope['payloads']
+        brief = json.loads(planner['messages'][1]['content'])
+        self.assertEqual(len(brief['resolved_direction_controls']), 2)
+        for name in ('Fast Motion', 'Orbit Camera'):
+            self.assertIn(scope['MOTION_STYLES'][name], '\n'.join(brief['resolved_direction_controls']))
+            self.assertIn(scope['MOTION_STYLES'][name], director['messages'][0]['content'])
+        self.assertIn('resolved_direction_controls defines the selected behavior',
+                      planner['messages'][0]['content'])
+        self.assertNotIn('Do not add cuts, new output sections', planner['messages'][0]['content'])
+        self.assertNotIn('image_url', json.dumps(planner))
+        self.assertEqual(calls, ['external', 'external'])
+        self.assertEqual(director['max_tokens'], 1200)
+
+    def test_inactive_motion_controls_add_no_execution_contract(self):
+        for profile in ('Standard', 'Creative Plus'):
+            scope, calls = load_director()
+            args = self.kwargs()
+            args.update(edit_mode='Enhance', creative_profile=profile,
+                        direction_context='Motion style: Auto + none', llm=SimpleNamespace(model='test'))
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+            for payload in scope['payloads']:
+                self.assertNotIn('CONTROL EXECUTION — OBSERVABLE', payload['messages'][0]['content'])
+            if profile == 'Creative Plus':
+                self.assertNotIn('resolved_direction_controls',
+                                 json.loads(scope['payloads'][0]['messages'][1]['content']))
+            self.assertEqual(calls, ['external'] * (2 if profile == 'Creative Plus' else 1))
+
+    def test_plus_story_development_is_shared_by_planning_and_realization_only(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate'):
+            for profile in ('Standard', 'Creative Plus'):
+                with self.subTest(mode=mode, profile=profile):
+                    scope, calls = load_director()
+                    cls = scope['H3CompactMultimodalEditDirector']
+                    args = self.kwargs()
+                    args.update(edit_mode=mode, creative_profile=profile,
+                                edit_request='Create a story: an office worker finishes her task, gets angry and leaves.',
+                                llm=SimpleNamespace(model='test'))
+                    cls.execute(**args)
+                    active = profile == 'Creative Plus'
+                    for payload in scope['payloads']:
+                        self.assertEqual(payload['messages'][0]['content'].count(cls.CREATIVE_PLUS_STORY_RULES), int(active))
+                    self.assertEqual(calls, ['external'] * (2 if active else 1))
+                    self.assertEqual(scope['last_payload']['max_tokens'], 1200)
+                    if active:
+                        system = scope['last_payload']['messages'][0]['content']
+                        self.assertGreater(system.index(cls.CREATIVE_PLUS_STORY_RULES),
+                                           system.index('DRAMATIZE, DO NOT DEFER'))
+                        for phrase in ('not a replacement premise', 'fulfill\nthe brief core early',
+                                       'BECAUSE/THEREFORE', 'readable result',
+                                       'not only preparation', 'not a script',
+                                       'do not manufacture a threat', 'faithful edits',
+                                       'Honor loops, supplied endings and source/audio locks'):
+                            self.assertIn(phrase, cls.CREATIVE_PLUS_STORY_RULES)
+
+    def test_plus_story_structure_keeps_scene_count_fields_and_budgets(self):
+        for count in (1, 2, 3, 6):
+            budgets = []
+            for profile in ('Standard', 'Creative Plus'):
+                scope, calls = load_director()
+                cls = scope['H3CompactMultimodalEditDirector']
+                args = self.kwargs()
+                args.update(edit_mode='Continuous Elaborate', continuous_scene_count=count,
+                            creative_profile=profile, llm=SimpleNamespace(model='test'))
+                result = cls.execute(**args)
+                self.assertEqual(len(json.loads(result[0])['scene_prompts']), count)
+                budgets.append(scope['last_payload']['max_tokens'])
+                if profile == 'Creative Plus':
+                    planner = scope['payloads'][0]
+                    fields = planner['response_format']['json_schema']['schema']['properties']
+                    self.assertEqual(set(fields), {'premise', 'cast_and_relationships',
+                        'production_design', 'scene_beats', 'continuity_locks'})
+                    self.assertEqual(planner['max_tokens'], min(1600, 700 + 70 * count))
+                    self.assertIn('Fulfill a brief open premise early', fields['scene_beats']['description'])
+                    self.assertNotIn('image_url', json.dumps(planner))
+            self.assertEqual(budgets[0], budgets[1])
+
+    def test_plus_story_development_does_not_override_closed_script_or_source_evidence(self):
+        scope, calls = load_director()
+        cls = scope['H3CompactMultimodalEditDirector']
+        request = 'Exact script: she enters, closes the door and sits. End there; no aftermath or extra dialogue.'
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', creative_profile='Creative Plus', source_video_1=Frame(),
+                    edit_request=request, llm=SimpleNamespace(model='test'))
+        cls.execute(**args)
+        planner, director = scope['payloads']
+        brief = json.loads(planner['messages'][1]['content'])
+        self.assertEqual(brief['request'], request)
+        self.assertTrue(brief['source_performance_locked'])
+        self.assertIn('Exact scripts, faithful edits and source chronology stay faithful',
+                      director['messages'][0]['content'])
+        self.assertIn('preserving the user brief, accepted canon', director['messages'][0]['content'])
+        self.assertEqual(calls, ['external', 'external'])
+        scope, calls = load_director()
+        args['edit_mode'] = 'Transfer'
+        scope['H3CompactMultimodalEditDirector'].execute(**args)
+        self.assertNotIn(cls.CREATIVE_PLUS_STORY_RULES, scope['last_payload']['messages'][0]['content'])
+        self.assertEqual(calls, ['external'])
+
+    def test_creative_plus_reuses_driven_evidence_and_reports_three_stages(self):
+        scope, calls = load_director()
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', creative_profile='Creative Plus', driven_video=Frame(),
+                    llm=SimpleNamespace(model='test'), debug_request=True)
+        result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+        self.assertEqual(calls, ['external'] * 3)
+        planner = scope['payloads'][1]
+        brief = json.loads(planner['messages'][1]['content'])
+        self.assertEqual(brief['observed_driven_blueprint']['setting'], 'Football sideline')
+        self.assertNotIn('image_url', json.dumps(planner))
+        self.assertIn('3 stages', result[2])
+        self.assertIn('CREATIVE PLUS PLANNING:', result[4])
+
+    def test_creative_plus_continuation_does_not_replan_and_survives_cold_resume(self):
+        scope, calls = load_director()
+        records = []
+        scope['_set_held_director_plan'] = lambda key, record: records.append(record)
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', creative_profile='Creative Plus', continuous_scene_count=1,
+                    llm=SimpleNamespace(model='test'), edit_request='A reunion.\nSOURCE BLOCK 1/3: 0..10s.')
+        cls = scope['H3CompactMultimodalEditDirector']
+        first = cls.execute(**args)
+        anchor = json.loads(first[0])['scene_prompts'][0]
+        self.assertEqual(records[-1]['creative_anchor'], anchor)
+        scope['_get_held_director_plan'] = lambda key: records[-1]
+        args['edit_request'] = 'A reunion.\nSOURCE BLOCK 2/3: 10..20s.\nFIRST ACCEPTED BLOCK:\n' + anchor
+        second = cls.execute(**args)
+        self.assertEqual(calls, ['external'] * 3)
+        self.assertIn('treatment reused', second[1])
+        self.assertEqual(scope['last_payload']['messages'][0]['content'].count(cls.CREATIVE_PLUS_STORY_RULES), 1)
+        self.assertIn('no planning call', second[2])
+        self.assertIn('A hesitant reunion', json.dumps(scope['last_payload']))
+        scope['_get_held_director_plan'] = lambda key: None
+        args['edit_request'] = ('A reunion.\nSOURCE BLOCK 3/3: 20..30s.\nFIRST ACCEPTED BLOCK:\n'
+                                + anchor + '\nPREVIOUS ACCEPTED BLOCK:\nContinued conversation.')
+        third = cls.execute(**args)
+        self.assertEqual(calls, ['external'] * 4)
+        self.assertIn('no planning call', third[2])
+        self.assertIn('accepted_first_block', json.dumps(scope['last_payload']))
+
+    def test_creative_profile_hold_and_bypass_never_add_paid_calls(self):
+        scope, calls = load_director()
+        records = []
+        scope['_set_held_director_plan'] = lambda key, record: records.append(record)
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', creative_profile='Creative Plus', llm=SimpleNamespace(model='test'))
+        cls = scope['H3CompactMultimodalEditDirector']
+        cls.execute(**args)
+        scope['_get_held_director_plan'] = lambda key: records[-1]
+        args['hold_prompt'] = True
+        cls.execute(**args)
+        self.assertEqual(len(calls), 2)
+        args['creative_profile'] = 'Standard'
+        with self.assertRaisesRegex(RuntimeError, 'Creative Profile changed'):
+            cls.execute(**args)
+        self.assertEqual(len(calls), 2)
+        args.update(bypass=True, llm=None)
+        cls.execute(**args)
+        self.assertEqual(len(calls), 2)
+
+    def test_creative_plus_invalid_json_continues_with_standard_craft_without_planning_retry(self):
+        scope, calls = load_director()
+        original_request = scope['_external_llm_request']
+        logs = []
+        scope['print'] = logs.append
+        def broken(provider, payload):
+            if payload['response_format']['json_schema']['name'] == 'h3_creative_plus_treatment':
+                calls.append('external')
+                return {'choices': [{'message': {'content': '{"premise":"private unfinished'},
+                                     'finish_reason': 'length'}],
+                        'usage': {'prompt_tokens': 100, 'completion_tokens': 50}}
+            return original_request(provider, payload)
+        scope['_external_llm_request'] = broken
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', creative_profile='Creative Plus', llm=SimpleNamespace(model='test'))
+        result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+        self.assertEqual(calls, ['external', 'external'])
+        self.assertIn('treatment fallback', result[1])
+        self.assertIn('planning input: 100 / output: 50', result[2])
+        self.assertIn('2 stages', result[2])
+        self.assertNotIn('no planning call', result[2])
+        system = scope['last_payload']['messages'][0]['content']
+        self.assertIn(scope['H3CompactMultimodalEditDirector'].CREATIVE_TREATMENT_RULES.format(candidates=3), system)
+        self.assertNotIn('CREATIVE PLUS EXECUTION', system)
+        self.assertIn(scope['H3CompactMultimodalEditDirector'].CREATIVE_PLUS_STORY_RULES, system)
+        self.assertIn('finish_reason=length', logs[0])
+        self.assertIn('line 1, column', logs[0])
+        self.assertNotIn('private', logs[0])
+
+    def test_creative_plus_invalid_treatment_reports_fields_without_content_or_retry(self):
+        valid = dict(premise='private scene text', production_design='private design',
+                     cast_and_relationships=['lead'], scene_beats=['one', 'two'], continuity_locks=[])
+        for changes, expected in (
+                ({'premise': None}, 'premise: expected string, got NoneType'),
+                ({'cast_and_relationships': [{'name': 'private identity'}]},
+                 'cast_and_relationships: expected string items'),
+                ({'continuity_locks': 'private lock'}, 'continuity_locks: expected array, got str'),
+                ({}, 'production_design: missing')):
+            with self.subTest(expected=expected):
+                scope, calls = load_director()
+                logs = []
+                scope['print'] = logs.append
+                treatment = dict(valid, **changes)
+                if not changes:
+                    treatment.pop('production_design')
+                def broken(provider, payload):
+                    calls.append('external')
+                    return {'choices': [{'message': {'content': json.dumps(treatment)}}]}
+                scope['_external_llm_request'] = broken
+                plan, _, _ = scope['H3CompactMultimodalEditDirector']._plan_creative_plus(
+                    SimpleNamespace(model='test'), {}, 2, 10, 0.35, 42)
+                self.assertEqual(plan, {})
+                self.assertIn(expected, logs[0])
+                self.assertNotIn('private', logs[0])
+                self.assertEqual(calls, ['external'])
+
+    def test_creative_plus_repairs_only_local_json_syntax_without_changing_strings(self):
+        valid = dict(premise='Literal punctuation ,] and ,} with "quotes" and \\slashes.',
+                     production_design='Warm light.\nRainy street.', cast_and_relationships=['lead'],
+                     scene_beats=['setup', 'resolution'], continuity_locks=[])
+        encoded = json.dumps(valid)
+        for raw in (encoded.replace('"lead"]', '"lead",]')[:-1] + ',}',
+                    encoded.replace('Warm light.\\nRainy street.', 'Warm light.\nRainy street.')):
+            scope, calls = load_director()
+            scope['print'] = lambda text: None
+            def reply(provider, payload):
+                calls.append('external')
+                return {'choices': [{'message': {'content': raw}, 'finish_reason': 'stop'}]}
+            scope['_external_llm_request'] = reply
+            plan, _, _ = scope['H3CompactMultimodalEditDirector']._plan_creative_plus(
+                SimpleNamespace(model='test'), {}, 2, 10, 0.35, 42)
+            self.assertEqual(plan, valid)
+            self.assertEqual(calls, ['external'])
+
+    def test_creative_plus_does_not_hide_provider_failures(self):
+        scope, calls = load_director()
+        def unavailable(provider, payload):
+            calls.append('external')
+            raise RuntimeError('HTTP 402: insufficient balance')
+        scope['_external_llm_request'] = unavailable
+        with self.assertRaisesRegex(RuntimeError, 'HTTP 402'):
+            scope['H3CompactMultimodalEditDirector']._plan_creative_plus(
+                SimpleNamespace(model='test'), {}, 2, 10, 0.35, 42)
+        self.assertEqual(calls, ['external'])
+
+    def test_creative_plus_beat_count_does_not_override_requested_scene_count(self):
+        for beats in ([], ['setup', 'resolution'], ['one', 'two', 'three', 'four']):
+            with self.subTest(beats=beats):
+                scope, calls = load_director()
+                original_request = scope['_external_llm_request']
+                def reply(provider, payload):
+                    result = original_request(provider, payload)
+                    if payload['response_format']['json_schema']['name'] == 'h3_creative_plus_treatment':
+                        treatment = json.loads(result['choices'][0]['message']['content'])
+                        treatment['scene_beats'] = beats
+                        result['choices'][0]['message']['content'] = json.dumps(treatment)
+                    return result
+                scope['_external_llm_request'] = reply
+                args = self.kwargs()
+                args.update(edit_mode='Continuous Elaborate', creative_profile='Creative Plus',
+                            continuous_scene_count=3, llm=SimpleNamespace(model='test'))
+                result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+                self.assertEqual(len(json.loads(result[0])['scene_prompts']), 3)
+                self.assertEqual(calls, ['external', 'external'])
+                planner, director = scope['payloads']
+                self.assertIn('redistribute beats', director['messages'][0]['content'])
+                self.assertIn('Earn the final', director['messages'][0]['content'])
+                notes = next(m['text'] for m in director['messages'][1]['content']
+                             if m.get('type') == 'text' and m['text'].startswith('CREATIVE PLUS TREATMENT'))
+                self.assertEqual(json.loads(notes.split('\n', 1)[1])['scene_beats'], beats)
+
+    def test_body_controls_are_scoped_independently_in_all_modes(self):
+        for mode in ('compact', 'edit', 'Transfer', 'Enhance', 'Elaborate',
+                     'Continuous Edit', 'Continuous Elaborate'):
+            for selection in ('Auto', 'Keep Reference', 'Creative Adaptation'):
+                with self.subTest(mode=mode, selection=selection):
+                    scope, calls = load_director()
+                    args = self.kwargs()
+                    args.update(edit_mode=mode, llm=SimpleNamespace(model='test'),
+                                edit_request='The character walks across a courtyard.',
+                                direction_context=f'Body proportions: {selection}')
+                    result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+                    payload = scope['last_payload']
+                    system = payload['messages'][0]['content']
+                    active = selection != 'Auto'
+                    self.assertEqual('BODY PROPORTIONS — INDEPENDENT DESIGN SCOPE' in system, active)
+                    self.assertNotIn('WARDROBE / ENVIRONMENT — EXPLICIT DESIGN SCOPE', system)
+                    props = payload['response_format']['json_schema']['schema']['properties']
+                    if mode in ('Enhance', 'Elaborate', 'Continuous Elaborate'):
+                        subject = props['target_design']['properties']['subjects']['items']
+                        self.assertEqual('target_body' in subject['properties'], active)
+                        self.assertNotIn('wardrobe_contrast', subject['properties'])
+                        if active:
+                            self.assertIn('Body proportions: an athletic build', result[0])
+                    if active:
+                        for contract in ('I2V frame-zero facts win', 'not automatic exaggeration',
+                                         'Keep pose, action timing, hand contacts', 'across scenes/blocks',
+                                         'not contradictory source proportions'):
+                            self.assertIn(contract, system)
+                    self.assertEqual(calls, ['external'])
+                    self.assertEqual(payload['max_tokens'], 1800 if mode == 'edit' else 1200)
+
+    def test_body_and_new_outfit_compile_together_without_new_analysis_stage(self):
+        scope, calls = load_director()
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', llm=SimpleNamespace(model='test'), driven_video=Frame(),
+                    direction_context='Wardrobe: Create New\nBody proportions: Creative Adaptation')
+        result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+        props = scope['last_payload']['response_format']['json_schema']['schema']['properties']
+        subject = props['target_design']['properties']['subjects']['items']
+        self.assertIn('target_body', subject['properties'])
+        self.assertIn('target_body', subject['required'])
+        self.assertIn('wardrobe_contrast', subject['properties'])
+        self.assertIn('Body proportions: an athletic build', result[0])
+        self.assertIn('Target appearance: wearing a blue jacket', result[0])
+        self.assertEqual(calls, ['external', 'external'])
+        self.assertNotIn('BODY PROPORTIONS', scope['payloads'][0]['messages'][0]['content'])
+
+    def test_new_design_checks_are_conditional_and_reuse_the_current_call(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate'):
+            for wardrobe, environment in (('Auto', 'Auto'), ('Create New', 'Keep Reference'),
+                                         ('Keep Reference', 'Create New'), ('Create New', 'Create New')):
+                with self.subTest(mode=mode, wardrobe=wardrobe, environment=environment):
+                    scope, calls = load_director()
+                    args = self.kwargs()
+                    args.update(edit_mode=mode, llm=SimpleNamespace(model='test'),
+                                edit_request='A couple talks over drinks in a bar. Keep her white scarf.',
+                                direction_context=f'Wardrobe: {wardrobe}\nEnvironment: {environment}')
+                    scope['H3CompactMultimodalEditDirector'].execute(**args)
+                    payload = scope['last_payload']
+                    props = payload['response_format']['json_schema']['schema']['properties']
+                    subject = props['target_design']['properties']['subjects']['items']
+                    scene = props['edit_prompt'] if mode == 'Elaborate' else props['scene_prompts']['items']
+                    self.assertEqual('wardrobe_contrast' in subject['properties'], wardrobe == 'Create New')
+                    self.assertEqual('environment' in scene['properties'], environment == 'Create New')
+                    if wardrobe == 'Create New':
+                        self.assertLess(list(subject['properties']).index('wardrobe_contrast'),
+                                        list(subject['properties']).index('target_appearance'))
+                        self.assertIn('Explicit user garment locks/I2V opening facts win', payload['messages'][0]['content'])
+                    if environment == 'Create New':
+                        self.assertEqual(list(scene['properties'])[0], 'environment')
+                        self.assertIn('within the user\'s venue category', payload['messages'][0]['content'])
+                    self.assertEqual(calls, ['external'])
+                    self.assertEqual(payload['max_tokens'], 1200)
+
+    def test_redesigned_wardrobe_and_environment_compile_without_the_source_outfit_or_audit(self):
+        scope, calls = load_director()
+        environment = 'An Art Deco cocktail bar: curved walnut booths flank a brass-edged table; amber glass lamps light smoked-mirror shelves behind.'
+        def reply(provider, payload):
+            calls.append('external')
+            design = dict(subjects=[
+                dict(subject_tag='<Subject 1>', identity='the woman fully referenced from <Picture 1>.',
+                     wardrobe_contrast='Striped black top -> rust velvet blazer and cream blouse.',
+                     target_appearance='rust velvet blazer over a cream blouse, charcoal pleated trousers, ankle boots.'),
+                dict(subject_tag='<Subject 2>', identity='the man fully referenced from <Picture 2>.',
+                     wardrobe_contrast='Black T-shirt -> sage knit polo and brown wool trousers.',
+                     target_appearance='sage knit polo, brown wool trousers, leather loafers.')],
+                visual_style='Warm directional light and restrained amber highlights.')
+            scene = dict(environment=environment, opening_framing='An eye-level two-shot across the booth.',
+                         integrated_multimodal_description='The couple share a smile and raise their glasses.',
+                         visible_result='Their glasses meet and return to the table.',
+                         overall_soundscape='Glasses clink softly.', non_diegetic_music='N/A')
+            return {'choices': [{'message': {'content': json.dumps(dict(target_design=design, scene_prompts=[scene, scene]))}}]}
+        scope['_external_llm_request'] = reply
+        args = self.kwargs()
+        args.update(edit_mode='Enhance', llm=SimpleNamespace(model='test'), reference_image_2=Frame(),
+                    edit_request='A couple chats over drinks in a bar.',
+                    direction_context='Wardrobe: Create New\nEnvironment: Create New')
+        result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+        for prompt in json.loads(result[0])['scene_prompts']:
+            self.assertIn('rust velvet blazer', prompt)
+            self.assertIn('sage knit polo', prompt)
+            self.assertIn('identity referenced from <Picture 1>', prompt)
+            self.assertIn(environment, prompt)
+            self.assertNotIn('Striped black top', prompt)
+            self.assertNotIn('Black T-shirt', prompt)
+            self.assertNotIn('wardrobe_contrast', prompt)
+            for heading in ('subject_definitions:', 'integrated_multimodal_description:',
+                            'overall_soundscape:', 'non_diegetic_music:'):
+                self.assertEqual(prompt.count(heading), 1)
+        self.assertEqual(calls, ['external'])
+
+    def test_redesign_renderer_preserves_explicit_locks_and_old_designs(self):
+        scope, _ = load_director()
+        cls = scope['H3CompactMultimodalEditDirector']
+        scene = dict(integrated_multimodal_description='She walks into the bar.')
+        person = dict(subject_tag='<Subject 1>', identity='the woman fully referenced from <Picture 1>.',
+                      target_appearance='her original blue coat.')
+        original = cls._render_creative_scene(scene, dict(subjects=[person]))
+        self.assertIn('fully referenced from <Picture 1>', original)
+        person['wardrobe_contrast'] = 'N/A'
+        self.assertEqual(cls._render_creative_scene(scene, dict(subjects=[person])), original)
+
+    def test_design_control_widgets_append_without_shifting_existing_widgets(self):
+        tree = ast.parse((ROOT / 'story_director.py').read_text(encoding='utf-8'))
+        node = next(n for n in tree.body if isinstance(n, ast.ClassDef)
+                    and n.name == 'H3CompactDirectionControls')
+        scope = dict(io=SimpleNamespace(
+            ComfyNode=object, NodeOutput=lambda *v: v, Schema=lambda **kw: kw,
+            Combo=SimpleNamespace(Input=lambda name, **kw: dict(name=name, **kw)),
+            String=SimpleNamespace(Output=lambda name: name)),
+            GENRES=[], MOTION_STYLES={}, VISUAL_LOOKS={}, DIALOGUE_OPTIONS=[])
+        exec(compile(ast.Module(body=[node], type_ignores=[]), 'controls', 'exec'), scope)
+        controls = scope['H3CompactDirectionControls']
+        fields = controls.define_schema()['inputs']
+        self.assertEqual([f['name'] for f in fields], [
+            'genre_1', 'genre_2', 'motion_style_1', 'motion_style_2',
+            'look_1', 'look_2', 'dialogue', 'wardrobe', 'environment', 'body_proportions'])
+        for field in fields[7:9]:
+            self.assertEqual(field['options'], ['Auto', 'Keep Reference', 'Create New'])
+            self.assertEqual(field['default'], 'Auto')
+        self.assertEqual(fields[-1]['options'], ['Auto', 'Keep Reference', 'Creative Adaptation'])
+        self.assertEqual(fields[-1]['default'], 'Auto')
+        self.assertEqual(controls.execute()[0], '')
+        self.assertEqual(controls.execute(wardrobe='Auto', environment='Auto')[0], '')
+        self.assertEqual(controls.execute(wardrobe='Create New', environment='Keep Reference')[0],
+                         'Wardrobe: Create New\nEnvironment: Keep Reference')
+        self.assertEqual(controls.execute(body_proportions='Auto')[0], '')
+        self.assertEqual(controls.execute(body_proportions='Creative Adaptation')[0],
+                         'Body proportions: Creative Adaptation')
+
+    def test_written_shot_requests_reach_creative_modes_without_automatic_split(self):
+        request = 'Create a reunion. Cut to a reverse angle at five seconds; speak each line only once.'
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate'):
+            for profile in ('Standard', 'Creative Plus'):
+                with self.subTest(mode=mode, profile=profile):
+                    scope, calls = load_director()
+                    args = self.kwargs()
+                    args.update(edit_mode=mode, creative_profile=profile, edit_request=request,
+                                llm=SimpleNamespace(model='test'))
+                    scope['H3CompactMultimodalEditDirector'].execute(**args)
+                    director = scope['last_payload']
+                    self.assertIn(request, json.dumps(director['messages'], ensure_ascii=False))
+                    props = director['response_format']['json_schema']['schema']['properties']
+                    scene = props['edit_prompt'] if mode == 'Elaborate' else props['scene_prompts']['items']
+                    self.assertNotIn('second_shot', scene['properties'])
+                    self.assertNotIn('TWO-SHOT COMPILATION', director['messages'][0]['content'])
+                    self.assertNotIn('MID-SCENE SHOT CHANGE', director['messages'][0]['content'])
+                    if profile == 'Creative Plus':
+                        brief = json.loads(scope['payloads'][0]['messages'][1]['content'])
+                        self.assertEqual(brief['request'], request)
+                        self.assertNotIn('scene_coverage', brief)
+                    self.assertEqual(calls, ['external'] * (2 if profile == 'Creative Plus' else 1))
+
+    def test_renderer_preserves_user_directed_shots_without_inserting_midpoint(self):
+        scope, _ = load_director()
+        cls = scope['H3CompactMultimodalEditDirector']
+        scene = dict(opening_framing='[Shot 1] Wide view.',
+                     integrated_multimodal_description=(
+                         '[Shot 1] She approaches. [Shot 2] At 00:03.250, '
+                         '<Subject 1> (S1) says: <d>[Spanish] Hola.</d> '
+                         '[Shot 3] At 00:07.000, He answers with a smile.'),
+                     visible_result='They sit down.', overall_soundscape='Room tone.',
+                     non_diegetic_music='N/A')
+        for sequence in (False, True):
+            result = cls._compile_scene_prompt(cls._render_creative_scene(scene, {}), sequence=sequence)
+            self.assertEqual(re.findall(r'\[Shot\s+\d+\]', result),
+                             ['[Shot 1]', '[Shot 2]', '[Shot 3]'])
+            self.assertIn('[Shot 2] At 00:03.250,', result)
+            self.assertIn('[Shot 3] At 00:07.000,', result)
+            self.assertNotIn('00:05.000', result)
+            self.assertEqual(result.count('<d>[Spanish] Hola.</d>'), 1)
+        scene['integrated_multimodal_description'] = 'They talk without cutting.'
+        result = cls._render_creative_scene(scene, {})
+        self.assertNotIn('[Shot 2]', result)
+
+    def test_plus_editorial_contract_reaches_both_stages_only_in_creative_plus(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate', 'Transfer', 'Continuous Edit'):
+            for profile in ('Standard', 'Creative Plus'):
+                with self.subTest(mode=mode, profile=profile):
+                    scope, calls = load_director()
+                    cls = scope['H3CompactMultimodalEditDirector']
+                    args = self.kwargs()
+                    args.update(edit_mode=mode, creative_profile=profile,
+                        edit_request='Tell the journey of a student from university to her home.',
+                        llm=SimpleNamespace(model='test'))
+                    result = cls.execute(**args)
+                    active = profile == 'Creative Plus' and mode in ('Enhance', 'Elaborate', 'Continuous Elaborate')
+                    for payload in scope['payloads']:
+                        self.assertEqual(payload['messages'][0]['content'].count(cls.CREATIVE_PLUS_EDITORIAL_RULES), int(active))
+                    props = scope['last_payload']['response_format']['json_schema']['schema']['properties']
+                    scene = props['edit_prompt'] if mode == 'Elaborate' else props['scene_prompts']['items']
+                    self.assertNotIn('shots', scene.get('properties', {}))
+                    if active:
+                        self.assertIn('opening_framing', scene['properties'])
+                        self.assertIn('integrated_multimodal_description', scene['properties'])
+                        self.assertEqual(set(scene['required']), {'opening_framing',
+                            'integrated_multimodal_description', 'visible_result',
+                            'overall_soundscape', 'non_diegetic_music'})
+                        self.assertNotIn('ONE-PASS LOGICAL CONTINUITY FOR H3 CHAINS',
+                                         scope['last_payload']['messages'][0]['content'])
+                        self.assertNotIn('start_seconds', result[0])
+                    self.assertEqual(calls, ['external'] * (2 if active else 1))
+
+    def test_plus_shot_renderer_separates_locations_and_does_not_repeat_dialogue(self):
+        scope, _ = load_director()
+        cls = scope['H3CompactMultimodalEditDirector']
+        scene = dict(opening_framing='Wide tracking view along the university corridor.',
+            integrated_multimodal_description=(
+                '[Shot 1] <Subject 1> closes her notebook and approaches the exit.\n'
+                '[Shot 2] At 00:03.275, hard cut. Medium side view inside a moving bus, with seat rows and passing street light. '
+                '<Subject 1> sits by the window, notebook on her lap. <Subject 1> (S1) says: <d>[Spanish] Ya voy.</d>\n'
+                '[Shot 3] At 00:07.125, hard cut. Wide view of her home entrance at dusk, brick walls and a narrow doorstep. '
+                '<Subject 1> unlocks the front door, carrying the same notebook.'),
+            visible_result='She steps into the house.', overall_soundscape='Footsteps, then bus hum, then her key turning.',
+            non_diegetic_music='One soft score bridges the cuts.')
+        design = dict(subjects=[dict(subject_tag='<Subject 1>', identity='the woman from <Picture 1>.',
+                                    target_appearance='White blouse and fitted blue trousers.')])
+        original = json.dumps(scene)
+        for sequence in (False, True):
+            prompt = cls._compile_scene_prompt(cls._render_creative_scene(scene, design), sequence=sequence)
+            self.assertEqual(re.findall(r'\[Shot \d+\]', prompt), ['[Shot 1]', '[Shot 2]', '[Shot 3]'])
+            self.assertIn('[Shot 2] At 00:03.275, hard cut.', prompt)
+            self.assertIn('[Shot 3] At 00:07.125, hard cut.', prompt)
+            self.assertEqual(prompt.count('Ya voy.'), 1)
+            self.assertEqual(prompt.count('White blouse and fitted blue trousers.'), 1)
+            self.assertLess(prompt.index('university corridor'), prompt.index('[Shot 2]'))
+            self.assertLess(prompt.index('[Shot 2]'), prompt.index('inside a moving bus'))
+            self.assertLess(prompt.index('[Shot 3]'), prompt.index('home entrance'))
+            self.assertEqual(prompt.count('She steps into the house.'), 1)
+            self.assertNotIn('00:05.000', prompt)
+        self.assertEqual(json.dumps(scene), original)
+
+    def test_plus_one_shot_and_i2v_alignment_do_not_create_a_cut(self):
+        scope, _ = load_director()
+        cls = scope['H3CompactMultimodalEditDirector']
+        scene = dict(opening_framing='[Shot 1] A continuous close-up.',
+                     integrated_multimodal_description='[Shot 1] She considers the letter, then smiles.',
+                     visible_result='She folds the letter.', overall_soundscape='Paper rustle.', non_diegetic_music='N/A')
+        prompt = cls._render_creative_scene(scene, {}, opening_frame=True)
+        self.assertIn('at 0.00 seconds into the target video, <Picture 1>', prompt)
+        self.assertEqual(prompt.count('[Shot 1]'), 2)  # Alignment binding plus actual footage.
+        self.assertNotIn('[Shot 2]', prompt)
+        self.assertNotIn('hard cut', prompt)
+
+    def test_plus_edited_response_compiles_through_execute_without_extra_requests(self):
+        scope, calls = load_director()
+        original = scope['_external_llm_request']
+        def edited(provider, payload):
+            response = original(provider, payload)
+            if payload['response_format']['json_schema']['name'] == 'h3_creative_plus_treatment':
+                return response
+            content = json.loads(response['choices'][0]['message']['content'])
+            for scene in content['scene_prompts']:
+                scene['opening_framing'] = 'Wide view of the university exit.'
+                scene['integrated_multimodal_description'] = (
+                    '<Subject 1> walks out holding her notebook.\n'
+                    '[Shot 2] At 00:03.400, hard cut. Medium view inside a bus with blue seats. '
+                    '<Subject 1> sits down, keeping the notebook on her lap.')
+                scene['visible_result'] = 'She watches the street pass the bus window.'
+            response['choices'][0]['message']['content'] = json.dumps(content)
+            return response
+        scope['_external_llm_request'] = edited
+        args = self.kwargs()
+        args.update(edit_mode='Continuous Elaborate', creative_profile='Creative Plus',
+                    continuous_scene_count=1, seconds_per_scene=10, llm=SimpleNamespace(model='test'))
+        result = scope['H3CompactMultimodalEditDirector'].execute(**args)
+        prompts = json.loads(result[0])['scene_prompts']
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(re.findall(r'\[Shot \d+\]', prompts[0]), ['[Shot 1]', '[Shot 2]'])
+        self.assertIn('[Shot 2] At 00:03.400, hard cut. Medium view inside a bus', prompts[0])
+        self.assertNotIn('start_seconds', prompts[0])
+        self.assertEqual(calls, ['external', 'external'])
+
+    def test_plus_editing_protects_continuous_source_and_inherited_prefix(self):
+        scope, _ = load_director()
+        cls = scope['H3CompactMultimodalEditDirector']
+        for request in ('One continuous take, no cuts. She walks home.',
+                        'Preserve the source video choreography, camera, dialogue and timing.'):
+            args = self.kwargs()
+            args.update(edit_mode='Continuous Elaborate', creative_profile='Creative Plus',
+                        edit_request=request, llm=SimpleNamespace(model='test'))
+            cls.execute(**args)
+            system = scope['last_payload']['messages'][0]['content']
+            self.assertIn('single take/no cuts, locked source coverage', system)
+            self.assertIn('after the protected prefix, never at frame zero', system)
+            self.assertIn('Hold a take when uninterrupted acting', system)
+            self.assertIn('Cut between lines/breaths rather than splitting a word', system)
+            self.assertIn('Inherited AV/prefix footage owns the opening', system)
+            self.assertIn(request, json.dumps(scope['last_payload']['messages']))
+
+    def test_design_choices_reach_all_modes_without_extra_calls(self):
+        for mode in ('compact', 'edit', 'Transfer', 'Enhance', 'Elaborate',
+                     'Continuous Edit', 'Continuous Elaborate'):
+            with self.subTest(mode=mode):
+                scope, calls = load_director()
+                args = self.kwargs()
+                args.update(edit_mode=mode, llm=SimpleNamespace(model='test'),
+                            direction_context='Wardrobe: Create New\nEnvironment: Keep Reference')
+                scope['H3CompactMultimodalEditDirector'].execute(**args)
+                system = scope['last_payload']['messages'][0]['content']
+                self.assertIn('ACTIVE DESIGN CHOICES:\nWardrobe: Create New\nEnvironment: Keep Reference', system)
+                self.assertIn('unselected choices are definitions, not instructions', system)
+                self.assertIn('Written user assignments and I2V frame-zero facts win', system)
+                self.assertIn('An explicit Keep Reference beats genre restyling', system)
+                self.assertIn('direction_controls with the complete resulting requested_wardrobe', system)
+                self.assertIn('NOT new clothes/locations at every block', system)
+                self.assertEqual(calls, ['external'])
+                self.assertEqual(scope['last_payload']['max_tokens'], 1800 if mode == 'edit' else 1200)
+
+    def test_design_choices_do_not_change_auto_or_driven_analysis(self):
+        scope, _ = load_director()
+        args = self.kwargs()
+        args.update(edit_mode='Transfer', driven_video=Frame(), llm=SimpleNamespace(model='test'))
+        cls = scope['H3CompactMultimodalEditDirector']
+        cls.execute(**args)
+        analysis = scope['payloads'][0]
+        self.assertNotIn('EXPLICIT DESIGN SCOPE', scope['last_payload']['messages'][0]['content'])
+        scope['payloads'] = []
+        args['direction_context'] = 'Wardrobe: Create New\nEnvironment: Create New'
+        cls.execute(**args)
+        self.assertEqual(analysis, scope['payloads'][0])
+        self.assertEqual(len(scope['payloads']), 2)
+        self.assertIn('EXPLICIT DESIGN SCOPE', scope['last_payload']['messages'][0]['content'])
+
+    def test_create_new_supports_controls_only_elaborate_and_hold_is_invalidated(self):
+        scope, calls = load_director()
+        args = self.kwargs()
+        args.update(edit_mode='Elaborate', edit_request='', llm=SimpleNamespace(model='test'),
+                    direction_context='Wardrobe: Create New\nEnvironment: Create New')
+        scope['H3CompactMultimodalEditDirector'].execute(**args)
+        self.assertEqual(calls, ['external'])
+        self.assertIn('ACTIVE DESIGN CHOICES', scope['last_payload']['messages'][0]['content'])
+        saved = []
+        scope['_set_held_director_plan'] = lambda key, record: saved.append(record)
+        args.update(edit_request='Create a scene.', edit_mode='Enhance')
+        scope['H3CompactMultimodalEditDirector'].execute(**args)
+        scope['_get_held_director_plan'] = lambda key: saved[-1]
+        args.update(hold_prompt=True, direction_context='Wardrobe: Keep Reference')
+        before = len(calls)
+        with self.assertRaisesRegex(RuntimeError, 'Direction Controls changed'):
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+        self.assertEqual(len(calls), before)
+
     def test_transfer_ownership_separates_motion_camera_and_appearance_without_new_calls(self):
         for source in ('source_video_1', 'driven_video'):
             with self.subTest(source=source):
@@ -182,7 +1298,10 @@ class RoutingTests(unittest.TestCase):
                 args.update(edit_mode=mode, llm=SimpleNamespace(model='test'))
                 scope['H3CompactMultimodalEditDirector'].execute(**args)
                 system = scope['last_payload']['messages'][0]['content']
-                self.assertLess(len(system.split()), ceiling)
+                cast_rules = scope['H3CompactMultimodalEditDirector'].CAST_IDENTITY_RULES
+                self.assertLess(len(cast_rules.split()), 100)
+                self.assertEqual(system.count(cast_rules), 1)
+                self.assertLess(len(system.replace(cast_rules, '').split()), ceiling)
                 for platform_rule in ('<<<image_', '@image1', 'PHOTOREAL FLAT CLOSE',
                                       'THE SPINE (LOCKED ORDER)', 'Age-blind'):
                     self.assertNotIn(platform_rule, system)
@@ -296,8 +1415,8 @@ class RoutingTests(unittest.TestCase):
             self.assertIn('TRANSFER DIRECTION CONTROLS — SCOPED OVERRIDES', system)
             self.assertIn('Genre: Cyberpunk\nMotion style: Orbit Camera', system)
             self.assertNotIn('Cyberpunk + Auto', system)
-            self.assertIn('Circle around the main subject', system)
-            self.assertIn('feature-film composition', system)
+            self.assertIn(scope['MOTION_STYLES']['Orbit Camera'], system)
+            self.assertIn(scope['VISUAL_LOOKS']['Cinematic'], system)
             self.assertIn('Genre `Cyberpunk` governs visible production design', system)
             self.assertIn('not only a neon color grade', system)
             self.assertIn('Priority: written user changes/locks', system)
@@ -662,6 +1781,56 @@ class RoutingTests(unittest.TestCase):
                     self.assertIn('existing word/token budget', system)
                     self.assertLess(system.index('EXECUTABLE FOOTAGE'), system.index('WRITER-DIRECTOR'))
 
+    def test_requested_conversations_have_an_explicit_script_contract_without_extra_calls(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate'):
+            for profile in ('Standard', 'Creative Plus'):
+                with self.subTest(mode=mode, profile=profile):
+                    scope, calls = load_director()
+                    args = self.kwargs()
+                    args.update(edit_mode=mode, creative_profile=profile,
+                                edit_request='Two travelers discuss how to catch the last train.',
+                                direction_context='Dialogue: Spanish',
+                                llm=SimpleNamespace(model='test'), max_tokens=1200)
+                    scope['H3CompactMultimodalEditDirector'].execute(**args)
+                    payload = scope['last_payload']
+                    system = payload['messages'][0]['content']
+                    for rule in ('Requested fictional conversation requires actual words',
+                                 'Choose a concrete', 'preceding line/action',
+                                 '<Subject N> (SN) says: <d>[Language] exact words</d>',
+                                 'cannot replace requested dialogue',
+                                 'Keep exact supplied words separate from delivery',
+                                 'without mouthing the other line', 'not its opening question',
+                                 'Silence, source-audio locks', 'never guess source words from frames'):
+                        self.assertIn(rule, system)
+                    self.assertNotIn('do not assume S1 equals Subject 1', system)
+                    self.assertNotIn('chronological order of first vocal events', system)
+                    props = payload['response_format']['json_schema']['schema']['properties']
+                    scene = props['edit_prompt'] if mode == 'Elaborate' else props['scene_prompts']['items']
+                    action_schema = scene['properties']['integrated_multimodal_description']
+                    self.assertIn('actual lines once', action_schema['description'])
+                    self.assertIn('No dialogue text', scene['properties']['overall_soundscape']['description'])
+                    self.assertEqual(calls, ['external'] * (2 if profile == 'Creative Plus' else 1))
+                    self.assertEqual(payload['max_tokens'], 1200)
+                    if profile == 'Creative Plus':
+                        self.assertIn('connected exchange that advances across beats',
+                                      scope['payloads'][0]['messages'][0]['content'])
+
+    def test_speech_permission_stays_distinct_from_language_and_source_preservation(self):
+        for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate', 'Transfer'):
+            scope, calls = load_director()
+            args = self.kwargs()
+            args.update(edit_mode=mode, edit_request='A silent traveler waits for the train. No dialogue.',
+                        direction_context='Dialogue: Spanish', llm=SimpleNamespace(model='test'))
+            scope['H3CompactMultimodalEditDirector'].execute(**args)
+            system = scope['last_payload']['messages'][0]['content']
+            if mode == 'Transfer':
+                self.assertNotIn('Requested fictional conversation requires actual words', system)
+                self.assertIn('Dialogue language alone does NOT authorize speech', system)
+            else:
+                self.assertIn('Selected language permits speech, not a quota. No dialogue forbids it', system)
+                self.assertIn('Silence, source-audio locks', system)
+            self.assertEqual(calls, ['external'])
+
     def test_writer_director_keeps_driven_and_i2v_contracts(self):
         for mode in ('Enhance', 'Elaborate', 'Continuous Elaborate'):
             scope, calls = load_director()
@@ -730,9 +1899,15 @@ class RoutingTests(unittest.TestCase):
         modes = next(field.options for field in schema.inputs if field.id == 'edit_mode')
         self.assertNotIn('Storyboard', modes)
         self.assertIn('Transfer', modes)
-        strength = schema.inputs[-1]
+        self.assertIn('Elaborate Plus', modes)
+        self.assertNotIn('Continuous Elaborate', modes)
+        strength = schema.inputs[-2]
         self.assertEqual(strength.id, 'driven_strength')
         self.assertEqual((strength.default, strength.min, strength.max), (3, 1, 3))
+        profile = schema.inputs[-1]
+        self.assertEqual(profile.id, 'creative_profile')
+        self.assertEqual(profile.options, ['Standard', 'Creative Plus'])
+        self.assertEqual(profile.default, 'Standard')
 
     def test_driven_scenario_transfers_activity_to_cast_in_all_modes(self):
         for mode in ('compact', 'edit', 'Elaborate', 'Enhance', 'Continuous Edit', 'Continuous Elaborate'):
@@ -1260,7 +2435,7 @@ class RoutingTests(unittest.TestCase):
         )
         self.assertGreaterEqual(payload["max_tokens"], 2 * 500)
         self.assertEqual(len(json.loads(result[0])["scene_prompts"]), 2)
-        self.assertTrue(result[1].startswith("Continuous Elaborate "))
+        self.assertTrue(result[1].startswith("Elaborate Plus "))
         self.assertEqual(calls, ["external"])
 
     def test_elaborate_seconds_control_density_and_validation(self):
@@ -1477,8 +2652,8 @@ class RoutingTests(unittest.TestCase):
             user_text = payload["messages"][1]["content"][0]["text"]
             self.assertIn("CONTROLS-ONLY ORIGINAL DIRECTION", system)
             self.assertIn("RESOLVED CONTROL SPECIFICATIONS", system)
-            self.assertIn("Circle around the main subject", system)
-            self.assertIn("feature-film composition", system)
+            self.assertIn(scope['MOTION_STYLES']['Orbit Camera'], system)
+            self.assertIn(scope['VISUAL_LOOKS']['Cinematic'], system)
             self.assertIn("No written premise was supplied", user_text)
             self.assertEqual(calls, ["external"])
 

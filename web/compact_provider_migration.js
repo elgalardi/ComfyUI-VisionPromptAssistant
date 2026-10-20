@@ -14,7 +14,9 @@ export function migrateCompactProviderNode(node) {
         delete named.api_key;
         delete named.model;
     }
-    const rename = value => ({deep_edit: "edit", continuous: "Enhance", "Edit Continuo": "Continuous Edit"})[value] ?? value;
+    const rename = value => ({deep_edit: "edit", continuous: "Enhance", "Edit Continuo": "Continuous Edit",
+        "Continuous Elaborate": "Elaborate Plus", "Elaborate Continuo": "Elaborate Plus",
+        continuous_elaborate: "Elaborate Plus"})[value] ?? value;
     if (Array.isArray(node.widgets_values)) {
         node.widgets_values[1] = rename(node.widgets_values[1]);
     }
