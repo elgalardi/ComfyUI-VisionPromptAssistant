@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("../web/compact_provider_migration.js", import.meta.url), "utf8");
 const isolated = source.replace('import { app } from "/scripts/app.js";',
     'const app = { registerExtension() {} };');
-const { migrateCompactProviderNode } = await import("data:text/javascript," + encodeURIComponent(isolated));
+const { migrateCompactProviderNode, migratePromotedNode } = await import("data:text/javascript," + encodeURIComponent(isolated));
 
 for (const mode of ["Continuous Elaborate", "Elaborate Continuo", "continuous_elaborate", "Elaborate Plus"]) {
     const node = { type: "H3CompactMultimodalEditDirector",
@@ -27,3 +27,20 @@ const unrelated = { type: "OtherNode", widgets_values: ["Request", "Continuous E
 migrateCompactProviderNode(unrelated);
 assert.equal(unrelated.widgets_values[1], "Continuous Elaborate");
 console.log("Director mode migration tests passed.");
+
+for (const [oldType, newType] of [["H3CompactMultimodalEditDirectorFix", "H3CompactMultimodalEditDirector"], ["H3CompactDirectionControlsFix", "H3CompactDirectionControls"]]) {
+    const saved = {type: oldType, widgets_values: ["Normal", "Keep Guide"], inputs: [{link: 99}], outputs: [{links: [101]}]};
+    const before = structuredClone(saved);
+    migratePromotedNode(saved);
+    assert.equal(saved.type, newType);
+    assert.deepEqual(saved.widgets_values, before.widgets_values);
+    assert.deepEqual(saved.inputs, before.inputs);
+    assert.deepEqual(saved.outputs, before.outputs);
+}
+const controls = {type: "H3CompactDirectionControls", widgets_values: ["Comedy", "none", "Fast Motion", "none", "Film", "none", "Spanish", "Create New", "Keep Reference", "Auto"]};
+migratePromotedNode(controls);
+assert.deepEqual(controls.widgets_values, ["Comedy", "none", "Fast Motion", "Film", "Spanish", "Auto", "none", "Create New", "Auto", "Keep Reference", "Auto", "none", "Swap"]);
+const once = structuredClone(controls);
+migratePromotedNode(controls);
+assert.deepEqual(controls, once);
+console.log("Promoted node migration tests passed.");

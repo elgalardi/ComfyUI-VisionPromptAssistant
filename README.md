@@ -1,6 +1,6 @@
 # Vision Prompt Assistant 2.0
 
-Compact MiniMax H3 and Music 3 prompt directors with interchangeable LLM loaders.
+Compact MiniMax H3 prompt directors with interchangeable LLM loaders.
 
 ## Included nodes
 
@@ -10,12 +10,10 @@ Compact MiniMax H3 and Music 3 prompt directors with interchangeable LLM loaders
 
 - `PreviewVisionPrompt`: display prompt text without saving a file.
 
-- `H3CompactMultimodalEditDirector`: compact/edit/elaborate and continuous scene
-  prompts, with optional references or text-only requests.
+- `H3CompactMultimodalEditDirector`: the proven enhanced director, now the default,
+  with Normal, Compact, Edit and Transfer modes and optional image/video guides.
 - `H3CompactDirectionControls`: genre, motion, visual look and dialogue controls.
 - `H3CompactPromptSelect`: select one prompt from structured scene output.
-- `MiniMaxMusic3CompactDirector`: music brief, supplied or generated lyrics,
-  and instrumental mode. Retained for later music testing.
 - `H3OpenRouterModel`: OpenRouter provider; key input or `OPENROUTER_API_KEY`.
 - `H3OllamaModel`: local Ollama provider.
 - `H3LLMModelAPI`: compatible external chat-completion API provider.
@@ -30,6 +28,13 @@ the sampler seed (range 0–4294967295). Reusing a seed does not guarantee an
 external LLM will return identical text: save and reuse the generated prompt
 when exact prompt recall is needed. Hold data is stored in
 `output/Sexy AI Studio/director_hold/plans.json`.
+
+## Updated public nodes
+
+The tested Fix director and Direction Controls now replace the original public nodes.
+Saved Fix node IDs are migrated on workflow load. Vision Prompt Assistant — Fix,
+H3 LoRA Select — Fix and MiniMax Music 3 Compact Director have been removed.
+The original Vision Prompt Assistant remains available.
 
 ## Transfer mode
 

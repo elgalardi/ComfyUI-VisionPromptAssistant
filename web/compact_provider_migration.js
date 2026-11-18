@@ -23,11 +23,46 @@ export function migrateCompactProviderNode(node) {
     if (named?.edit_mode) named.edit_mode = rename(named.edit_mode);
 }
 
+// Promote proven nodes without changing saved connections or Fix widget order.
+export function migratePromotedNode(node) {
+    const aliases = {
+        H3CompactMultimodalEditDirectorFix: "H3CompactMultimodalEditDirector",
+        H3CompactDirectionControlsFix: "H3CompactDirectionControls",
+    };
+    const promoted = aliases[node?.type];
+    if (promoted) {
+        node.type = promoted;
+        if (node.title?.endsWith(" — Fix")) node.title = node.title.slice(0, -6);
+        return;
+    }
+    if (node?.type === "H3CompactDirectionControls" && Array.isArray(node.widgets_values)
+            && node.widgets_values.length === 10) {
+        const [genre, , motion, , look, , dialogue, wardrobe, environment, body] = node.widgets_values;
+        node.widgets_values = [genre, "none", motion, look, dialogue, "Auto", "none",
+            wardrobe, "Auto", environment, body, "none", "Swap"];
+    }
+    if (node?.type === "H3CompactMultimodalEditDirector") {
+        const modes = { Enhance: "Normal", Elaborate: "Normal", "Elaborate Plus": "Normal",
+            "Continuous Elaborate": "Normal", "Elaborate Continuo": "Normal",
+            continuous_elaborate: "Normal", "Continuous Edit": "Edit", "Edit Continuo": "Edit",
+            compact: "Compact", edit: "Edit", deep_edit: "Edit", continuous: "Normal" };
+        if (Array.isArray(node.widgets_values)) {
+            node.widgets_values[1] = modes[node.widgets_values[1]] ?? node.widgets_values[1];
+            // Retired Driven Strength and Creative Profile were the final two widgets.
+            if (["Standard", "Creative Plus"].includes(node.widgets_values.at(-1))
+                    && Number.isInteger(node.widgets_values.at(-2))) node.widgets_values.splice(-2, 2);
+        }
+        const named = node.widgets_values_named;
+        if (named?.edit_mode) named.edit_mode = modes[named.edit_mode] ?? named.edit_mode;
+    }
+}
+
 app.registerExtension({
     name: "h3.compact.externalProviderMigration",
     beforeConfigureGraph(graphData) {
         for (const node of graphData?.nodes ?? []) {
             migrateCompactProviderNode(node);
+            migratePromotedNode(node);
             if (node.type !== "H3CompactMultimodalEditDirector") continue;
             const slot = node.outputs?.findIndex(o => o.name === "credits_remaining") ?? -1;
             if (slot < 0) continue;

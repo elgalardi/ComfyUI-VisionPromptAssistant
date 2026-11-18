@@ -4,6 +4,7 @@ import importlib
 import io as binary_io
 import json
 import os
+import re
 
 import folder_paths
 import numpy as np
@@ -92,6 +93,43 @@ def qwen_messages(messages, schema):
     return "".join(parts), images
 
 
+def _local_qwen_json(text, schema):
+    """Extract a complete response without merging objects or repairing missing data."""
+    text = str(text).strip()
+    if "<think>" in text:
+        if "</think>" not in text:
+            raise ValueError("Reasoning was truncated before the final JSON response.")
+        text = text.rsplit("</think>", 1)[1].strip()
+    decoder = json.JSONDecoder()
+    required = set(schema.get("required", []))
+    candidates = {}
+    cursor = 0
+    while cursor < len(text):
+        start = re.search(r"[\[{]", text[cursor:])
+        if start is None:
+            break
+        offset = cursor + start.start()
+        try:
+            value, end = decoder.raw_decode(text, offset)
+        except json.JSONDecodeError:
+            cursor = offset + 1
+            continue
+        cursor = end
+        expected = schema.get("type", "object")
+        if expected == "object":
+            compatible = isinstance(value, dict) and required.issubset(value)
+        else:
+            compatible = expected == "array" and isinstance(value, list)
+        if compatible:
+            canonical = json.dumps(value, ensure_ascii=False, sort_keys=True)
+            candidates[canonical] = value
+    if len(candidates) > 1:
+        raise ValueError("Multiple different JSON answers matched the requested fields. Generate again.")
+    if not candidates:
+        raise ValueError("No complete JSON answer matched the requested fields. The response may be malformed or truncated; increase max_tokens if it ends mid-answer.")
+    return json.dumps(next(iter(candidates.values())), ensure_ascii=False)
+
+
 class QwenLocalConnection:
     def __init__(self, clip_name, clip_type, load_device):
         self.model = clip_name
@@ -115,16 +153,10 @@ class QwenLocalConnection:
             seed=int(payload.get("seed", 0)),
         )
         text = clip.decode(generated).strip()
-        # Tolerate fenced JSON, but never rewrite its semantics or invent fields.
-        if text.startswith("\x60\x60\x60") and text.endswith("\x60\x60\x60"):
-            text = text.split("\n", 1)[-1].rsplit("\x60\x60\x60", 1)[0].strip()
         try:
-            json.loads(text)
-        except json.JSONDecodeError as error:
-            raise RuntimeError(
-                "Local Qwen returned invalid/truncated JSON. Increase max_tokens "
-                "or reduce the scene count; no paid fallback was called."
-            ) from error
+            text = _local_qwen_json(text, schema)
+        except ValueError as error:
+            raise RuntimeError(f"Local Qwen: {error}") from error
         return {"choices": [{"message": {"content": text}}], "usage": {}}
 
 

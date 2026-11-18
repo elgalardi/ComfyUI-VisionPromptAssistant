@@ -1,13 +1,11 @@
-"""Compact H3 and Music 3 directors with interchangeable LLM providers."""
+"""Compact H3 directors with interchangeable LLM providers."""
 from comfy_api.latest import ComfyExtension, io, ui
 
-from .story_director import (
-    H3LLMModelAPI, H3OllamaModel, H3CompactDirectionControls,
-    H3CompactMultimodalEditDirector,
-)
+from .story_director import H3LLMModelAPI, H3OllamaModel
+from .story_director_fix import H3CompactMultimodalEditDirectorFix as H3CompactMultimodalEditDirector
+from .direction_controls_fix import H3CompactDirectionControlsFix as H3CompactDirectionControls
 from .compact_llm_providers import H3OpenRouterModel, H3QwenLocalModel
 from .compact_prompt_select import H3CompactPromptSelect
-from .music_director import MiniMaxMusic3CompactDirector
 from .local_vision_prompt import LocalVisionPromptGenerator
 from .visual_sheet_director import VisualSheetDirector
 from .optional_reference_resize import OptionalReferenceResize
@@ -39,8 +37,9 @@ class LocalVisionPromptExtension(ComfyExtension):
         return [
             PreviewVisionPrompt,
             LocalVisionPromptGenerator,
-            H3CompactMultimodalEditDirector, H3CompactDirectionControls,
-            H3CompactPromptSelect, MiniMaxMusic3CompactDirector,
+            H3CompactMultimodalEditDirector,
+            H3CompactDirectionControls,
+            H3CompactPromptSelect,
             VisualSheetDirector,
             OptionalReferenceResize,
             H3OpenRouterModel, H3OllamaModel, H3LLMModelAPI, H3QwenLocalModel,
