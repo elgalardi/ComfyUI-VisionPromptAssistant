@@ -9,5 +9,6 @@
   "H3OpenRouterModel": "H3 OpenRouter Model",
   "H3OllamaModel": "H3 Ollama Model",
   "H3LLMModelAPI": "H3 LLM Model API",
-  "H3QwenLocalModel": "H3 Qwen Local Model"
+  "H3QwenLocalModel": "H3 Qwen Local Model",
+  "LLMVisionPromptAssistant": "Vision Prompt Assistant — LLM"
 }

@@ -1,6 +1,6 @@
 [project]
 name = "vision-prompt-assistant"
-version = "3.0.0"
+version = "3.1.0"
 description = "Compact MiniMax H3 directors with OpenRouter, Ollama, API and local LLM providers."
 license = { file = "LICENSE" }
 requires-python = ">=3.10"

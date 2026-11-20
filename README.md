@@ -8,6 +8,11 @@ Compact MiniMax H3 prompt directors with interchangeable LLM loaders.
   prompting with up to three images, system/user prompts and sampling controls.
   The original node ID and sockets are preserved for existing workflows.
 
+- `LLMVisionPromptAssistant` (Vision Prompt Assistant — LLM): simple prompt writing
+  with interchangeable local/API providers, up to three images, editable system
+  and user prompts, temperature and output budget. Returns plain prompt text.
+  Connect any package LLMMODEL loader; image requests require a vision-capable model.
+
 - `PreviewVisionPrompt`: display prompt text without saving a file.
 
 - `H3CompactMultimodalEditDirector`: the proven enhanced director, now the default,
