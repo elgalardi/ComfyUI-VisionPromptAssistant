@@ -14,6 +14,16 @@
 - Cuts without a usable time (including speaker-change cuts) are placed by how
   much text and dialogue comes before them instead of the midpoint.
 - Removed the "Fix" wording from the director's descriptions and console logs.
+- H3 Compact Multimodal Edit Director (v147), Normal and Compact: prompts follow
+  the layout MiniMax documents for each input mode. Text to video: only
+  integrated_multimodal_description / overall_soundscape / non_diegetic_music,
+  style at the start of [Shot 1], people described in words. Image to video:
+  the alignment line plus those three fields. Reference pictures: the six
+  Ref2VA sections with the task in summary ([reference generation], plus
+  keyframe completion when Picture 1 is also the first frame). Cuts use
+  "the camera cuts to". Transfer and Edit keep their layouts.
+- Dialogue that crosses a cut is written in two parts with <scenetrans> at
+  both connecting points, as the official guide asks.
 
 ## 2.0.0 - 2026-09-15
 

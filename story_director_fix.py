@@ -115,7 +115,7 @@ class _DrivenCapture(Exception):
 
 
 class H3CompactMultimodalEditDirectorFix(_Base):
-    VERSION_TAG = "v146"
+    VERSION_TAG = "v147"
 
     # ------------------------------------------------------------------ rules
     DEFAULT_SYSTEM_PROMPT = """
@@ -241,8 +241,10 @@ non_diegetic_music:
   Inside <d> only the language tag and the exact words; supplied lines stay verbatim, untranslated.
   While one subject speaks, the others have closed mouths and active listening behaviour: in every shot
   with speech, name who speaks and state the other visible faces' lips closed. `<cutoff>`
-  when speech is cut by the end of the clip; `<scenetrans>` where dialogue/audio continues over a
-  cut; voiceover as "says in an off-screen voiceover" with the visible lips stated closed.
+  when speech is cut by the end of the clip. A line that continues over a cut is written in two
+  parts, one per shot, each with `<scenetrans>` at the connecting point, and the shot says the voice
+  "continues seamlessly across the cut". Voiceover as "says in an off-screen voiceover" with the
+  visible lips stated closed.
 - overall_soundscape: 1–4 sentences of ambience, physical action sounds and non-verbal human sound;
   no dialogue or diegetic music; `N/A` only if total silence was requested.
 - non_diegetic_music: 1–3 sentences of instrumentation, tempo, rhythm and dynamic development, never
@@ -3900,7 +3902,8 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 out = H3CompactMultimodalEditDirectorFix._outfit_at_start(out)
             if _CLIP.get("task") in ("edit", "add") and _CLIP.get("mode") == "transfer":
                 out = H3CompactMultimodalEditDirectorFix._scope_edit_pictures(out)
-            if _CLIP.get("i2v") and _CLIP.get("mode") != "transfer":  # I2V only: official first-frame layout
+            official = _CLIP.get("mode") in ("normal", "compact") and not _CLIP.get("video_edit")
+            if _CLIP.get("i2v") and _CLIP.get("mode") != "transfer" and not official:  # official first-frame layout
                 out = H3CompactMultimodalEditDirectorFix._to_i2va(out)
             if isinstance(out, str) and _CLIP.get("body_neutral"):  # the picture carries the body
                 out = H3CompactMultimodalEditDirectorFix._neutral_body(out)
@@ -3912,6 +3915,11 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 out = H3CompactMultimodalEditDirectorFix._deep_focus(out)
             if isinstance(out, str) and not _CLIP.get("keep_audio"):
                 out = H3CompactMultimodalEditDirectorFix._silent_listeners(out)
+            if isinstance(out, str) and official:  # the layout MiniMax documents for each input mode
+                try:
+                    out = H3CompactMultimodalEditDirectorFix._official_layout(out)
+                except Exception:  # noqa: BLE001 - a layout step never breaks the prompt
+                    pass
             if isinstance(out, str) and store:
                 out = H3CompactMultimodalEditDirectorFix._unmask_d(out, store)
             if _CLIP.get("keep_audio") and isinstance(out, str):  # the source audio is the final audio
@@ -4020,6 +4028,157 @@ In sequences carry the same grammar across scenes and continue paths and states 
             if f"{section}:" not in body:
                 body = body.rstrip() + f"\n\n{section}:\nN/A"
         return cls.I2V_ALIGNMENT + "\n\n" + body.strip()
+
+    _LAYOUT_SECTIONS = ("subject_definitions", "summary", "retention_analysis", "integrated_multimodal_description",
+                        "detailed_description", "overall_soundscape", "non_diegetic_music")
+
+    @classmethod
+    def _layout_sections(cls, text):
+        heads = list(re.finditer(r"(?m)^(" + "|".join(cls._LAYOUT_SECTIONS) + r"):[ \t]*\n?", text))
+        found = {}
+        for index, head in enumerate(heads):
+            end = heads[index + 1].start() if index + 1 < len(heads) else len(text)
+            found[head.group(1)] = text[head.end():end].strip()
+        return found
+
+    @staticmethod
+    def _short_name(description):
+        """'a woman in her early 30s, with dark hair' -> 'the woman in her early 30s'; a name stays a name."""
+        first = re.split(r",|;|\s+(?:with|wearing|who|whose|seen|in|on|at|of|from|by|near)\s+",
+                         re.sub(r"\s+", " ", description).strip())[0].strip(" .")
+        words = first.split()[:7]
+        short = " ".join(words) or "the person"
+        if re.match(r"(?i)(?:a|an)\b", short):
+            short = "the" + short[short.index(" "):] if " " in short else "the person"
+        elif not re.match(r"(?i)(?:the|his|her|their|its)\b", short) and not short[:1].isupper():
+            short = "the " + short
+        return short
+
+    @classmethod
+    def _official_layout(cls, text):
+        """Write the prompt in the layout MiniMax documents for its input mode (skill h3-prompt-writing):
+        - no reference pictures: T2VA, only integrated_multimodal_description / overall_soundscape /
+          non_diegetic_music, the style at the start of [Shot 1] and the people described in words (no labels);
+        - one picture that is the first frame: I2VA, the alignment line, then the same three fields;
+        - reference pictures: Ref2VA, the six sections subject_definitions / summary (task in brackets) /
+          retention_analysis / detailed_description / overall_soundscape / non_diegetic_music; a picture that is
+          also the first frame adds keyframe completion and its own <Picture 1> line."""
+        if not isinstance(text, str) or not re.search(r"(?m)^(?:integrated_multimodal_description|detailed_description):",
+                                                       text):
+            return text
+        if re.search(r"(?m)^(?:summary|retention_analysis):", text):
+            return text  # already in a six-section layout
+        first_frame = cls.I2V_ALIGNMENT in text
+        # MiniMax's own cut wording (the post-processor keeps cuts internally as 'cut to')
+        text = re.sub(r"(\[Shot \d+\] At \d\d:\d\d\.\d{3}, )cut (back )?to\b",
+                      lambda m: f"{m.group(1)}the camera cuts {m.group(2) or ''}to", text)
+        body = re.sub(r"For the target video, at 0\.00 seconds into the target video, <Picture 1> \(from[^)]*\) is fully "
+                      r"referenced\.?[ \t]*", "", text).strip()
+        body = re.sub(r"^\s*\[[^\]\n]+\]\s*\n", "", body).strip()  # the old single header
+        parts = cls._layout_sections(body)
+        description = parts.get("integrated_multimodal_description") or parts.get("detailed_description") or ""
+        sound = parts.get("overall_soundscape") or "N/A"
+        music = parts.get("non_diegetic_music") or "N/A"
+        definitions = []
+        for line in (parts.get("subject_definitions") or "").split("\n"):
+            match = re.match(r"\s*(<Subject \d+>)\s*(?:\(S[\d, S]+\)\s*)?(?:is|are)\s+(.+?)\s*$", line)
+            if match:
+                definitions.append((match.group(1), match.group(2).rstrip("."), line.strip()))
+        pictures = sorted(set(re.findall(r"<Picture \d+>", body)))
+        references = [p for p in pictures if not (first_frame and p == "<Picture 1>")]
+        if references or (first_frame and len(pictures) > 1):
+            return cls._ref2va_layout(description, sound, music, definitions, parts, first_frame)
+        # T2VA / I2VA: the style opens [Shot 1]; every subject is introduced in words once, then named briefly
+        preamble, marker, shots = description.partition("[Shot 1]")
+        if not marker:
+            preamble, shots = "", description
+        names, intro = {}, []
+        for label, described, _ in definitions:
+            if first_frame and "<Picture 1>" in described:
+                described = re.split(r"\s+(?:Target appearance|Wardrobe|Body proportions)\b", described)[0].rstrip(" .;,:")
+                described += ", exactly as seen in <Picture 1> at 0.00 seconds"
+            names[label] = cls._short_name(described)
+            intro.append(described)
+        seen = {}
+        for label, short in list(names.items()):  # two people never share one name
+            if short in seen:
+                for other in (label, seen[short]):
+                    full = next(d for l, d, _ in definitions if l == other)
+                    names[other] = cls._short_name(re.sub(r"\s+(in|of|from|at)\s+", r" \1_", full, 1)).replace("_", " ")
+            seen[short] = label
+        if len(set(names.values())) < len(names):
+            for order, label in enumerate(sorted(names), 1):
+                names[label] = f"{names[label]} ({['first', 'second', 'third', 'fourth', 'fifth'][min(order, 5) - 1]})"
+
+        def rename(chunk):
+            def one(match):
+                name = names.get(match.group(0))
+                if not name:
+                    return match.group(0)
+                before = chunk[:match.start()].rstrip()
+                start = not before or before[-1] in ".!?:]" or before.endswith("</d>")
+                return name[:1].upper() + name[1:] if start else name
+            return re.sub(r"<Subject \d+>", one, chunk)
+        opening = preamble.strip()
+        if intro:
+            features = intro[0] if len(intro) == 1 else "; ".join(intro[:-1]) + "; and " + intro[-1]
+            opening = (opening + " " if opening else "") + "The scene features " + features + "."
+        shots = shots.strip()
+        layout = "integrated_multimodal_description:\n[Shot 1] " + rename((opening + " " + shots).strip()) if names else \
+            "integrated_multimodal_description:\n[Shot 1] " + (opening + " " + shots).strip()
+        layout += "\n\noverall_soundscape:\n" + (rename(sound) if names else sound)
+        layout += "\n\nnon_diegetic_music:\n" + (rename(music) if names else music)
+        return (cls.I2V_ALIGNMENT + "\n\n" + layout) if first_frame else layout
+
+    @classmethod
+    def _ref2va_layout(cls, description, sound, music, definitions, parts, first_frame):
+        task = "reference generation" + (" + keyframe completion" if first_frame else "")
+        lines = [line for _, _, line in definitions] or [
+            line.strip() for line in (parts.get("subject_definitions") or "").split("\n")
+            if line.strip() and line.strip().upper() != "N/A"]
+        if first_frame and not any(line.startswith("<Picture 1>") for line in lines):
+            lines.append("<Picture 1> is the first frame of [Shot 1]; the video opens exactly on it.")
+        markers = [(int(m.group(1)), m.start()) for m in re.finditer(r"\[Shot (\d+)\]", description)]
+
+        def shots_of(label):
+            found = []
+            for index, (number, start) in enumerate(markers):
+                end = markers[index + 1][1] if index + 1 < len(markers) else len(description)
+                if label in description[start:end]:
+                    found.append(f"[Shot {number}]")
+            return found
+        retention, referenced = [], []
+        for label, described, _ in definitions:
+            source = re.search(r"<Picture \d+>", described)
+            if not source:
+                continue
+            referenced.append((label, source.group(0)))
+            traits = re.split(r"\s+(?:Target appearance|Wardrobe|Body proportions)\b", described)[0]
+            traits = traits.split(source.group(0), 1)[-1].strip(" ,.;:")
+            traits = re.sub(r"^(?:with|wearing)\s+", "", traits) or f"the identity and appearance from {source.group(0)}"
+            where = shots_of(label)
+            changed = re.search(r"(?i)\b(?:Target appearance|Wardrobe:|now wears|instead of|replac)", described)
+            status = ("partially_preserved - the identity is retained while the appearance follows the description"
+                      if changed else f"fully_preserved - {traits} are retained")
+            retention.append(f"{label}" + (f" (appears in {', '.join(where)})" if where else "") + f": {status}.")
+        if first_frame:
+            retention.append("<Picture 1>: fully_preserved - its composition, subjects and light are the opening frame "
+                             "of [Shot 1].")
+        opening = re.split(r"\[Shot 1\]", description, 1)
+        action = opening[1] if len(opening) > 1 else description
+        action = re.split(r"(?<=[.!?])\s+", re.sub(r"<d>.*?</d>|\x00\d+\x00", "", action).strip(), 1)[0]
+        action = " ".join(action.split()[:40]).rstrip(" ,;:.!?")
+        cast = ", ".join(f"{label} from {source}" for label, source in referenced)
+        count = max(1, len(markers))
+        summary = (f"[{task}] The target video unfolds over {count} shot{'s' if count > 1 else ''}"
+                   + (f" with {cast}" if cast else "") + (f". {action[:1].upper() + action[1:]}" if action else "")
+                   + (". <Picture 1> is the opening frame." if first_frame else "")).rstrip(".") + "."
+        return ("subject_definitions:\n" + ("\n".join(lines) or "N/A")
+                + "\n\nsummary:\n" + summary
+                + "\n\nretention_analysis:\n" + ("\n".join(retention) or "N/A")
+                + "\n\ndetailed_description:\n" + description.strip()
+                + "\n\noverall_soundscape:\n" + sound
+                + "\n\nnon_diegetic_music:\n" + music)
 
     @staticmethod
     def _order_reference_subjects(prompt):
