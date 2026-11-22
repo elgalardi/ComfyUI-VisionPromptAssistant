@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- H3 Compact Multimodal Edit Director (v146): posture survives cuts. Every shot
+  after a cut restates where each subject is and how (seated, standing,
+  kneeling, lying); a post-processor adds ", still seated on the sofa," when
+  a later shot forgets it, and keeps changes the shot itself shows.
+- Cuts written in MiniMax's official wording ("the camera cuts to", "the shot
+  transitions to") are kept as timed cuts instead of being dropped or doubled;
+  "cut back to" keeps "back".
+- The shot budget is enforced in code: extra cuts become camera motion inside
+  the same shot. Every shot lasts at least 2 s, including the first and last.
+- Cuts without a usable time (including speaker-change cuts) are placed by how
+  much text and dialogue comes before them instead of the midpoint.
+- Removed the "Fix" wording from the director's descriptions and console logs.
+
 ## 2.0.0 - 2026-09-15
 
 - Breaking cleanup: removed legacy image/video/storyboard/LTX directors,

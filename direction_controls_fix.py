@@ -1,6 +1,6 @@
-"""Direction Controls — Fix: genre, situation, motion, look, dialogue and design choices; heat, pace, cuts and violence come from the request.
+"""Direction Controls: genre, situation, motion, look, dialogue and design choices; heat, pace, cuts and violence come from the request.
 
-The node only writes plain `Label: value` lines. The director Fix node
+The node only writes plain `Label: value` lines. The director node
 (story_director_fix.py) reads them and carries their meaning into its rules.
 Everything the original node emits is unchanged; the new lines are additions.
 """

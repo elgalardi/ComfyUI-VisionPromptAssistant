@@ -1,4 +1,4 @@
-"""H3 Director — Fix: a leaner, decision-making variant of the compact director.
+"""H3 Compact Multimodal Edit Director: the official, decision-making compact director.
 
 It subclasses ``H3CompactMultimodalEditDirector`` (same inputs/outputs, same
 execution engine, hold cache and provider routing) and only overrides:
@@ -9,7 +9,7 @@ execution engine, hold cache and provider routing) and only overrides:
   lock, no on-screen text, physics);
 * ``execute``: direction-control rules, retries and output clean-up.
 
-The original node stays untouched. Hold cache is isolated (``cls.__name__``).
+The base engine stays in story_director.py. Hold cache is isolated (``cls.__name__``).
 """
 import contextvars
 import inspect
@@ -115,7 +115,7 @@ class _DrivenCapture(Exception):
 
 
 class H3CompactMultimodalEditDirectorFix(_Base):
-    VERSION_TAG = "Fix v145"
+    VERSION_TAG = "v146"
 
     # ------------------------------------------------------------------ rules
     DEFAULT_SYSTEM_PROMPT = """
@@ -222,9 +222,15 @@ non_diegetic_music:
   subjects: `N/A`.
 - integrated_multimodal_description: open with one or two English sentences setting style and
   initial composition, then `[Shot 1]` (never a timestamp). Later shots: `[Shot 2] At 00:SS.mmm, ...`
-  with strictly increasing times inside the clip. A cut must bring NEW information (subject, space,
-  state, viewpoint or time); a small angle or distance change is camera motion instead. Keep positions
-  explicit in multi-subject coverage; props and contacts must be visible in frame.
+  with strictly increasing times inside the clip; every shot lasts at least 2 seconds, the first cut
+  comes after 2 seconds and the last cut at least 2 seconds before the end. A cut must bring NEW
+  information (subject, space, state, viewpoint or time); a small angle or distance change is camera
+  motion instead. Keep positions explicit in multi-subject coverage; props and contacts must be
+  visible in frame.
+- A cut never changes the physical state: every shot after a cut restates, for each visible subject,
+  where they are and their level exactly as the previous shot left them (still seated on the sofa,
+  still standing at the bar, kneeling, lying), what they hold and any garment already changed. A
+  posture changes only on screen inside a shot (she stands up), never across a cut.
 - Camera motion is written as natural action with type, amplitude and speed ("pushes in with small
   amplitude at slow speed toward the folded letter"); omit amplitude/speed when medium/normal; no
   stacked camera labels at the end of sentences.
@@ -1372,7 +1378,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 if "no usable content" not in str(error) and "no completion choices" not in str(error):
                     raise
                 last_error = error
-                print("[H3 Director Fix] Driven analysis returned no content; retrying once")
+                print("[H3 Director] Driven analysis returned no content; retrying once")
                 continue
             if not isinstance(raw, str):
                 return cls._normalize_blueprint(raw), usage, payload
@@ -1391,8 +1397,8 @@ In sequences carry the same grammar across scenes and continue paths and states 
                     _CLIP["blueprint_cache"] = (json.loads(json.dumps(normalized)), usage, payload)
                     return cls._mask_blueprint(normalized), usage, payload
             payload = dict(payload, max_tokens=min(2400, int(payload["max_tokens"] * 1.5)))
-            print(f"[H3 Director Fix] Driven analysis unreadable ({last_error}); retrying once")
-        print("[H3 Director Fix] Driven analysis unusable twice; continuing from the request and references")
+            print(f"[H3 Director] Driven analysis unreadable ({last_error}); retrying once")
+        print("[H3 Director] Driven analysis unusable twice; continuing from the request and references")
         _CLIP["driven_note"] = (" · ⚠ guide analysis unusable: movement fidelity lost, scenario from the request, "
                                 "references and controls")
         _CLIP["blueprint_cache"] = (cls._normalize_blueprint({}), usage, payload)  # retries do not pay for it again
@@ -2669,7 +2675,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
 
     @classmethod
     def control_notes(cls, direction_text):
-        """Meaning of the extra Direction Controls Fix lines, as short rules for the system prompt."""
+        """Meaning of the extra Direction Controls lines, as short rules for the system prompt."""
         notes = []
         for raw in str(direction_text or "").splitlines():
             label, _, value = raw.partition(":")
@@ -2888,7 +2894,8 @@ In sequences carry the same grammar across scenes and continue paths and states 
         "topic, a laugh, a disagreement, a confession, more tension or complicity) and the clip builds to a small "
         "landing instead of 'they keep talking'. Lines are short and answer each other, with pauses filled by "
         "reactions. Between cuts the camera stays alive (a slow push-in on the key line, a rack focus, a light "
-        "handheld drift). Each new shot names who is in it by label (<Subject N>) and where, briefly, without repeating their "
+        "handheld drift). Each new shot names who is in it by label (<Subject N>), where they are and their posture as the "
+        "previous shot left it (still seated, still standing), briefly, without repeating their "
         "description.")
     OUTFIT_CUES = {
         "casual": "relaxed everyday basics (tees, denim, sneakers)", "urban streetwear": "oversized hoodies, cargo pants, sneakers, caps, bold logos",
@@ -3101,7 +3108,9 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 "state or time); a pan or reframe is camera motion, not a cut. Use one shot only for an "
                 "uninterrupted take, a locked source or a requested single take (a locked-off camera still allows cuts; an I2V "
                 "opening only fixes the first frame, cuts may follow it). Never more than "
-                + str(cls.max_shots(seconds)) + " shots in a clip, and never write a [Shot n] marker for something that is not a cut. "
+                + str(cls.max_shots(seconds)) + " shots in a clip, each at least 2 s long, and never write a [Shot n] marker for "
+                "something that is not a cut. After every cut the people keep the posture and place the previous shot left "
+                "them in (seated stays seated) unless the new shot shows them change it. "
                 + cls.long_take_note(seconds)
             )
         return cls.CONTINUITY_NOTE + (
@@ -3121,7 +3130,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
         r"dutch|handheld close)", re.IGNORECASE)
 
     @staticmethod
-    def _timecode_shots(text, seconds):
+    def _timecode_shots(text, seconds, store=None):
         """Keep only real cuts as '[Shot N] At 00:SS.mmm, cut to ...': a marker that only describes camera
         motion or action is merged into the previous shot, a cut without a time gets one, and the
         survivors are renumbered."""
@@ -3131,7 +3140,12 @@ In sequences carry the same grammar across scenes and continue paths and states 
         text = re.sub(r"(?<!\] )(?<!\])\bAt (\d\d:\d\d(?:\.\d+)?),?\s+(?=cut to\b)",
                       r"[Shot 99] At \1, ", text)
         text = re.sub(r"(?<!\] )(?<!\])\bAt \d\d:\d\d(?:\.\d+)?,?\s+(?=[Tt]he camera\b)", "", text)
-        text = re.sub(r"(?<!\] )(?<!\])\b[Cc]ut back to\b", "[Shot 99] cut to", text)
+        def official(m):  # MiniMax's own wording ('the camera cuts to', 'the shot transitions to') is a cut
+            before = text[max(0, m.start() - 40):m.start()]
+            marked = re.search(r"\[Shot \d+\](?:\s*At \d\d:\d\d(?:\.\d+)?,?)?\s*$", before)
+            return ("" if marked else "[Shot 99] ") + ("cut back to" if m.group(1) else "cut to")
+        text = re.sub(r"\b[Tt]he (?:camera|shot) (?:cuts|transitions|changes|switches) (back )?to\b", official, text)
+        text = re.sub(r"\b[Cc]ut (back )to\b", official, text)
         marker = re.compile(r"\[Shot (\d+)\]")
         found = [m for m in marker.finditer(text) if int(m.group(1)) >= 2]
         if not found:
@@ -3141,7 +3155,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
             tail = text[m.end():]
             head = re.match(r"\s*(?:At (\d\d:\d\d(?:\.\d+)?),?)?\s*", tail)
             stamp, rest = head.group(1), tail[head.end():]
-            if re.match(r"cut to\b", rest, flags=re.IGNORECASE) or (
+            if re.match(r"cut (?:back )?to\b", rest, flags=re.IGNORECASE) or (
                     stamp and not re.match(r"(?:the )?camera\b", rest, flags=re.IGNORECASE)) or re.match(
                     r"(?:in|inside|outside|back (?:in|at)|meanwhile|later)\b", rest, flags=re.IGNORECASE):
                 kind = "cut"
@@ -3153,10 +3167,10 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 kind = "cut"  # a declared shot with new content stays a shot
             if _CLIP.get("single_take"):
                 kind = "merge"  # Coverage Single take: no cuts at all
-            if kind == "cut" and not re.match(r"cut to\b", rest, flags=re.IGNORECASE):
+            if kind == "cut" and not re.match(r"cut (?:back )?to\b", rest, flags=re.IGNORECASE):
                 kind = "cut_add"  # a real cut written without 'cut to': the marker gets it
             parsed.append((m, kind, stamp, head.end()))
-        cls._fix_shot_times(parsed, seconds)
+        cls._fix_shot_times(parsed, seconds, text, store)
         out, last, number = [], 0, 1
         for m, kind, stamp, consumed in parsed:
             out.append(text[last:m.start()])
@@ -3179,51 +3193,193 @@ In sequences carry the same grammar across scenes and continue paths and states 
         out.append(text[last:])
         return "".join(out)
 
+    MIN_SHOT = 2.0
+
     @staticmethod
-    def _fix_shot_times(parsed, seconds):
-        """Give every kept cut a time inside the clip, strictly increasing, keeping the shot order:
-        missing, out-of-clip or decreasing times are spread evenly between their valid neighbours."""
+    def _fix_shot_times(parsed, seconds, text="", store=None):
+        """Give the kept cuts real times: at most max_shots shots, none shorter than MIN_SHOT (so the first cut comes
+        after it and the last one at least that long before the end), strictly increasing. A missing or impossible
+        time is placed by how much happens before it in the text (spoken words count double); when there are more
+        cuts than fit, the cut closing the shortest shot becomes camera motion inside the same shot."""
+        cls = H3CompactMultimodalEditDirectorFix
         clip = max(float(seconds), 1.0)
         keep = [i for i, item in enumerate(parsed) if item[1] != "merge"]
+        if not keep:
+            return
+        shortest = cls.MIN_SHOT
         values = []
         for i in keep:
-            stamp = parsed[i][2]
             try:
-                minutes, secs = str(stamp).split(":")
-                values.append(int(minutes) * 60 + float(secs))
+                minutes, secs = str(parsed[i][2]).split(":")
+                value = int(minutes) * 60 + float(secs)
             except (TypeError, ValueError):
-                values.append(None)
-        low, high, gap = 0.8, clip - 0.5, 0.6
-        valid, previous = [], low - gap
-        for value in values:  # a time is kept only if it fits the clip and follows the previous kept one
-            ok = value is not None and low <= value <= high and value >= previous + gap
-            valid.append(ok)
-            if ok:
+                value = None
+            values.append(value if value is not None and 0.0 < value < clip else None)
+        previous = 0.0
+        for k, value in enumerate(values):  # times must grow: a time that goes back is treated as missing
+            if value is not None and value <= previous:
+                values[k] = None
+            elif value is not None:
                 previous = value
-        n = len(values)
-        for j in range(n):
-            if valid[j]:
+
+        def weight(a, b):
+            segment = text[a:b] if text else ""
+            spoken = 0
+            if store:
+                for key in re.findall(r"\x00(\d+)\x00", segment):
+                    if int(key) < len(store):
+                        spoken += len(store[int(key)])
+            return max(1, len(re.sub(r"<d>\x00\d+\x00</d>", "", segment)) + 2 * spoken)
+        positions = [parsed[i][0].start() for i in keep]
+        begin = text.find("integrated_multimodal_description:") if text else -1
+        finish = text.find("overall_soundscape:") if text else -1
+        begin = begin if begin >= 0 else 0
+        finish = finish if finish > begin else len(text or "")
+        k = 0
+        while k < len(values):  # fill each run of missing times between its known neighbours
+            if values[k] is not None:
+                k += 1
                 continue
-            left = next((values[k] for k in range(j - 1, -1, -1) if valid[k]), None)
-            right_index = next((k for k in range(j + 1, n) if valid[k]), None)
-            right = values[right_index] if right_index is not None else high + gap
-            start = left if left is not None else 0.0
-            run_start = j
-            while run_start - 1 >= 0 and not valid[run_start - 1]:
-                run_start -= 1
-            run_end = right_index if right_index is not None else n
-            slots = run_end - run_start + 1
-            values[j] = start + (right - start) * (j - run_start + 1) / slots
-            values[j] = min(max(values[j], (left or 0.0) + 0.1), high)
-        ordered = all(0.0 < v <= high for v in values) and all(
-            values[k + 1] - values[k] >= 0.3 for k in range(len(values) - 1))
-        if not ordered:  # no room left between neighbours: spread every cut of this clip evenly
-            values = [clip * (k + 1) / (len(values) + 1) for k in range(len(values))]
+            run_end = k
+            while run_end < len(values) and values[run_end] is None:
+                run_end += 1
+            left_t = values[k - 1] if k > 0 else 0.0
+            left_p = positions[k - 1] if k > 0 else begin
+            right_t = values[run_end] if run_end < len(values) else clip
+            right_p = positions[run_end] if run_end < len(values) else max(finish, positions[-1] + 1)
+            total = weight(left_p, right_p)
+            for j in range(k, run_end):
+                share = weight(left_p, positions[j]) / total if text else (j - k + 1) / (run_end - k + 1)
+                values[j] = left_t + (right_t - left_t) * min(max(share, 0.0), 1.0)
+            k = run_end
+        alive = list(range(len(values)))  # indexes into keep / values still cutting
+        budget = max(0, min(cls.max_shots(clip) - 1, int(clip // shortest) - 1))
+        while len(alive) > budget:  # too many cuts: the cut that closes the shortest shot goes
+            bounds = [0.0] + [values[a] for a in alive] + [clip]
+            lengths = [bounds[j + 1] - bounds[j] for j in range(len(bounds) - 1)]
+            shot = min(range(len(lengths)), key=lambda j: lengths[j])
+            alive.pop(min(shot, len(alive) - 1))
+        times = [values[a] for a in alive]
+        for j in range(len(times)):  # every shot at least MIN_SHOT long, from the left...
+            times[j] = max(times[j], (times[j - 1] if j else 0.0) + shortest)
+        for j in range(len(times) - 1, -1, -1):  # ...and from the end of the clip
+            times[j] = min(times[j], (times[j + 1] if j + 1 < len(times) else clip) - shortest)
+        timed = dict(zip(alive, times))
         for k, i in enumerate(keep):
-            moment = values[k]
             m, kind, _, consumed = parsed[i]
-            ms = int(round(moment * 1000))  # round the whole time first: 5.9996 s -> 00:06.000
+            if k not in timed:
+                parsed[i] = (m, "merge", None, consumed)
+                continue
+            ms = int(round(timed[k] * 1000))  # round the whole time first: 5.9996 s -> 00:06.000
             parsed[i] = (m, kind, f"{ms // 60000:02d}:{(ms // 1000) % 60:02d}.{ms % 1000:03d}", consumed)
+
+    _POSTURES = (
+        ("seated", r"sits?(?: down| back| up)?|sitting(?: down| back)?|sat(?: down)?|seated|takes? a seat|"
+                   r"settles? (?:onto|into|on|in)|sinks? (?:onto|into|down)"),
+        ("standing", r"stands?(?: up)?|standing(?: up)?|stood(?: up)?|rises?(?: to (?:her|his|their) feet)?|"
+                     r"gets? (?:up|to (?:her|his|their) feet)|getting up"),
+        ("kneeling", r"kneels?(?: down)?|kneeling|knelt"),
+        ("lying", r"lies(?: down| back)?|lying(?: down| back)?|lays? (?:down|back)|reclines?|reclining"),
+    )
+    _POSTURE_ANY = re.compile(r"\b(?:" + "|".join(p for _, p in _POSTURES) + r")\b", re.IGNORECASE)
+    _POSTURE_PLACE = re.compile(
+        r"\s+((?:on|onto|at|in|into|beside|next to|against|across) (?:the|a|an|her|his|their) [a-z][a-z\- ]{1,30}?)"
+        r"(?=[,.;:!?]| and | while | as | with | to | facing |$)", re.IGNORECASE)
+    _PLURAL_POSTURE = re.compile(r"^(?:sit|stand|kneel|lie|rise|get|settle|sink)\b", re.IGNORECASE)
+
+    @classmethod
+    def _carry_posture(cls, text):
+        """A cut never resets a posture: when a subject who sat down (stood up, knelt, lay down) appears in a later
+        shot that does not restate it, ', still seated on the sofa,' is added at their first mention. Works on
+        dialogue-masked text; running it again changes nothing."""
+        if not isinstance(text, str) or "[Shot 2]" not in text:
+            return text
+        head, sep, body = text.partition("integrated_multimodal_description:")
+        if not sep:
+            head, body = "", text
+        body, sep2, tail = body.partition("overall_soundscape:")
+        label = re.compile(r"<Subject \d+>(?!'s)")
+        parts = re.split(r"(\[Shot \d+\])", body)
+        state, number, last_label = {}, 0, None
+
+        def sentences(chunk):
+            return [m for m in re.finditer(r"[^.!?]+(?:[.!?]+|$)", chunk)]
+
+        def owners_of(words, match):
+            noted = re.search(r"(<Subject \d+>)(?:\s*\(S[\d, S]+\))?,\s*still\s+$", words[:match.start()])
+            if noted:  # an earlier ', still seated' belongs to the label right before it
+                return [noted.group(1)]
+            before = [m.group(0) for m in label.finditer(words) if m.start() < match.start()]
+            if before:
+                return before if (len(before) > 1 and cls._PLURAL_POSTURE.match(match.group(0))) else before[:1]
+            if re.match(r"\s*(?:They|Both|The two|The couple)\b", words):
+                return None  # everyone
+            return []
+
+        def learn(chunk):
+            nonlocal last_label
+            seen = []
+            for sentence in sentences(chunk):
+                words = sentence.group(0)
+                labels = [m for m in label.finditer(words)]
+                found = list(cls._POSTURE_ANY.finditer(words))
+                for match in found:
+                    kind = next(name for name, pattern in cls._POSTURES
+                                if re.fullmatch(pattern, match.group(0), flags=re.IGNORECASE))
+                    owners = owners_of(words, match)
+                    if owners is None:
+                        owners = list(dict.fromkeys(seen + list(state)))
+                    elif not owners and re.match(r"\s*(?:She|He)\b", words) and last_label:
+                        owners = [last_label]
+                    place = cls._POSTURE_PLACE.match(words, match.end())
+                    where = re.sub(r"^(on|in)to\b", r"\1", place.group(1).strip(), flags=re.IGNORECASE) if place else ""
+                    for owner in owners:
+                        state[owner] = f"{kind} {where}".strip()
+                for m in labels:
+                    seen.append(m.group(0))
+                    last_label = m.group(0)
+
+        out = []
+        for index, part in enumerate(parts):
+            marker = re.fullmatch(r"\[Shot (\d+)\]", part)
+            if marker:
+                number = int(marker.group(1))
+                out.append(part)
+                continue
+            if number >= 2 and state:
+                stated = set()  # whoever this shot gives a posture to (its owner, as learn() reads it)
+                for sentence in sentences(part):
+                    words = sentence.group(0)
+                    labels = [m.group(0) for m in label.finditer(words)]
+                    for match in cls._POSTURE_ANY.finditer(words):
+                        owners = owners_of(words, match)
+                        if owners is None:
+                            stated.update(state)
+                        elif owners:
+                            stated.update(owners)
+                        elif re.match(r"\s*(?:She|He)\b", words) and labels:
+                            stated.update(labels[:1])
+                inserts, done = [], set()
+                for m in label.finditer(part):
+                    name = m.group(0)
+                    if name in done:
+                        continue
+                    done.add(name)
+                    if name in stated or name not in state:
+                        continue
+                    end = m.end()
+                    speaker = re.match(r"\s*\(S[\d, S]+\)", part[end:])
+                    if speaker:
+                        end += speaker.end()
+                    follows = part[end:end + 1]
+                    note = f", still {state[name]}"
+                    inserts.append((end, note + ("" if follows in (",", ":", ".", ";") else ",")))
+                for end, note in reversed(inserts):
+                    part = part[:end] + note + part[end:]
+            learn(part)
+            out.append(part)
+        body = "".join(out)
+        return head + sep + body + sep2 + tail
 
     @staticmethod
     def _json_candidates(body):
@@ -3729,7 +3885,11 @@ In sequences carry the same grammar across scenes and continue paths and states 
                     item = cls_._split_speakers(cls_._speaker_tags(item), secs)
                 except Exception:
                     pass
-                item = base_fix(item, secs)
+                item = base_fix(item, secs, store)
+                try:
+                    item = cls_._carry_posture(item)
+                except Exception:  # noqa: BLE001 - a clean-up never breaks the prompt
+                    pass
                 item = cls_._unmask_d(item, store)
                 out = normalize(drop_cap(scrub(item)))
                 out, store = cls_._mask_d(out)
@@ -3949,7 +4109,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
         if ends:  # a push-in or a settle changes the size: the next scene opens on the END of the last shot
             view = ends[-1].strip().rstrip(",")
             return view[0].upper() + view[1:] + ", continuing from the previous scene"
-        cuts = re.findall(r"\[Shot \d+\] At [\d:.]+, cut to (.+?)(?=\[Shot \d+\]|\n|$)", rendered)
+        cuts = re.findall(r"\[Shot \d+\] At [\d:.]+, cut (?:back )?to (.+?)(?=\[Shot \d+\]|\n|$)", rendered)
         if not cuts:
             return declared
         match = re.match(r"(?:the |a |an |his |her |their )?(.{5,110}?)(?=[.,;]| as | while | with | when |$)",
@@ -4018,7 +4178,11 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 H3CompactMultimodalEditDirectorFix._speaker_tags(masked), _CLIP["seconds"])
         except Exception:
             pass
-        masked = H3CompactMultimodalEditDirectorFix._timecode_shots(masked, _CLIP["seconds"])
+        masked = H3CompactMultimodalEditDirectorFix._timecode_shots(masked, _CLIP["seconds"], store)
+        try:
+            masked = H3CompactMultimodalEditDirectorFix._carry_posture(masked)
+        except Exception:  # noqa: BLE001 - a clean-up never breaks the prompt
+            pass
         out = H3CompactMultimodalEditDirectorFix._scrub_music(H3CompactMultimodalEditDirectorFix._unmask_d(masked, store))
         _CLIP["prev_closing"] = H3CompactMultimodalEditDirectorFix._inherited_framing(out, declared)
         out = re.sub(
@@ -4161,11 +4325,11 @@ In sequences carry the same grammar across scenes and continue paths and states 
                  vars(sys.modules[_Base.__module__]), namespace)
             state["fn"] = namespace["execute"]
             if failed:
-                print(f"[H3 Director Fix] {state['report']}")
+                print(f"[H3 Director] {state['report']}")
         except Exception as error:  # fall back to the unpatched engine
             state["failed"] = tuple(key for key, _, _ in rules)
             state["report"] = "⚠ patch OFF (" + type(error).__name__ + ", original rules in use)"
-            print(f"[H3 Director Fix] prompt patch disabled: {error!r}")
+            print(f"[H3 Director] prompt patch disabled: {error!r}")
         return state["fn"]
 
     # --------------------------------------------------------------- schema
@@ -4565,7 +4729,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 except RuntimeError as error:  # a provider that rejects the seed: same call once without it
                     if "seed" not in str(error).lower() or "seed" not in payload:
                         raise
-                    print("[H3 Director Fix] provider rejected the seed; repeating the call without it")
+                    print("[H3 Director] provider rejected the seed; repeating the call without it")
                     reply = send({k: v for k, v in payload.items() if k != "seed"})
                 usage = reply.get("usage") if isinstance(reply, dict) else None
                 for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
@@ -4593,14 +4757,14 @@ In sequences carry the same grammar across scenes and continue paths and states 
         def relax(options, error):  # the provider choked on strict JSON: retry with the schema as text
             if any(m in str(error) for m in schema_markers) and not isinstance(options.get("llm"), _RelaxedJSONLLM):
                 options = dict(options, llm=_RelaxedJSONLLM(options.get("llm")))
-                print("[H3 Director Fix] provider aborted strict JSON output; retrying with the schema as text")
+                print("[H3 Director] provider aborted strict JSON output; retrying with the schema as text")
             return options
 
         def retryable(error):  # a bad reply is retried; setup, provider and Hold messages are shown as they are
             return isinstance(error, retryable_types) and not any(m in str(error) for m in fatal_markers)
 
         def fallback(error):  # never an error: a basic prompt from what is known; Hold forgets the older story
-            print(f"[H3 Director Fix] model could not produce a valid reply ({type(error).__name__}); "
+            print(f"[H3 Director] model could not produce a valid reply ({type(error).__name__}); "
                   "basic fallback prompt delivered")
             try:
                 from .story_director import _set_held_director_plan
@@ -4630,7 +4794,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
             retry = relax(dict(kwargs), error)
             _budget = int(retry.get("max_tokens", 1200) or 1200)
             retry["max_tokens"] = max(_budget, min(int(_budget * 1.6), 16384))
-            print(f"[H3 Director Fix] reply unusable ({text}); retrying with max_tokens={retry['max_tokens']}")
+            print(f"[H3 Director] reply unusable ({text}); retrying with max_tokens={retry['max_tokens']}")
             try:
                 result = run_once(retry)
             except retryable_types as error2:
@@ -4643,7 +4807,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 final["system_prompt"] = str(final.get("system_prompt", "")) + (
                     "\n\nOUTPUT DISCIPLINE: reply with exactly one valid JSON object and nothing else; escape every "
                     "double quote inside strings; keep each field short enough that the whole object is complete.")
-                print(f"[H3 Director Fix] reply unusable again ({text2}); final attempt with strict output rules")
+                print(f"[H3 Director] reply unusable again ({text2}); final attempt with strict output rules")
                 try:
                     result = run_once(final)
                 except retryable_types as error3:
@@ -4737,7 +4901,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 if found.get("language"):
                     fix["system_prompt"] = str(fix.get("system_prompt") or "") + "\n\n" + cls.OUTPUT_LANGUAGE_RULE
                 _CLIP["extra_rule"] = "CORRECTION: the previous answer had problems: " + "; ".join(rules) + "."
-                print("[H3 Director Fix] corrective attempt for: " + ", ".join(found))
+                print("[H3 Director] corrective attempt for: " + ", ".join(found))
                 try:
                     fixed = run_once(fix)
                 finally:
