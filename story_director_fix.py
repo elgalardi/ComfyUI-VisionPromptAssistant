@@ -115,7 +115,7 @@ class _DrivenCapture(Exception):
 
 
 class H3CompactMultimodalEditDirectorFix(_Base):
-    VERSION_TAG = "v147"
+    VERSION_TAG = "v148"
 
     # ------------------------------------------------------------------ rules
     DEFAULT_SYSTEM_PROMPT = """
@@ -533,10 +533,25 @@ Fidelity first: a precise action, faithful edit, source performance, Driven Vide
 plot or supplied dialogue is told as given. Everything the request leaves open is YOURS to author,
 decisively. TONE FIRST (binding): read the emotional tone the request implies (happy, tender, playful,
 funny, sad, tense, erotic, frightening) and keep it for the whole sequence. Raise the idea to a better
-story with specificity (behaviour, timing, a small surprise, a satisfying payoff), never by switching its
-genre or adding conflict, threat, a secret, sadness or a twist the request did not ask for. Small, coherent
-obstacles that grow from the premise (a misunderstanding, a clumsy moment, an unexpected choice, a consequence) are
-allowed when they serve it, never changing its genre or scale.
+story with specificity (behaviour, timing, a satisfying payoff) and ONE REAL SURPRISE: a turn the audience
+does not see coming that grows from the premise and stays inside its tone and scale (a reversal of
+expectation, a reveal of character, a role swap, the planted object returning with a new meaning, the
+place itself changing the moment). Never switch its genre or add a threat, crime, secret, danger or
+sadness the request did not ask for. Small, coherent obstacles that grow from the premise (a
+misunderstanding, a clumsy moment, an unexpected choice, a consequence) are allowed when they serve it.
+AVOID THE FIRST IDEA: the first idea is everyone's idea. In creative_brief, obvious_takes names the
+three most predictable versions of this request (the stock place, prop, line and ending);
+premise_options proposes three or four clearly different premises in the request's tone, each with the
+estimated probability that another writer would choose it; premise is the LEAST probable option that
+still fits the request, its tone, scale, references and controls, and it differs from every obvious take
+(stock places, props, lines and endings from obvious_takes do not appear in the footage).
+CRAFT THAT MAKES IT MEMORABLE: build each scene around one central image (central_image) that its
+other shots set up or answer; show emotion only as physical behaviour (a jaw sets, a breath is held,
+hands stop mid-gesture), never by naming the feeling; give the light a motivated source that changes
+during the scene (a lamp switched on, a door opening, a sign flickering, a cloud passing); give the
+sound an arc (sound_arc) with a peak and a contrast, such as a sudden quiet; something new happens about
+every three seconds; every vague noun becomes a specific instance (not 'a drink' but 'a sweating glass of
+tamarind soda').
 CAST CREATION: when the request names or clearly implies a character with no reference (someone the
 action needs: a partner, a rival, a stranger, a crowd), create them: add them to subjects as a text-only subject (identity: adult
 age range, build, face and hair traits; target_appearance: outfit) with its own <Subject n> tag, give them
@@ -567,8 +582,9 @@ style (no noir, thriller or mystery treatment): infer the treatment the request 
 sci-fi request: that world, played sincerely).
 THE SPINE (decide it inside the existing fields, never as extra output): one premise sentence; per lead
 a want (a private worry only if the request implies one), a voice (cadence, vocabulary) and a movement habit — invented only where
-unlocked, never inferred from a real person's photo; one object, place or gesture planted early and
-paid off late; each beat changes what is known, the distance between them or what they are committed to; show the gap between
+unlocked, never inferred from a real person's photo; every line is written from inside its speaker:
+what they want from the other person in that second decides the words, and the line tries to get it;
+one object, place or gesture planted early and paid off late; each beat changes what is known, the distance between them or what they are committed to; show the gap between
 intention and behaviour. Keep the referenced principal cast; space, objects or off-screen pressure can
 oppose it; add a lead only when requested or necessarily implied, never a duplicate reference.
 CONTROLS ON none (genre, look or motion) are YOUR decisions, taken from the request: choose one coherent package that
@@ -760,8 +776,15 @@ In sequences carry the same grammar across scenes and continue paths and states 
     CREATIVE_BRIEF_SCHEMA = {
         "type": "object", "additionalProperties": False,
         "properties": {
+            "obvious_takes": {"type": "string", "description":
+                "The three most predictable versions of this request, one short line each (stock place, prop, "
+                "line and ending). They are what the story avoids."},
+            "premise_options": {"type": "string", "description":
+                "Three or four clearly different premises in the request's tone and scale, one line each, each "
+                "ending with '(p=0.NN)': the estimated probability another writer would choose it."},
             "premise": {"type": "string", "description":
-                "One sentence at the scale of the request: what each lead wants from this moment, the small "
+                "The least probable option from premise_options that still fits the request, its tone, scale, "
+                "references and controls, rewritten as one sentence at the scale of the request: what each lead wants from this moment, the small "
                 "concrete thing the exchange is about, and what has shifted by the end. A hidden fact only "
                 "if the request implies one; add a secret, plot or danger only when the request or its genre calls for it."},
             "place_and_hour": {"type": "string", "description":
@@ -781,12 +804,18 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 "One line per subject, '<Subject N>: dominant outfit colour' in plain words, as the story and controls "
                 "decide it (the request's colour if it names one; 'as reference' only when the reference outfit stays, "
                 "never with Wardrobe Create New; 'none' for a subject without clothes)."},
+            "central_image": {"type": "string", "description":
+                "Per scene: the one striking, filmable image the scene builds to (a gesture, a transformation of the "
+                "place or light, an object in motion, a silhouette, a reveal), which the other shots set up or answer."},
+            "sound_arc": {"type": "string", "description":
+                "Per scene: how the sound moves (what builds, the peak, the contrast such as a sudden quiet or the "
+                "score entering at the turn), in concrete sounds and instruments, no mood words."},
             "shot_plan": {"type": "string", "description":
                 "Per scene: its shots (size, angle) as the coverage rule decides (one when Single take), and the closing shot the next scene repeats as its opening."},
         },
-        "required": ["premise", "place_and_hour", "signature_prop", "dialogue_hook",
-                     "palette_sources", "wardrobe_logic", "subject_main_colours",
-                     "shot_plan"],
+        "required": ["obvious_takes", "premise_options", "premise", "place_and_hour", "signature_prop",
+                     "dialogue_hook", "palette_sources", "wardrobe_logic", "subject_main_colours",
+                     "central_image", "sound_arc", "shot_plan"],
     }
     SHOT_FIELD_NOTE = (
         "After [Shot 1], every shot is written exactly '[Shot 2] At 00:SS.mmm, cut to <new viewpoint> ...' "
@@ -2602,6 +2631,61 @@ In sequences carry the same grammar across scenes and continue paths and states 
         if re.search(r"(?im)^Wardrobe:\s*Keep Reference", text):
             return cls.OUTFIT_RESTYLE_NOTE.format(styles=" + ".join(styles), cues=cues)
         return cls.OUTFIT_NOTE.format(styles=" + ".join(styles), cues=cues)
+
+    DICE = {
+        "Turn": ["a reversal of expectation: the outcome everyone expects flips",
+                 "a reveal of character: someone shows a side the opening hid",
+                 "a role swap: the one who led now follows",
+                 "a callback: the planted object returns with a new meaning",
+                 "the place changes the moment: light, weather, sound or space turns the scene",
+                 "an escalation of the same action until it tips into something new",
+                 "a choice: a lead stops, weighs it visibly and picks the unexpected option"],
+        "Turn timing": ["early, in the first third, so the rest plays its consequence",
+                        "in the middle, splitting the clip into before and after",
+                        "late, in the last third, with a held beat after it"],
+        "Viewpoint": ["stay close on one lead's face for the key beat and let the other be felt off-frame",
+                      "tell the key beat through hands and objects in close detail",
+                      "reveal the key beat in a reflection (mirror, window, glass, screen)",
+                      "one fluid following move through the space for the key beat",
+                      "frame the key beat through a foreground element (doorway, plants, crowd, rain on glass)",
+                      "a low or high angle at the turn that changes who holds the power",
+                      "a wide that holds still while the key beat happens small in the frame"],
+        "Central image": ["a single gesture in close-up that changes everything",
+                          "a transformation of the light or the place",
+                          "an object in motion that the eye follows",
+                          "a silhouette against one strong light",
+                          "two faces sharing one frame at the turn",
+                          "something in plain sight that suddenly reads differently"],
+        "Sound arc": ["build to a peak, then cut to near silence",
+                      "start almost silent and bloom",
+                      "one recurring sound motif that changes meaning at the turn",
+                      "the score enters only at the turn",
+                      "a diegetic sound becomes the rhythm of the cut"],
+        "Detail": ["a paper fan", "a cracked phone screen", "a bowl of lemons", "a dripping umbrella", "a neon tube buzzing",
+                   "a pair of mismatched earrings", "a matchbook", "a spilled sugar packet", "a ceiling fan", "a fogged window",
+                   "a moth at a lamp", "a red thread", "a polaroid", "a wristwatch running late", "a key on a ribbon",
+                   "a half-peeled orange", "a vinyl record", "a lipstick mark on a glass", "a folded note", "a string of bulbs",
+                   "a cat on a sill", "a melting ice cube", "a hand-painted sign", "a bicycle bell", "a jukebox light",
+                   "a wet footprint", "a candle guttering", "a torn ticket", "a mirror ball", "a bowl of cherries"],
+    }
+
+    @classmethod
+    def _creative_dice(cls, kwargs):
+        """Seeded craft devices for the creative modes (research: a structured, external random choice beats a reworded
+        instruction for originality). They are storytelling devices, never a genre, tone or new conflict, and anything
+        the request, references or controls fix wins over them. Same seed, same dice."""
+        if str(kwargs.get("edit_mode", "")).strip().lower() != "elaborate plus" or _CLIP.get("video_edit"):
+            return ""
+        import random
+        rng = random.Random(int(kwargs.get("seed") or 0) * 7919 + 17)
+        dice = {axis: rng.choice(options) for axis, options in cls.DICE.items()}
+        _CLIP["dice"] = [f"{axis} {value.split(':')[0].split(',')[0]}" for axis, value in dice.items()]
+        return ("CREATIVE DICE (drawn for this run, binding where the request leaves it open): "
+                + "; ".join(f"{axis}: {value}" for axis, value in dice.items())
+                + ". Shape the premise, the turn, the coverage of the key beat, the central image and the sound arc with "
+                "them, and work the detail into the place if it fits (otherwise a similar object that does). They never "
+                "change the request's tone, genre, scale or cast; whatever the request, references or controls fix "
+                "wins, and a die that cannot fit is replaced by the closest device that does.")
 
     @classmethod
     def _random_picks(cls, kwargs):
@@ -4542,7 +4626,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
                     default=cls.DEFAULT_SYSTEM_PROMPT,
                 ),
                 io.Int.Input("max_tokens", default=1200, min=256, max=3072),
-                io.Float.Input("temperature", default=0.2, min=0.0, max=1.0, step=0.05),
+                io.Float.Input("temperature", default=0.6, min=0.0, max=1.0, step=0.05),
                 io.Boolean.Input("reasoning", default=False),
                 io.Int.Input(
                     "seed", default=0, min=0, max=0xFFFFFFFF,
@@ -4668,7 +4752,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
                     per_scene = int(per_scene * 0.6)
                 scenes = (max(1, min(12, int(kwargs.get("continuous_scene_count", 3))))
                           if str(kwargs.get("edit_mode", "")).strip().lower() != "elaborate" else 1)
-                kwargs["max_tokens"] = max(int(kwargs.get("max_tokens", 1200)), scenes * per_scene + 1000)
+                kwargs["max_tokens"] = max(int(kwargs.get("max_tokens", 1200)), scenes * per_scene + 1400)  # + obvious takes, options, image, sound arc
             except (TypeError, ValueError):
                 pass
             cls._get_patched_execute()  # builds the patch report used below
@@ -4708,6 +4792,10 @@ In sequences carry the same grammar across scenes and continue paths and states 
             picks = cls._random_picks(kwargs)
             if picks:
                 kwargs["system_prompt"] += "\n\n" + picks
+            _CLIP["dice"] = []
+            dice = cls._creative_dice(kwargs)
+            if dice:
+                kwargs["system_prompt"] += "\n\n" + dice
             kwargs["direction_context"] = "\n".join(  # the picks are written above; the marker line is not a rule
                 line for line in str(kwargs.get("direction_context") or "").splitlines()
                 if not line.startswith("Random pick:"))
@@ -5108,6 +5196,8 @@ In sequences carry the same grammar across scenes and continue paths and states 
                                    f"{cls._EDIT_LORA.get(_et, 'swap')}", values[1])
             if _CLIP.get("random_picks"):
                 values[1] = f"{values[1]} · random picks: {' / '.join(_CLIP['random_picks'])}"
+            if _CLIP.get("dice") and not kwargs.get("hold_prompt"):
+                values[1] = f"{values[1]} · dice: {' / '.join(_CLIP['dice'])}"
             if _CLIP.get("random_ignored"):
                 values[1] = f"{values[1]} · Random is not used in Transfer (the guide video keeps its design)"
             values[3] = count  # the real number of prompts delivered

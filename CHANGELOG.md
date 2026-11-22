@@ -24,6 +24,16 @@
   "the camera cuts to". Transfer and Edit keep their layouts.
 - Dialogue that crosses a cut is written in two parts with <scenetrans> at
   both connecting points, as the official guide asks.
+- Director v148, creativity (Normal and Compact, no extra LLM calls):
+  seeded creative dice (turn type and timing, viewpoint of the key beat,
+  central image, sound arc, one concrete detail) that never change tone,
+  genre, scale or cast; the brief first lists the obvious takes and several
+  premise options with probabilities, then takes the least probable one that
+  fits; each scene gets a central image and a sound arc; one real surprise
+  inside the request's tone and scale; emotion shown as behaviour, motivated
+  light that changes, something new about every three seconds; dialogue
+  written from each speaker's want. Default temperature 0.6 (saved workflows
+  keep their own value). The status line shows the dice.
 
 ## 2.0.0 - 2026-09-15
 
