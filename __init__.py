@@ -8,6 +8,7 @@ from .compact_llm_providers import H3OpenRouterModel, H3QwenLocalModel
 from .compact_prompt_select import H3CompactPromptSelect
 from .local_vision_prompt import LocalVisionPromptGenerator
 from .llm_vision_prompt import LLMVisionPromptAssistant
+from .open_director import H3OpenDirector
 from .visual_sheet_director import VisualSheetDirector
 from .optional_reference_resize import OptionalReferenceResize
 
@@ -40,6 +41,7 @@ class LocalVisionPromptExtension(ComfyExtension):
             LocalVisionPromptGenerator,
             LLMVisionPromptAssistant,
             H3CompactMultimodalEditDirector,
+            H3OpenDirector,
             H3CompactDirectionControls,
             H3CompactPromptSelect,
             VisualSheetDirector,
