@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- H3 Open Director: a reply cut off by the token limit is never passed on as a
+  prompt; it is asked again with more room. Missing scenes are asked for
+  (continuing the written ones) instead of repeating the last scene.
+  Temporary provider errors retry the same request; a refused JSON format
+  retries as plain text; total calls are capped at 4.
+- H3 Open Director: new `on_failure` option (default Stop) stops the workflow
+  with a clear message when the scenes cannot be written; "Use request" keeps
+  the old pass-through.
+- H3 Open Director: Hold is kept per workflow, node, system prompt and scene
+  setup, and only complete results are saved.
+- H3 Open Director: scenes still continue from the previous scene's last moment,
+  and after that may cut to another place or time when asked. usage_stats shows
+  the max_tokens actually requested.
 - H3 Compact Multimodal Edit Director (v146): posture survives cuts. Every shot
   after a cut restates where each subject is and how (seated, standing,
   kneeling, lying); a post-processor adds ", still seated on the sofa," when
