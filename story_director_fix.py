@@ -1,4 +1,4 @@
-"""H3 Compact Multimodal Edit Director: the official, decision-making compact director.
+"""H3 Transfer & Edit Director (node id H3CompactMultimodalEditDirector): Transfer and video Edit only.
 
 It subclasses ``H3CompactMultimodalEditDirector`` (same inputs/outputs, same
 execution engine, hold cache and provider routing) and only overrides:
@@ -114,8 +114,12 @@ class _DrivenCapture(Exception):
     """Internal: stops the original Driven analysis right before its API call to reuse its payload."""
 
 
+MODE_NAMES = ("Transfer", "Transfer Keep Audio", "Transfer Keep Audio Basic", "Edit")
+MODES = {name.lower() for name in MODE_NAMES}
+
+
 class H3CompactMultimodalEditDirectorFix(_Base):
-    VERSION_TAG = "v147"
+    VERSION_TAG = "v149"
 
     # ------------------------------------------------------------------ rules
     DEFAULT_SYSTEM_PROMPT = """
@@ -697,15 +701,6 @@ invention.
         "Picture N = Subject N; speaker IDs (SN) follow the order of vocal events and stay stable; "
         "extras use other Subject numbers.")
     assert "vocal events" in CAST_IDENTITY_RULES and "plot or extra" in DESIGN_CONTROL_RULES
-
-    CREATIVE_BASE_PROMPT = """
-You are a writer-director and cinematographer prompting MiniMax H3. Inspect the pixels of every
-connected reference, then author finished footage exactly as the JSON schema requires: directions in
-English, dialogue in the selected language. <Picture 1>-<Picture 4> are literal visual references,
-<Video 1>/<Video 2> source plates or temporal references, <Driven Image 1>/<Driven Video 1> scenario and
-staging to adapt onto the assigned cast. Outside assigned roles never transfer a person, object,
-setting, wardrobe, action or style.
-""".strip()
 
     CREATIVE_EDIT_CORE = """
 SOURCES AND LOCKS
@@ -1297,16 +1292,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 + text["wardrobe"][wardrobe] + " " + text["body"][body] + " " + text["place"][place]
                 + (" " + hair_text[hair] if hair_text[hair] else ""))
         return strength, note
-
-    @classmethod
-    def driven_note(cls, strength, has_refs):
-        try:
-            strength = int(strength)
-        except (TypeError, ValueError):
-            strength = 3
-        wardrobe = "" if has_refs else "Without references the observed styling of each role is used. "
-        return cls.DRIVEN_PRIORITY_NOTE.format(wardrobe=wardrobe) + (
-            cls.DRIVEN_CAST_WITH_REFS if has_refs else cls.DRIVEN_CAST_NO_REFS)
 
     _DRIVEN_FIELDS = ("activity", "setting", "lighting", "visual_style", "mood", "camera", "props")
     _ROLE_FIELDS = ("role", "wardrobe", "hair", "body_proportions", "pose", "performance", "spatial_relationships")
@@ -2232,41 +2217,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
         "scene 1 makes that change and later scenes keep the new design.")
     I2V_ALIGNMENT = ("For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully "
                      "referenced.")
-    GUIDE_SILENT_NOTE = (
-        "GUIDE = IMAGE/VIDEO TO PROMPT (binding): read the guide image/video as inspiration and write what it shows "
-        "(action, pose, staging, camera, place, light, and clothes/hair/body where the controls take them from it) "
-        "into the prompt as your own concrete description, always combined with the reference pictures (faces and "
-        "identity, plus every aspect set to Keep Reference) and the user's request, which wins. The video model never "
-        "sees the guide: the prompt never mentions a guide, guide image, guide video, driver, Driven, blueprint or "
-        "source, and never says 'as shown/as seen' about it.")
-
-    @classmethod
-    def guide_look_note(cls):
-        """Keep Guide in Normal/Compact: the guide's observed look as concrete text the director must write."""
-        keep = (_CLIP.get("mask") or {}).get("keep_guide") or {}
-        cached = _CLIP.get("blueprint_cache")
-        blueprint = cached[0] if isinstance(cached, tuple) and cached and isinstance(cached[0], dict) else {}
-        roles = blueprint.get("roles") if isinstance(blueprint.get("roles"), list) else []
-        fields = [("Wardrobe", "wardrobe", "wears"), ("Hair & Makeup", "hair", "hair and makeup"),
-                  ("Body proportions", "body_proportions", "body")]
-        lines = []
-        for role in roles:
-            if not isinstance(role, dict):
-                continue
-            parts = [f"{word}: {str(role.get(key) or '').strip()}" for label, key, word in fields
-                     if keep.get(label) and str(role.get(key) or "").strip()]
-            if parts:
-                lines.append(f"the person who plays the '{str(role.get('role') or 'person').strip()}' role — " + "; ".join(parts))
-        place = "; ".join(v for v in (str(blueprint.get(k) or "").strip() for k in ("setting", "props", "lighting")) if v)
-        if keep.get("Environment") and place:
-            lines.append("the setting — " + place)
-        if not lines:
-            return ""
-        return ("KEEP GUIDE LOOK (binding, these replace the reference pictures' clothes/hair/body/place on these "
-                "aspects only; face and identity stay the reference's): write exactly this, concretely, in each "
-                "character's Target appearance / Body proportions and in the setting paragraph, in every scene: "
-                + " | ".join(lines) + ". Never describe the reference picture's outfit for an aspect listed here.")
-
     I2V_OPENING_NOTE = (
         "IMAGE-TO-VIDEO FIRST FRAME (binding): [Shot 1] opens exactly on <Picture 1> as it is (the same people, "
         "clothing, hair, colours, place, framing and light) and stays in that place and look for the first shot. "
@@ -2428,14 +2378,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
                       "situation or controls promise arrives in the first seconds; in a sequence, in the first scene, "
                       "and every later scene moves past it to new events at the intensity the controls set."),
     }
-    COMPACT_NOTE = (
-        "COMPACT OUTPUT (binding, this overrides the word ranges above): every scene prompt is about half the usual "
-        "length. Keep in full: the shot markers and times, who is in frame and where, each action with its start and "
-        "result, the clothing and position state at each cut, the named anatomy and covering, and every dialogue line "
-        "with its speaker and short voice note. Cut: adjective stacks, repeated description, long light, lens and "
-        "atmosphere passages (one short sentence for look and place), and anything the reference pictures already "
-        "show. overall_soundscape and non_diegetic_music: one short sentence each. Subject definitions: identity and "
-        "outfit in a few words.")
     STORY_PACE_SINGLE = ("With Single take there are no cuts: the story moves on through continuous action (they walk out "
                          "and the camera follows them into the next place, light changing over a held frame), never a "
                          "jump.")
@@ -2605,65 +2547,10 @@ In sequences carry the same grammar across scenes and continue paths and states 
 
     @classmethod
     def _random_picks(cls, kwargs):
-        """Controls set to Random (Genre, Situation, Visual look, Outfit style, Era) get a random pick, repeatable with
-        the same seed, in Normal / Compact. The request always wins over a pick."""
-        ctx = str(kwargs.get("direction_context") or "")
-        wanted = (re.search(r"(?im)^Random pick:\s*(.+)$", ctx) or [None, ""])[1]
-        if str(kwargs.get("edit_mode", "")).strip().lower() != "elaborate plus":
-            if wanted:
-                _CLIP["random_ignored"] = True  # Transfer keeps the guide's own design
-            return ""
-        labels = [label for label in ("Genre", "Situation", "Motion style", "Visual look", "Outfit style", "Era")
-                  if label in wanted and not re.search(rf"(?im)^{label}:\s*\S", ctx)]
-        if not labels:
-            return ""
-        import random
-        from . import direction_controls_fix as _dc
-        request = str(kwargs.get("edit_request") or "")
-        adult = bool(cls._ADULT_REQUEST.search(request) or cls._NUDITY_REQUEST.search(request))
-        rng = random.Random(int(kwargs.get("seed") or 0))
-        pools = {
-            "Genre": [g for g in _dc.GENRE_CHOICES if g not in ("POV / First-Person", "Webcam / Cam Show")],
-            "Situation": [n for n in _dc.SITUATIONS if adult or n not in _dc.ADULT_SITUATIONS],
-            "Motion style": [m for m in _dc.MOTION_CHOICES if m not in _dc.SINGLE_CAMERA_MOTIONS and "POV" not in m],
-            "Visual look": [k for k in _dc.LOOK_CHOICES if k not in _dc.SINGLE_CAMERA_LOOKS],
-            "Outfit style": [o for o in _dc.OUTFIT_STYLES if adult or o not in cls._ADULT_OUTFITS],
-            "Era": [e for e in _dc.ERA_CHOICES if e not in ("Auto", "Present day")],
-        }
-        lines, picked, extra = [], [], []
-        for label in labels:
-            choice = rng.choice(pools[label])
-            lines.append(f"{label}: {choice}")
-            picked.append(f"{label} {choice}")
-            if label in ("Visual look", "Motion style"):
-                _CLIP["keep_shallow"] = True  # a drawn look or camera keeps its own depth of field
-            if label == "Motion style":
-                try:
-                    from .story_director import MOTION_STYLES
-                    spec = cls.FIX_MOTIONS.get(choice) or MOTION_STYLES.get(choice)
-                    if spec:
-                        extra.append(f"Motion style {choice}: {spec}")
-                except Exception:
-                    pass
-            if label == "Visual look":
-                try:
-                    from .story_director import VISUAL_LOOKS
-                    spec = (cls.FIX_LOOKS[choice] + cls.CAPTURE_ONLY) if choice in cls.FIX_LOOKS else VISUAL_LOOKS.get(choice)
-                    if spec:
-                        extra.append(f"Visual look {choice}: {spec} It also decides the palette.")
-                except Exception:
-                    pass
-        _CLIP["random_picks"] = picked
-        outfit = [line.partition(":")[2].strip() for line in lines if line.startswith("Outfit style:")]
-        lines = [line for line in lines if not line.startswith("Outfit style:")]
-        if outfit:
-            extra.append(cls.outfit_rule(outfit, ctx))
-            if re.search(r"(?im)^Wardrobe:\s*Keep Reference", ctx):
-                _CLIP["restyle_outfit"] = outfit[0]
-        rules = " ".join([e for e in extra if e] + cls.control_notes("\n".join(lines)))
-        return ("OPEN PICKS (drawn at random because these controls are set to Random): " + "; ".join(picked)
-                + ". Use them when the request leaves that aspect open; when the request already sets its own situation, "
-                "place, tone, movement, look, clothes or period, the request wins and that pick is dropped. " + rules)
+        """Random picks were for the creative modes; Transfer and Edit keep the guide's own design."""
+        if (re.search(r"(?im)^Random pick:\s*(.+)$", str(kwargs.get("direction_context") or "")) or [None, ""])[1]:
+            _CLIP["random_ignored"] = True
+        return ""
 
     @classmethod
     def _control_rules_text(cls, direction_text):
@@ -3687,13 +3574,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
                               r"\bthe (?:guide|driven|driver) (?:performer|person|woman|man)\b", re.IGNORECASE)
 
     @classmethod
-    def _no_guide_words(cls, text):
-        """The video model never sees the guide: no 'as in the guide' in the prompt."""
-        text = cls._GUIDE_WORDS.sub("", text)
-        text = cls._GUIDE_NOUNS.sub(lambda m: "the " if "'s" in m.group(0) else "the person", text)
-        return re.sub(r"[ \t]+([,.;:])", r"\1", text)
-
-    @classmethod
     def _no_fusion(cls, text):
         """'bodies melting together' makes the video model fuse two people: write it as close contact."""
         return cls._FUSION.sub("bodies pressed close, each body whole and separate", text)
@@ -3902,24 +3782,16 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 out = H3CompactMultimodalEditDirectorFix._outfit_at_start(out)
             if _CLIP.get("task") in ("edit", "add") and _CLIP.get("mode") == "transfer":
                 out = H3CompactMultimodalEditDirectorFix._scope_edit_pictures(out)
-            official = _CLIP.get("mode") in ("normal", "compact") and not _CLIP.get("video_edit")
-            if _CLIP.get("i2v") and _CLIP.get("mode") != "transfer" and not official:  # official first-frame layout
+            if _CLIP.get("i2v") and _CLIP.get("mode") != "transfer":  # Edit with Picture 1 as first frame
                 out = H3CompactMultimodalEditDirectorFix._to_i2va(out)
             if isinstance(out, str) and _CLIP.get("body_neutral"):  # the picture carries the body
                 out = H3CompactMultimodalEditDirectorFix._neutral_body(out)
             if isinstance(out, str):
                 out = H3CompactMultimodalEditDirectorFix._no_fusion(out)
-            if isinstance(out, str) and _CLIP.get("guide_creative"):
-                out = H3CompactMultimodalEditDirectorFix._no_guide_words(out)
             if isinstance(out, str) and not _CLIP.get("keep_shallow"):  # sharp focus unless asked
                 out = H3CompactMultimodalEditDirectorFix._deep_focus(out)
             if isinstance(out, str) and not _CLIP.get("keep_audio"):
                 out = H3CompactMultimodalEditDirectorFix._silent_listeners(out)
-            if isinstance(out, str) and official:  # the layout MiniMax documents for each input mode
-                try:
-                    out = H3CompactMultimodalEditDirectorFix._official_layout(out)
-                except Exception:  # noqa: BLE001 - a layout step never breaks the prompt
-                    pass
             if isinstance(out, str) and store:
                 out = H3CompactMultimodalEditDirectorFix._unmask_d(out, store)
             if _CLIP.get("keep_audio") and isinstance(out, str):  # the source audio is the final audio
@@ -4032,154 +3904,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
     _LAYOUT_SECTIONS = ("subject_definitions", "summary", "retention_analysis", "integrated_multimodal_description",
                         "detailed_description", "overall_soundscape", "non_diegetic_music")
 
-    @classmethod
-    def _layout_sections(cls, text):
-        heads = list(re.finditer(r"(?m)^(" + "|".join(cls._LAYOUT_SECTIONS) + r"):[ \t]*\n?", text))
-        found = {}
-        for index, head in enumerate(heads):
-            end = heads[index + 1].start() if index + 1 < len(heads) else len(text)
-            found[head.group(1)] = text[head.end():end].strip()
-        return found
-
-    @staticmethod
-    def _short_name(description):
-        """'a woman in her early 30s, with dark hair' -> 'the woman in her early 30s'; a name stays a name."""
-        first = re.split(r",|;|\s+(?:with|wearing|who|whose|seen|in|on|at|of|from|by|near)\s+",
-                         re.sub(r"\s+", " ", description).strip())[0].strip(" .")
-        words = first.split()[:7]
-        short = " ".join(words) or "the person"
-        if re.match(r"(?i)(?:a|an)\b", short):
-            short = "the" + short[short.index(" "):] if " " in short else "the person"
-        elif not re.match(r"(?i)(?:the|his|her|their|its)\b", short) and not short[:1].isupper():
-            short = "the " + short
-        return short
-
-    @classmethod
-    def _official_layout(cls, text):
-        """Write the prompt in the layout MiniMax documents for its input mode (skill h3-prompt-writing):
-        - no reference pictures: T2VA, only integrated_multimodal_description / overall_soundscape /
-          non_diegetic_music, the style at the start of [Shot 1] and the people described in words (no labels);
-        - one picture that is the first frame: I2VA, the alignment line, then the same three fields;
-        - reference pictures: Ref2VA, the six sections subject_definitions / summary (task in brackets) /
-          retention_analysis / detailed_description / overall_soundscape / non_diegetic_music; a picture that is
-          also the first frame adds keyframe completion and its own <Picture 1> line."""
-        if not isinstance(text, str) or not re.search(r"(?m)^(?:integrated_multimodal_description|detailed_description):",
-                                                       text):
-            return text
-        if re.search(r"(?m)^(?:summary|retention_analysis):", text):
-            return text  # already in a six-section layout
-        first_frame = cls.I2V_ALIGNMENT in text
-        # MiniMax's own cut wording (the post-processor keeps cuts internally as 'cut to')
-        text = re.sub(r"(\[Shot \d+\] At \d\d:\d\d\.\d{3}, )cut (back )?to\b",
-                      lambda m: f"{m.group(1)}the camera cuts {m.group(2) or ''}to", text)
-        body = re.sub(r"For the target video, at 0\.00 seconds into the target video, <Picture 1> \(from[^)]*\) is fully "
-                      r"referenced\.?[ \t]*", "", text).strip()
-        body = re.sub(r"^\s*\[[^\]\n]+\]\s*\n", "", body).strip()  # the old single header
-        parts = cls._layout_sections(body)
-        description = parts.get("integrated_multimodal_description") or parts.get("detailed_description") or ""
-        sound = parts.get("overall_soundscape") or "N/A"
-        music = parts.get("non_diegetic_music") or "N/A"
-        definitions = []
-        for line in (parts.get("subject_definitions") or "").split("\n"):
-            match = re.match(r"\s*(<Subject \d+>)\s*(?:\(S[\d, S]+\)\s*)?(?:is|are)\s+(.+?)\s*$", line)
-            if match:
-                definitions.append((match.group(1), match.group(2).rstrip("."), line.strip()))
-        pictures = sorted(set(re.findall(r"<Picture \d+>", body)))
-        references = [p for p in pictures if not (first_frame and p == "<Picture 1>")]
-        if references or (first_frame and len(pictures) > 1):
-            return cls._ref2va_layout(description, sound, music, definitions, parts, first_frame)
-        # T2VA / I2VA: the style opens [Shot 1]; every subject is introduced in words once, then named briefly
-        preamble, marker, shots = description.partition("[Shot 1]")
-        if not marker:
-            preamble, shots = "", description
-        names, intro = {}, []
-        for label, described, _ in definitions:
-            if first_frame and "<Picture 1>" in described:
-                described = re.split(r"\s+(?:Target appearance|Wardrobe|Body proportions)\b", described)[0].rstrip(" .;,:")
-                described += ", exactly as seen in <Picture 1> at 0.00 seconds"
-            names[label] = cls._short_name(described)
-            intro.append(described)
-        seen = {}
-        for label, short in list(names.items()):  # two people never share one name
-            if short in seen:
-                for other in (label, seen[short]):
-                    full = next(d for l, d, _ in definitions if l == other)
-                    names[other] = cls._short_name(re.sub(r"\s+(in|of|from|at)\s+", r" \1_", full, 1)).replace("_", " ")
-            seen[short] = label
-        if len(set(names.values())) < len(names):
-            for order, label in enumerate(sorted(names), 1):
-                names[label] = f"{names[label]} ({['first', 'second', 'third', 'fourth', 'fifth'][min(order, 5) - 1]})"
-
-        def rename(chunk):
-            def one(match):
-                name = names.get(match.group(0))
-                if not name:
-                    return match.group(0)
-                before = chunk[:match.start()].rstrip()
-                start = not before or before[-1] in ".!?:]" or before.endswith("</d>")
-                return name[:1].upper() + name[1:] if start else name
-            return re.sub(r"<Subject \d+>", one, chunk)
-        opening = preamble.strip()
-        if intro:
-            features = intro[0] if len(intro) == 1 else "; ".join(intro[:-1]) + "; and " + intro[-1]
-            opening = (opening + " " if opening else "") + "The scene features " + features + "."
-        shots = shots.strip()
-        layout = "integrated_multimodal_description:\n[Shot 1] " + rename((opening + " " + shots).strip()) if names else \
-            "integrated_multimodal_description:\n[Shot 1] " + (opening + " " + shots).strip()
-        layout += "\n\noverall_soundscape:\n" + (rename(sound) if names else sound)
-        layout += "\n\nnon_diegetic_music:\n" + (rename(music) if names else music)
-        return (cls.I2V_ALIGNMENT + "\n\n" + layout) if first_frame else layout
-
-    @classmethod
-    def _ref2va_layout(cls, description, sound, music, definitions, parts, first_frame):
-        task = "reference generation" + (" + keyframe completion" if first_frame else "")
-        lines = [line for _, _, line in definitions] or [
-            line.strip() for line in (parts.get("subject_definitions") or "").split("\n")
-            if line.strip() and line.strip().upper() != "N/A"]
-        if first_frame and not any(line.startswith("<Picture 1>") for line in lines):
-            lines.append("<Picture 1> is the first frame of [Shot 1]; the video opens exactly on it.")
-        markers = [(int(m.group(1)), m.start()) for m in re.finditer(r"\[Shot (\d+)\]", description)]
-
-        def shots_of(label):
-            found = []
-            for index, (number, start) in enumerate(markers):
-                end = markers[index + 1][1] if index + 1 < len(markers) else len(description)
-                if label in description[start:end]:
-                    found.append(f"[Shot {number}]")
-            return found
-        retention, referenced = [], []
-        for label, described, _ in definitions:
-            source = re.search(r"<Picture \d+>", described)
-            if not source:
-                continue
-            referenced.append((label, source.group(0)))
-            traits = re.split(r"\s+(?:Target appearance|Wardrobe|Body proportions)\b", described)[0]
-            traits = traits.split(source.group(0), 1)[-1].strip(" ,.;:")
-            traits = re.sub(r"^(?:with|wearing)\s+", "", traits) or f"the identity and appearance from {source.group(0)}"
-            where = shots_of(label)
-            changed = re.search(r"(?i)\b(?:Target appearance|Wardrobe:|now wears|instead of|replac)", described)
-            status = ("partially_preserved - the identity is retained while the appearance follows the description"
-                      if changed else f"fully_preserved - {traits} are retained")
-            retention.append(f"{label}" + (f" (appears in {', '.join(where)})" if where else "") + f": {status}.")
-        if first_frame:
-            retention.append("<Picture 1>: fully_preserved - its composition, subjects and light are the opening frame "
-                             "of [Shot 1].")
-        opening = re.split(r"\[Shot 1\]", description, 1)
-        action = opening[1] if len(opening) > 1 else description
-        action = re.split(r"(?<=[.!?])\s+", re.sub(r"<d>.*?</d>|\x00\d+\x00", "", action).strip(), 1)[0]
-        action = " ".join(action.split()[:40]).rstrip(" ,;:.!?")
-        cast = ", ".join(f"{label} from {source}" for label, source in referenced)
-        count = max(1, len(markers))
-        summary = (f"[{task}] The target video unfolds over {count} shot{'s' if count > 1 else ''}"
-                   + (f" with {cast}" if cast else "") + (f". {action[:1].upper() + action[1:]}" if action else "")
-                   + (". <Picture 1> is the opening frame." if first_frame else "")).rstrip(".") + "."
-        return ("subject_definitions:\n" + ("\n".join(lines) or "N/A")
-                + "\n\nsummary:\n" + summary
-                + "\n\nretention_analysis:\n" + ("\n".join(retention) or "N/A")
-                + "\n\ndetailed_description:\n" + description.strip()
-                + "\n\noverall_soundscape:\n" + sound
-                + "\n\nnon_diegetic_music:\n" + music)
-
     @staticmethod
     def _order_reference_subjects(prompt):
         """Same subject ordering as the original engine, but speaker IDs (SN) are left alone: they follow the order
@@ -4254,46 +3978,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
         r"close-up|two-shot|over-the-shoulder|wide|insert|single|medium|tight|low angle|high angle|profile|pov",
         re.IGNORECASE)
 
-    @classmethod
-    def _inherited_framing(cls, rendered, declared):
-        """Framing the next scene must open on: the viewpoint of this scene's real last cut (the model's own
-        closing_shot is kept only when it agrees with it)."""
-        body = str(rendered).split("integrated_multimodal_description:")[-1].split("overall_soundscape:")[0]
-        last_shot = re.split(r"\[Shot \d+\]", body)[-1]
-        ends = re.findall(
-            r"(?:pushes in|pulls (?:back|out)|moves in|tightens|settles|settling|ending|ends|until|landing|closing|"
-            r"finishing|holds)[^.;]{0,40}?\b(?:on|in|into|to|at|with)\s+(?:a |an |the )?((?:extreme |tight |medium |wide |"
-            r"full |close |low |high |steady )*(?:close-up|closeup|medium shot|wide shot|two-shot|full shot|close shot|"
-            r"medium close-up|over-the-shoulder(?: shot)?)[^.;]{0,60})", last_shot, flags=re.IGNORECASE)
-        if ends:  # a push-in or a settle changes the size: the next scene opens on the END of the last shot
-            view = ends[-1].strip().rstrip(",")
-            return view[0].upper() + view[1:] + ", continuing from the previous scene"
-        cuts = re.findall(r"\[Shot \d+\] At [\d:.]+, cut (?:back )?to (.+?)(?=\[Shot \d+\]|\n|$)", rendered)
-        if not cuts:
-            return declared
-        match = re.match(r"(?:the |a |an |his |her |their )?(.{5,110}?)(?=[.,;]| as | while | with | when |$)",
-                         cuts[-1].strip(), flags=re.IGNORECASE)
-        if not match:
-            return declared
-        view = match.group(1).strip()
-        if not cls._SHOT_WORDS.search(view):  # the cut opens with an action: find its real end framing
-            end = re.findall(r"(?:ending|ends|finishing|settling|holding|landing)\s+(?:in|on|with|into)\s+(?:a |an |the )?"
-                             r"([^.;]{3,110}?\b(?:shot|close-up|closeup|framing|view|frame))\b", cuts[-1],
-                             flags=re.IGNORECASE)
-            framed = [m.group(0) for m in cls._SHOT_WORDS.finditer(cuts[-1])]
-            if end:
-                view = end[-1].strip()
-            elif declared:
-                return declared
-            elif framed:
-                view = framed[-1]
-            else:
-                return declared
-        wanted = {w.lower() for w in cls._SHOT_WORDS.findall(view)}
-        if declared and wanted and wanted <= {w.lower() for w in cls._SHOT_WORDS.findall(declared)}:
-            return declared
-        return view[0].upper() + view[1:] + ", continuing from the previous scene"
-
     @staticmethod
     def _drop_identity_cap(text):
         """The identity clause must not restate an accessory the target appearance redefines."""
@@ -4304,77 +3988,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
                     line = re.sub(rf",\s*wearing (?:an? )?[^.,\n]*?\b{item}\b[^.,\n]*?(?=[.,]?\s*Target appearance:)", "", line)
             return line
         return re.sub(r"(?m)^<Subject \d+> is [^\n]*$", fix, text)
-
-    @staticmethod
-    def _subject_tags(text):
-        """Inside the footage, call each lead <Subject N> instead of 'the woman in <Picture M>'."""
-        mapping = {pic: subj for subj, pic in re.findall(
-            r"(?m)^(<Subject \d+>) is [^\n]*?<Picture (\d+)>", text)}
-        marker = "integrated_multimodal_description:"
-        if not mapping or marker not in text:
-            return text
-        head, body = text.split(marker, 1)
-        for pic, subj in mapping.items():
-            body = re.sub(
-                r"\b(?:[Tt]he )(?:woman|man|person|girl|boy|character) in <Picture " + pic + r">", subj, body)
-        return head + marker + body
-
-    @staticmethod
-    def _render_creative_scene(scene, design, opening_frame=False):
-        if isinstance(scene, dict):
-            previous = _CLIP.get("prev_closing")
-            if previous and not opening_frame:  # chain: this scene opens on the last shot of the previous one
-                previous = re.sub(r"[,;]?\s*held steady for (?:the )?(?:final|last)\s+\w+\s+seconds?",
-                                  "", previous, flags=re.IGNORECASE)
-                scene = dict(scene, opening_framing=previous)
-            declared = str(scene.get("closing_shot", "")).strip() or None
-        else:
-            declared = None
-        out = _Base._render_creative_scene(scene, design, opening_frame)
-        masked, store = H3CompactMultimodalEditDirectorFix._mask_d(out)
-        try:
-            masked = H3CompactMultimodalEditDirectorFix._split_speakers(
-                H3CompactMultimodalEditDirectorFix._speaker_tags(masked), _CLIP["seconds"])
-        except Exception:
-            pass
-        masked = H3CompactMultimodalEditDirectorFix._timecode_shots(masked, _CLIP["seconds"], store)
-        try:
-            masked = H3CompactMultimodalEditDirectorFix._carry_posture(masked)
-        except Exception:  # noqa: BLE001 - a clean-up never breaks the prompt
-            pass
-        out = H3CompactMultimodalEditDirectorFix._scrub_music(H3CompactMultimodalEditDirectorFix._unmask_d(masked, store))
-        _CLIP["prev_closing"] = H3CompactMultimodalEditDirectorFix._inherited_framing(out, declared)
-        out = re.sub(
-            r",?\s*(?:identity |fully )?referenced from (<(?:Picture|Video) \d+>)\.?",
-            r"; identity taken from \1.", out, flags=re.IGNORECASE)
-        out = re.sub(r"(?m)^(<Subject \d+>) (?:is )?[Tt]he ", r"\1 is the ", out)
-        out = re.sub(r"(?m)^(<Subject \d+>) (?:is )?(an?) ", lambda m: f"{m.group(1)} is {m.group(2).lower()} ", out,
-                     flags=re.IGNORECASE)
-        out = re.sub(r"</d>\.", "</d>", out)
-        out = re.sub(r"(?<=[A-Za-z0-9>)])( Target appearance:| Body proportions:)", r".\1", out)
-        out = H3CompactMultimodalEditDirectorFix._drop_identity_cap(
-            H3CompactMultimodalEditDirectorFix._subject_tags(out))
-        if _CLIP.get("wardrobe_new"):  # tell the video model the picture's clothes are not part of the target
-            out = re.sub(r"(?m)^(<Subject \d+> [^\n]*?(<Picture \d+>)[^\n]*?) Target appearance:",
-                         lambda m: m.group(0) if (_CLIP.get("i2v") and m.group(2) == "<Picture 1>") else
-                         f"{m.group(1)} Target appearance (a new outfit; the clothes worn in {m.group(2)} are not used "
-                         "unless the request names them):", out)
-        if _CLIP.get("restyle_outfit"):  # Keep Reference + Outfit style: same clothes, visibly new cut
-            style = _CLIP["restyle_outfit"]
-            out = re.sub(r"(?m)^(<Subject \d+> [^\n]*?(<Picture \d+>)[^\n]*?) Target appearance:",
-                         lambda m: f"{m.group(1)} Target appearance (the clothes of {m.group(2)} restyled to {style}: "
-                         "same colours and fabrics, new cut; not worn exactly as in the picture):", out)
-        if _CLIP.get("body_new"):
-            out = re.sub(r"(?m)^(<Subject \d+> [^\n]*?(<Picture \d+>)[^\n]*?) Body proportions:",
-                         lambda m: m.group(0) if (_CLIP.get("i2v") and m.group(2) == "<Picture 1>") else
-                         f"{m.group(1)} Body proportions (adapted; the body shape in {m.group(2)} is not kept):", out)
-        if _CLIP.get("environment_new"):
-            pics = sorted(set(re.findall(r"<Picture \d+>", out)) - ({"<Picture 1>"} if _CLIP.get("i2v") else set()))
-            if pics and "integrated_multimodal_description:\n" in out:
-                out = out.replace("integrated_multimodal_description:\n",
-                                  "integrated_multimodal_description:\nA newly designed setting; the backgrounds of "
-                                  + ", ".join(pics) + " are not used. ", 1)
-        return out
 
     _PATCH_RULES = (
         ("hold_provider", re.escape('if str(held.get("provider_identity") or "") != provider_identity:'),
@@ -4496,14 +4109,15 @@ In sequences carry the same grammar across scenes and continue paths and states 
     def define_schema(cls):
         return io.Schema(
             node_id="H3CompactMultimodalEditDirector",
-            display_name="H3 Compact Multimodal Edit Director",
+            display_name="H3 Transfer & Edit Director",
             category="text/minimax_h3",
             search_aliases=[
-                "h3 compact edit director fix", "h3 director fix", "h3 creative director",
+                "h3 transfer director", "h3 edit director", "h3 swap", "h3 compact multimodal edit director",
             ],
             description=(
-                "Compact optional-source director for background, identity, wardrobe, object, "
-                "pose, action, style and relighting edits. Leaner rules, decision-making creative toolkit. Requires an external LLM provider."
+                "Transfer and video-edit director: puts the people or objects of the reference pictures into the "
+                "guide video's movement (Swap, Edit, Add, Remove), or edits a video keeping its movement, cuts and "
+                "audio. For creative scenes use H3 Open Director. Requires an external LLM provider."
             ),
             inputs=[
                 io.String.Input(
@@ -4511,12 +4125,9 @@ In sequences carry the same grammar across scenes and continue paths and states 
                     default="Describe the exact edit and assign each connected source its role.",
                 ),
                 io.Combo.Input(
-                    "edit_mode", options=["Normal", "Compact", "Edit", "Transfer", "Transfer Keep Audio", "Transfer Keep Audio Basic"], default="Normal",
+                    "edit_mode", options=list(MODE_NAMES), default="Transfer",
                     tooltip=(
-                        "Normal: the full creative director. It writes the story from your request, the references "
-                        "and the Direction Controls, one prompt per scene (Scenes sets how many), with continuity "
-                        "between scenes. Compact: the same director and rules with prompts about half as long "
-                        "(fewer adjectives, light and sound in brief), cheaper and faster. Edit: H3 video editing of the "
+                        "Edit: H3 video editing of the "
                         "Guide Video (it becomes <Video 1>; for Viggle Remake swap/edit and similar): only what you "
                         "ask changes, movement, cuts and audio stay, six-section edit prompt. Transfer: puts the "
                         "people or objects of your references into the guide video's movement (Video Task: Swap, "
@@ -4562,8 +4173,8 @@ In sequences carry the same grammar across scenes and continue paths and states 
                     "i2v_mode", display_name="I2V Mode — Picture 1 is First Frame",
                     default=False,
                     tooltip=(
-                        "When enabled, Picture 1 is treated as the exact opening frame and every "
-                        "director mode writes motion beginning from its visible state."
+                        "When enabled, Picture 1 is treated as the exact opening frame and the "
+                        "motion begins from its visible state."
                     ),
                 ),
                 io.Int.Input(
@@ -4578,8 +4189,7 @@ In sequences carry the same grammar across scenes and continue paths and states 
                     "seconds_per_scene", display_name="Seconds per Scene",
                     default=5.0, min=1.0, max=60.0, step=0.5, force_input=True,
                     tooltip=(
-                        "Connected FLOAT containing the 1–60 second screen-time budget used by "
-                        "Elaborate and Elaborate Plus."
+                        "Connected FLOAT with the length of each scene in seconds (1–60)."
                     ),
                 ),
                 io.String.Input(
@@ -4613,6 +4223,11 @@ In sequences carry the same grammar across scenes and continue paths and states 
 
     @classmethod
     def execute(cls, *args, **kwargs):
+        _requested = str(kwargs.get("edit_mode", "Transfer")).strip()
+        if _requested.lower() not in MODES and not kwargs.get("bypass"):
+            raise ValueError(
+                f"H3 Transfer & Edit Director: the '{_requested}' mode no longer exists. This node only does "
+                "Transfer and Edit; for creative scenes use H3 Open Director. Choose one of: " + ", ".join(MODE_NAMES) + ".")
         _CLIP.reset()  # a fresh state for this execution only
         _CLIP["real_llm"] = kwargs.get("llm")
         _CLIP["video_edit"] = str(kwargs.get("edit_mode", "")).strip().lower() == "edit"
@@ -4632,10 +4247,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
             kwargs["driven_video"] = None
             kwargs["driven_image"] = None
         _CLIP["videos"] = [i for i in (1, 2) if kwargs.get(f"source_video_{i}") is not None]
-        _mode = str(kwargs.get("edit_mode", "")).strip().lower()
-        if _mode in ("normal", "compact"):  # both run the full creative sequence engine
-            _CLIP["compact"] = _mode == "compact"
-            kwargs["edit_mode"] = "Elaborate Plus"
         _CLIP["basic"] = str(kwargs.get("edit_mode", "")).strip().lower() == "transfer keep audio basic"
         _CLIP["keep_audio"] = str(kwargs.get("edit_mode", "")).strip().lower() in ("transfer keep audio",
                                                                                   "transfer keep audio basic")
@@ -4648,53 +4259,15 @@ In sequences carry the same grammar across scenes and continue paths and states 
         except (TypeError, ValueError):
             clip = 10.0
         _CLIP["seconds"] = clip
-        sequence_modes = ("elaborate plus", "continuous edit", "transfer", "continuous elaborate", "elaborate continuo")
+        sequence_modes = ("continuous edit", "transfer")
         try:
             _CLIP["scenes"] = (max(1, min(12, int(kwargs.get("continuous_scene_count", 3))))
                                if str(kwargs.get("edit_mode", "")).strip().lower() in sequence_modes else 1)
         except (TypeError, ValueError):
             _CLIP["scenes"] = 1
         _CLIP["prev_closing"] = None
-        creative_modes = {
-            "elaborate", "elaborate plus", "continuous elaborate", "elaborate continuo"}
-        if (
-            str(kwargs.get("edit_mode", "")).strip().lower() in creative_modes
-            and str(kwargs.get("system_prompt", "")).strip() == cls.DEFAULT_SYSTEM_PROMPT.strip()
-        ):
-            kwargs["system_prompt"] = cls.CREATIVE_BASE_PROMPT
-            try:  # room for the short creative_brief the schema now asks for first
-                per_scene = 650 if clip <= 5 else 1000 if clip <= 10 else 1250 if clip <= 15 else int(85 * clip)
-                if _CLIP.get("compact"):
-                    per_scene = int(per_scene * 0.6)
-                scenes = (max(1, min(12, int(kwargs.get("continuous_scene_count", 3))))
-                          if str(kwargs.get("edit_mode", "")).strip().lower() != "elaborate" else 1)
-                kwargs["max_tokens"] = max(int(kwargs.get("max_tokens", 1200)), scenes * per_scene + 1000)
-            except (TypeError, ValueError):
-                pass
-            cls._get_patched_execute()  # builds the patch report used below
-            missing = set(_PATCH_STATE["failed"])
-            notes = []
-            if "coverage" in missing:
-                try:
-                    seconds = float(kwargs.get("seconds_per_scene", 5.0))
-                except (TypeError, ValueError):
-                    seconds = 5.0
-                notes.append(cls.coverage_note(seconds))
-            if "dialogue" in missing:
-                notes.append(cls.DIALOGUE_CRAFT_NOTE)
-            if "wardrobe" in missing:
-                notes.append(cls.ACCESSORY_NOTE)
-            if "env" in missing:
-                notes.append(cls.ENVIRONMENT_NOTE)
-            if notes:  # fallback: same craft rules, carried in the base prompt
-                kwargs["system_prompt"] += (
-                    "\n\nCRAFT RULES (these override any edit-contract text that forbids cuts, "
-                    "new story or new design): " + " ".join(notes)
-                )
-        if str(kwargs.get("edit_mode", "")).strip().lower() in ("compact", "edit", "continuous edit"):
+        if str(kwargs.get("edit_mode", "")).strip().lower() in ("edit", "continuous edit"):
             kwargs["system_prompt"] = str(kwargs.get("system_prompt") or "") + "\n\n" + cls.OUTPUT_LANGUAGE_RULE
-        if _CLIP.get("compact"):
-            kwargs["system_prompt"] = str(kwargs.get("system_prompt") or "") + "\n\n" + cls.COMPACT_NOTE
         kwargs["system_prompt"] = str(kwargs.get("system_prompt") or "") + "\n\n" + cls.REQUEST_READING_NOTE
         if _CLIP.get("video_edit"):
             _vt = re.search(r"(?im)^Video task:\s*(Edit|Add|Remove)\b", str(kwargs.get("direction_context") or ""))
@@ -4789,7 +4362,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
         _CLIP["environment_new"] = bool(re.search(r"(?im)^Environment:\s*Create New", _ctx))
         _CLIP["body_new"] = bool(re.search(r"(?im)^Body proportions:\s*Creative Adaptation", _ctx))
         has_driven = any(kwargs.get(name) is not None for name in ("driven_image", "driven_video"))
-        _CLIP["guide_creative"] = has_driven and _CLIP["mode"] != "transfer"
         strength, axes = cls.source_axes(kwargs.get("direction_context"))
         kwargs["driven_strength"] = strength
         has_source = has_driven or any(kwargs.get(f"source_video_{i}") is not None for i in (1, 2))
@@ -4810,10 +4382,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
             kwargs["edit_request"] = (str(kwargs.get("edit_request") or "").rstrip() + "\n\nSELECTED CONTROLS (apply each "
                                       "visibly; where the user's own words above say otherwise, the words win): "
                                       + "; ".join(items) + ".")
-        if has_driven and str(kwargs.get("edit_mode", "")).strip().lower() in ("elaborate", "elaborate plus"):
-            has_refs = any(kwargs.get(f"reference_image_{i}") is not None for i in range(1, 5))
-            kwargs["system_prompt"] = (str(kwargs.get("system_prompt") or "") + "\n\n"
-                                       + cls.driven_note(kwargs.get("driven_strength", 3), has_refs))
         if str(kwargs.get("edit_mode", "")).strip().lower() == "transfer":
             try:  # transfer_cast + object scenes need room, like the creative modes
                 scenes = max(1, min(12, int(kwargs.get("continuous_scene_count", 3))))
@@ -4854,11 +4422,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
                         payload = dict(payload, messages=[dict(messages[0], content=system), *messages[1:]])
                     if _CLIP.get("video_edit") and isinstance(system, str):
                         system = system + "\n\n" + cls.video_edit_contract()
-                        payload = dict(payload, messages=[dict(messages[0], content=system), *messages[1:]])
-                    if (_CLIP.get("guide_creative") and isinstance(system, str)
-                            and not system.startswith("IMAGE/VIDEO TO SCENE BLUEPRINT")):
-                        look = cls.guide_look_note()
-                        system = system + "\n\n" + cls.GUIDE_SILENT_NOTE + (("\n\n" + look) if look else "")
                         payload = dict(payload, messages=[dict(messages[0], content=system), *messages[1:]])
                     if (_CLIP.get("i2v") and _CLIP.get("mode") != "transfer" and isinstance(system, str)
                             and not system.startswith("IMAGE/VIDEO TO SCENE BLUEPRINT")):

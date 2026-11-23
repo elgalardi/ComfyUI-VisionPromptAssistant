@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- H3 Compact Multimodal Edit Director is now H3 Transfer & Edit Director (v149):
+  only Transfer, Transfer Keep Audio, Transfer Keep Audio Basic and Edit remain,
+  default Transfer. Normal and Compact and their creative code were removed;
+  creative scenes belong to H3 Open Director. Same node id and inputs, so saved
+  workflows load; one saved in Normal or Compact must switch mode. Transfer and
+  Edit send exactly the same requests and return the same prompts as v147.
 - H3 Open Director: a reply cut off by the token limit is never passed on as a
   prompt; it is asked again with more room. Missing scenes are asked for
   (continuing the written ones) instead of repeating the last scene.

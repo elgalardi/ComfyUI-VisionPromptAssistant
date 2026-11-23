@@ -15,8 +15,13 @@ Compact MiniMax H3 prompt directors with interchangeable LLM loaders.
 
 - `PreviewVisionPrompt`: display prompt text without saving a file.
 
-- `H3CompactMultimodalEditDirector`: the proven enhanced director, now the default,
-  with Normal, Compact, Edit and Transfer modes and optional image/video guides.
+- `H3OpenDirector` (H3 Open Director): the creative director. Your system prompt
+  and request decide everything; one or more continuous scenes.
+- `H3CompactMultimodalEditDirector` (H3 Transfer & Edit Director): Transfer,
+  Transfer Keep Audio, Transfer Keep Audio Basic and Edit only. Normal and Compact
+  were removed (v149); a workflow saved in those modes stops with a message
+  pointing to H3 Open Director. Older notes below about Normal, Compact, Enhance or
+  Elaborate describe removed modes.
 - `H3CompactDirectionControls`: genre, motion, visual look and dialogue controls.
 - `H3CompactPromptSelect`: select one prompt from structured scene output.
 - `H3OpenRouterModel`: OpenRouter provider; key input or `OPENROUTER_API_KEY`.
