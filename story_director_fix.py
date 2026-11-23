@@ -1,15 +1,9 @@
 """H3 Transfer & Edit Director (node id H3CompactMultimodalEditDirector): Transfer and video Edit only.
 
-It subclasses ``H3CompactMultimodalEditDirector`` (same inputs/outputs, same
-execution engine, hold cache and provider routing) and only overrides:
-
-* the rule blocks: condensed (~55% fewer system-prompt tokens), conflict-free,
-  with one shared creative-decision toolkit adapted from Shotcaller / Motiondojo
-  / Story Bible Builder (lens register, sourced light, acting, geometry, mouth
-  lock, no on-screen text, physics);
-* ``execute``: direction-control rules, retries and output clean-up.
-
-The base engine stays in story_director.py. Hold cache is isolated (``cls.__name__``).
+It subclasses the engine in story_director.py (``H3CompactMultimodalEditDirector``) and adds the public
+schema, the rule blocks, the direction-control rules, retries and output clean-up. The creative modes
+(Normal, Compact, Enhance, Elaborate, Creative Plus) were removed in v149: creative scenes belong to
+H3 Open Director. Hold cache is isolated (``cls.__name__``).
 """
 import contextvars
 import inspect
@@ -182,97 +176,11 @@ retention labels fully_preserved, partially_preserved, attribute_transfer, weak_
 only for real cuts. Simple edits and image edits: one precise paragraph. Never invent an <Audio N>.
 """.strip()
 
-    ELABORATE_RULES = """
-ELABORATE — ONE AUTHORED PROMPT
-Write one developed, production-ready prompt under the same change/preserve contract. Length follows
-the screen-time contract below; every detail must control something visible or audible.
-
-DECIDE, DON'T LIST. The user text may be only a seed. For everything it leaves open you MAKE the
-choices (never alternatives, "could", "may" or stock filler): the situation and payoff, place and
-time, one distinctive camera idea, light sources, performance intentions, sound perspective and the
-final changed image. Use the DIRECTOR TOOLKIT. Explicit requests, assigned source traits, locked
-camera/performance/audio and named locations stay authoritative; do not replace identities, assigned
-wardrobe or required outcomes; no principal character or subplot added only for spectacle (characters
-the story needs are welcome). A faithful edit
-authorises no new dialogue, stunts, violence, intimacy or supernatural events. An open brief
-authorises genre-appropriate events and dialogue. Where request and sources are silent, invent boldly.
-
-Order the prose: who/where (stable traits, positions) → setting with depth planes, materials and
-sourced light → chronological micro-beats (initiator, direction, pace, contact, reaction, resulting
-state) → shot size, height, angle, lens/focus and one dominant movement → ambience, Foley, dialogue,
-music → one short descriptive continuity closer (no command verbs).
-
-DIRECT VISUAL PROSE: describe finished footage, never a request to a model. Do not use Create,
-Generate, Show, Depict, Make, Use, Maintain, Preserve, Ensure, Keep, Avoid, "Do not", "should" or
-"focus on". Start with the active tagged subject or visible setting; state preservation as fact
-("Her white hair and purple beanie remain consistent"). Replace mood words (intense, raw, frantic)
-with distance, posture, gaze, hands, pace, contact, weight, breath, reaction. Never "they engage in".
-Cuts only where the structure permits them; locked cameras stay locked. Same four-key JSON as base;
-`visual_evidence` stays a short audit.
-""".strip()
-
-    H3_NATIVE_PROMPT_RULES = """
-MINIMAX H3 NATIVE GRAMMAR (official guide)
-Plain-text sections, exact headings, no Markdown bold, blank lines between sections and shots:
-
-subject_definitions:
-integrated_multimodal_description:
-overall_soundscape:
-non_diegetic_music:
-
-- subject_definitions: each persistent person/object/environment/style as <Subject N>, bound to its
-  source the official way: `<Subject 1> is the woman in <Picture 1>, ...`, then only the stable
-  distinguishing traits (identity, wardrobe, object). Labels keep one meaning in every section. No
-  subjects: `N/A`.
-- integrated_multimodal_description: open with one or two English sentences setting style and
-  initial composition, then `[Shot 1]` (never a timestamp). Later shots: `[Shot 2] At 00:SS.mmm, ...`
-  with strictly increasing times inside the clip; every shot lasts at least 2 seconds, the first cut
-  comes after 2 seconds and the last cut at least 2 seconds before the end. A cut must bring NEW
-  information (subject, space, state, viewpoint or time); a small angle or distance change is camera
-  motion instead. Keep positions explicit in multi-subject coverage; props and contacts must be
-  visible in frame.
-- A cut never changes the physical state: every shot after a cut restates, for each visible subject,
-  where they are and their level exactly as the previous shot left them (still seated on the sofa,
-  still standing at the bar, kneeling, lying), what they hold and any garment already changed. A
-  posture changes only on screen inside a shot (she stands up), never across a cut.
-- Camera motion is written as natural action with type, amplitude and speed ("pushes in with small
-  amplitude at slow speed toward the folded letter"); omit amplitude/speed when medium/normal; no
-  stacked camera labels at the end of sentences.
-- Dialogue, written once, here: identify the speaker on first appearance with voice details outside
-  the tag (pitch, timbre, pace, accent), then `<Subject N> (S1) says: <d>[Language] exact words</d>`.
-  Speaker IDs (S1), (S2)... are assigned in the order of actual vocal events, stay stable across shots,
-  and are compound for simultaneous speech, e.g. (S1,S2). Characters who never vocalise get no ID.
-  Inside <d> only the language tag and the exact words; supplied lines stay verbatim, untranslated.
-  While one subject speaks, the others have closed mouths and active listening behaviour: in every shot
-  with speech, name who speaks and state the other visible faces' lips closed. `<cutoff>`
-  when speech is cut by the end of the clip. A line that continues over a cut is written in two
-  parts, one per shot, each with `<scenetrans>` at the connecting point, and the shot says the voice
-  "continues seamlessly across the cut". Voiceover as "says in an off-screen voiceover" with the
-  visible lips stated closed.
-- overall_soundscape: 1–4 sentences of ambience, physical action sounds and non-verbal human sound;
-  no dialogue or diegetic music; `N/A` only if total silence was requested.
-- non_diegetic_music: 1–3 sentences of instrumentation, tempo, rhythm and dynamic development, never
-  its emotional function or abstract mood words; `N/A` when no score. Diegetic music belongs in the shots.
-- Visible on-screen text only if the user supplied the exact words, in English double quotes; no
-  captions, logos or UI otherwise.
-- End on continuing behaviour, a completed result or a purposeful held beat — not a freeze, dead air
-  or a repeat of the opening composition. Positive wording; a targeted constraint only for a likely
-  failure (duplicate subjects, voice swap, unstable wardrobe, broken contact).
-""".strip()
-
-    NARRATIVE_ARC_RULES = _Base.NARRATIVE_ARC_RULES.replace(
-        "changing stakes and payoff", "development and payoff").replace(
-        "Reserve time INSIDE the last scene for completion",
-        "The requested action may happen in any scene, even the first; reserve time INSIDE the last scene for "
-        "its consequence, the story's close")
-    assert "development and payoff" in NARRATIVE_ARC_RULES and "even the first" in NARRATIVE_ARC_RULES
-
     OUTPUT_LANGUAGE_RULE = (
         "OUTPUT LANGUAGE (binding): write every field and all prose in English, even when the user writes the "
         "request in Spanish or any other language. Only the spoken words inside <d>...</d> use the dialogue "
         "language (the selected one, otherwise the language of the user's request). Never translate the "
         "section headings or the <Subject N>, <Picture N> and [Shot N] tags.")
-    H3_NATIVE_PROMPT_RULES = H3_NATIVE_PROMPT_RULES + "\n" + OUTPUT_LANGUAGE_RULE
     TRANSFER_EDIT_CONTRACT = """
 EDIT CONTRACT (Transfer also works as an editor; binding):
 - Base shot. When no Driven input or source video supplies the performance, the primary picture (Picture 1
@@ -360,69 +268,6 @@ another gender, whatever the genre, heat or action.
         "Environment control is Auto or Keep Guide) without") + "\n" + TRANSFER_VIVID + "\n" + TRANSFER_CHANGES + "\n" + NO_INVENTED_PEOPLE + "\n" + TRANSFER_PARTIAL + "\n" + TRANSFER_EDIT_CONTRACT + "\n" + OUTPUT_LANGUAGE_RULE
     SOURCE_TRANSFER_RULES = _allow_speech.__func__(_Base.SOURCE_TRANSFER_RULES, _SPEECH_RULES) + "\n" + TRANSFER_VIVID + "\n" + TRANSFER_CHANGES + "\n" + NO_INVENTED_PEOPLE + "\n" + TRANSFER_PARTIAL + "\n" + TRANSFER_EDIT_CONTRACT + "\n" + OUTPUT_LANGUAGE_RULE
 
-    ELABORATE_DURATION_RULES = """
-SCREEN-TIME CONTRACT — {seconds:.2f} SECONDS PER SCENE
-Each scene prompt is one clip of {seconds:.2f} s. Design only what can be performed and perceived in
-that time. Prose length follows time (a guide, not a quota; shorter is valid): up to 5 s about
-110–190 words; up to 10 s about 170–300; over 10 s about 260–420. Speech about 2.5 words/s with room
-for breath, reaction and movement; never add dialogue to fill time. Up to 5 s: one focused beat,
-normally one shot. 5–10 s: one developed action, two or three phases. Over 10 s: a compact multi-beat
-scene or few motivated cuts, with timecodes inside {seconds:.2f} s derived from the real action. If
-speech ends early, continue with physical action and a resulting state. Never compress several
-complex actions into an implausible interval. Required dialogue and reference bindings may exceed the guide.
-""".strip()
-
-    CONTINUOUS_H3_HANDOFF_RULES = """
-SEQUENCE HANDOFF (single pass, no tail-frame review)
-- End scene N on a motion that is already running and easy to resume (whatever this story's action
-  is at that moment, or a slow camera path) so the generated endpoint can differ slightly. Scene N+1 starts from that inherited
-  pose, pace, camera relationship, light and sound; do not reset to the reference pose, re-establish
-  the place, replay a finished action or invent exact unseen positions.
-- Keep one physical transition inside one scene (reach, open, cross). Avoid boundaries on arrivals,
-  sit-downs or contact changes. Inside a scene, cuts may compress time and space (ellipsis: leaving one place, a cut to the
-  ride, a cut to the arrival); a journey never needs to be shown in full. Continuity is binding at the
-  joins between scenes, not along every trip.
-- Camera continues from the prior endpoint with the same axis and parallax; stable framing near
-  joins; complete optional push-ins within a scene; honour requested movement. Light/atmosphere
-  evolve within scenes and cross joins in their inherited state.
-- Speaker change: if the next first speaker is not the visible speaker at the join, open with a brief
-  silent inherited beat, reframe without a cut until the new speaker is established, then start the
-  <d> line; the outgoing person's mouth is closed. Same speaker: continue naturally.
-- Sequence-wide locks: lighting, <Subject N> definitions, screen positions, wardrobe in its current
-  state (what came off in an earlier scene stays off; each scene's Target appearance is the clothing
-  as it is at that scene's first frame), object counts, dialogue already used. Each non-final scene closes on a causally active beat.
-""".strip()
-
-    CONTINUOUS_ELABORATE_RULES = """
-ELABORATE PLUS — RICH SEQUENCE
-Exactly the requested number of standalone scene_prompts, each a rich finished-footage prompt in the
-schema's object form; length per the screen-time contract. The node adds headers and task text.
-
-Treat the text as the seed of ONE designed progression, not prose to paraphrase per scene. Make the
-open choices decisively (see DIRECTOR TOOLKIT): setting and time, production design, performance
-intention, connective behaviour, motifs, camera strategy, light/colour progression, sound, reveals,
-payoff. Give each scene a distinct function (initiation, development, complication, reveal, reaction,
-culmination, settle) without inventing conflict. The requested action happens where the story needs it, early
-if it is simple; the last scene shows its consequence and closes the story, it does not delay the request.
-Never pad with restated premise, adjective stacks or the same action "more intensely".
-Authority: explicit requests and source assignments win; no change of identity, wardrobe, named
-location, required action or outcome; no new principal character or subplot added only for drama (characters
-the story needs are welcome); faithful edits
-add no dialogue, violence, intimacy, stunts or location changes; open briefs permit genre events and
-dialogue; a requested single take forbids cuts (an I2V opening only fixes the first frame; a locked camera only stops movement inside a shot), otherwise cuts follow the
-coverage rule; locked source video keeps timing, camera, performance and audio.
-Continuity (carry between scenes): immutable identities/designs; evolving geography, body configuration,
-contacts, gaze, momentum, camera axis/path, light phase, audio phase. Each prompt: tagged cast and
-stable look → depth-layered setting with sourced light → chronological micro-beats ending in the state
-the next scene inherits → shot size, height, lens/focus and path → ambience, Foley, dialogue, music →
-one descriptive closer. Every active canonical tag appears verbatim in each scene where it remains active.
-
-DIRECT VISUAL PROSE in every scene: present tense, finished footage; none of Create, Generate, Show,
-Depict, Make, Use, Maintain, Preserve, Ensure, Keep, Avoid, "Do not", "should", "focus on". Start with
-the tagged subject or setting and its starting physical state; mood becomes positions, gaze, hands,
-pace, contact, weight, breath, reaction; the last sentence is descriptive, never a prohibition list.
-""".strip()
-
     CONTINUOUS_EDIT_RULES = """
 EDIT CONTINUO — EDIT CONTRACT PER SCENE
 Edit-mode change/preserve discipline spread over exactly the selected number of chronological scenes.
@@ -481,19 +326,6 @@ or reflection); keep shadows and reflections coherent; keep deliberately staged 
 describe the result, not the transfer.
 """.strip()
 
-    CONTROL_DECISION_RULES = """
-CONTROLS → FINAL CHOICES
-Auto/none = freedom. A selection is a design decision made before footage, not seasoning afterwards;
-one value per control. User instructions and source locks win. Resolve each
-axis once and carry it through every block: genre → situation and payoff; world/period look → unlocked
-wardrobe, grooming, props, set and sound (adapt silhouette/materials, never a source outfit with an
-era label); capture/colour/stock looks change image behaviour only; motion → action cadence (not speech
-speed; fast still allows a listening pause); camera → viewpoint/path/stabilisation (handheld ≠ constant
-shake); dialogue → permitted speech, not a quota. Faithful edits and Transfer apply only what is
-authorised; genre never overrides source chronology. If removing a label leaves generic footage, make
-its choices specific in the existing fields. No checklist or extra analysis.
-""".strip()
-
     CONTROL_EXECUTION_RULES = """
 CONTROLS — INDEPENDENT, OBSERVABLE AXES
 Tempo = cadence; force = acceleration/contact; camera = viewpoint/path; look = capture/light/material;
@@ -504,94 +336,6 @@ label. Genre, world, presentation format and rendering medium are different thin
 one causal situation. Choose concrete silhouette/material and usable set geography; motivate light
 direction, quality and colour; detail must be resolvable at the shot scale. Camera selections override a
 look's default camera. Keep reference/design locks and established scene states.
-""".strip()
-
-    CREATIVE_TREATMENT_RULES = """
-TREATMENT DECISION
-Commit to ONE treatment (never write alternatives or drafts). Decide two unlocked axes that make it
-specific — audience viewpoint, spatial staging, reveal timing, performance, practical light,
-environment interaction or sound perspective — and give it one memorable visible relationship,
-composition or change; camera, light, performance and sound support it. Restraint, stillness and a held
-beat are valid; do not force conflict into dance or non-narrative work. Requests, assigned traits,
-locked camera/performance/audio outrank novelty. Faithful edits invent only inside the authorised
-change. Open stories also decide premise and character choices. An identity reference locks neither its
-background nor its pose unless assigned. One treatment across scenes, distinct causal beats, inherited state.
-""".strip()
-
-    CREATIVE_LOOK_RULES = """
-LOOK AS WORLD DESIGN
-The Era control (not a Visual look) authorises UNLOCKED period wardrobe, hair, accessories, sets, props and sound — write the
-target garments and grooming in subject_definitions, not the source outfit plus an era label; keep them
-identical across scenes. Film-stock, colour or lens looks do not move the story or change clothes.
-Locks, assigned guide appearance, faithful edits and I2V frame-zero facts win; facial identity and
-canonical tags stay ("fully referenced" is not a wardrobe lock for a requested adaptation). Choose
-combinations suited to each character and venue, not stereotypes; keep a requested signature accessory
-with adapted styling. Realise the look through a few visible decisions in light, colour, material, staging,
-sound. Genre shapes the dramatic mechanism too (dark comedy exposes an ironic cost or reversal, not
-labelled slapstick). Test: without the label, would the footage still express it?
-""".strip()
-
-    WRITER_DIRECTOR_RULES = """
-STORYTELLER — READ WHAT THE USER ASKED, THEN CHOOSE THE NARRATIVE TOOL
-Fidelity first: a precise action, faithful edit, source performance, Driven Video chronology, locked
-plot or supplied dialogue is told as given. Everything the request leaves open is YOURS to author,
-decisively. TONE FIRST (binding): read the emotional tone the request implies (happy, tender, playful,
-funny, sad, tense, erotic, frightening) and keep it for the whole sequence. Raise the idea to a better
-story with specificity (behaviour, timing, a small surprise, a satisfying payoff), never by switching its
-genre or adding conflict, threat, a secret, sadness or a twist the request did not ask for. Small, coherent
-obstacles that grow from the premise (a misunderstanding, a clumsy moment, an unexpected choice, a consequence) are
-allowed when they serve it, never changing its genre or scale.
-CAST CREATION: when the request names or clearly implies a character with no reference (someone the
-action needs: a partner, a rival, a stranger, a crowd), create them: add them to subjects as a text-only subject (identity: adult
-age range, build, face and hair traits; target_appearance: outfit) with its own <Subject n> tag, give them
-a personality that serves the tone, and keep them identical across scenes. Animals and creatures are
-subjects too: identity = species, breed, coat and markings from the reference; no clothes unless the request
-or the story's own logic needs them;
-they act like that animal and do not speak unless the request asks.
-Classify the brief silently and adapt:
-- Seed or controls only ("a woman in a market", just a genre): invent the whole story — premise,
-  want, a turn and a payoff in the request's tone — and make it specific to these referenced people and this place.
-- Scene with people and talk: lines play off each other (subtext and withholding only when the request
-  is dramatic); lines
-  answer, dodge, challenge or interrupt the previous line or action; short, in-voice, never exposition
-  or "as you know". What is not said travels through a prop, eyeline, gesture or withheld reply.
-- Action or spectacle: tell it through cause and effect — a goal, an effort, a changed
-  state — not through louder motion.
-- Mood, dance, product, loop, quiet or experimental: no forced conflict; use a visual motif,
-  transformation, reveal or rhythm change as the story, and a purposeful ending.
-- Trailer, commercial, music video: a question built through escalating glimpses; a proposition made
-  meaningful; motifs on the beat. Documentary/product: no invented facts, claims or brand text.
-CREATIVE BRIEF: when the schema has creative_brief, fill it first and concretely; wardrobe, place, light,
-dialogue, shots and the final gesture must all carry its decisions.
-SCALE (binding): keep the story at the scale and genre of the request. A trivial situation (a date, a meal,
-a chat) stays trivial: its interest comes from specific behaviour, humour, warmth or awkwardness, never from an
-invented secret, plot, crime, espionage, surveillance, danger or hidden object. Add such elements only when the
-request or the selected controls ask for them. With Genre and Visual look on none do not impose a genre or a
-style (no noir, thriller or mystery treatment): infer the treatment the request itself suggests (everyday request: natural; fantasy, cartoon or
-sci-fi request: that world, played sincerely).
-THE SPINE (decide it inside the existing fields, never as extra output): one premise sentence; per lead
-a want (a private worry only if the request implies one), a voice (cadence, vocabulary) and a movement habit — invented only where
-unlocked, never inferred from a real person's photo; one object, place or gesture planted early and
-paid off late; each beat changes what is known, the distance between them or what they are committed to; show the gap between
-intention and behaviour. Keep the referenced principal cast; space, objects or off-screen pressure can
-oppose it; add a lead only when requested or necessarily implied, never a duplicate reference.
-CONTROLS ON none (genre, look or motion) are YOUR decisions, taken from the request: choose one coherent package that
-serves the premise and its tone — a storytelling mechanism, a visual world and an action cadence — and express it through
-place, wardrobe, light, framing and rhythm, never as labels. Do not fall back on a generic modern
-cinematic-night look. Decide premise, place and hour before wardrobe and palette.
-SCALE TO TIME: ~5 s = one hook and one turn, or one image and one change; ~10 s = setup, turn,
-button; 15 s+ = a small arc. Never a whole film in one clip. In sequences give each scene a different
-function (rising only when the story builds; calm stories progress without escalation); boundaries fall on motion already running; the last scene delivers the payoff inside
-its own time, then settles (no hook left dangling). Carry the canon, completed
-events and emotional state forward — update, never reset.
-VISUAL TELLING: choose what the audience knows and sees (wide/deep to show geography, close to withhold,
-occlusion, negative space or focus for a reveal), define screen-side placement, eyelines and meaningful
-contacts, label screen-relative vs character-relative sides, and keep lens, distance and focus
-consistent. Describe only what the framing and light can resolve. A requested single take uses
-blocking, reframing and focus; no scene boundary is a cut or a teleport.
-Selected language permits speech, not a quota; "No dialogue" forbids it; never guess source words from
-frames; no phoneme instructions. Compile only finished footage into the existing sections/JSON within
-the word/token budget: no script, analysis, alternatives or extra calls.
 """.strip()
 
     CINEMATIC_CRAFT = """
@@ -702,145 +446,8 @@ invention.
         "extras use other Subject numbers.")
     assert "vocal events" in CAST_IDENTITY_RULES and "plot or extra" in DESIGN_CONTROL_RULES
 
-    CREATIVE_EDIT_CORE = """
-SOURCES AND LOCKS
-Bind each connected tag to one function (identity, wardrobe, object, environment, look, pose/action,
-camera, temporal reference); unused sources stay unused; Driven sources give scenario, not identity.
-Subtract the user's explicit changes before preserving anything: never lock an attribute the user
-changes. A source video used as a plate keeps its timing, camera, performance and audio unless changed;
-with images only, keep the assigned identities and design everything else. Use canonical <Picture N> /
-<Video N> tags; describe evidence concretely (facial geometry, hair, silhouette, fabric, layout, light),
-not adjectives; one coherent subject and world, never an average of references.
-""".strip()
-
-    ELABORATE_DIRECTION_RULES = """
-DIRECTION CONTROLS — OBSERVABLE EXECUTION
-Each selected control is binding and must be visible or audible, never a label: deleting the label must
-still leave concrete evidence. Genre = at least three coherent choices among design, light/palette,
-staging, atmosphere, sound (no relocation without permission, no invented genre plot). Motion = who/what
-moves, trajectory, cadence, acceleration, depth change, resulting position. Camera = start scale and
-viewpoint, height, travel path, direction, pivot, speed, stabilisation, end composition (never a generic
-pan or "dynamic camera"). Look = capture format, lens, depth of field, contrast, palette, texture,
-motivated light. Dialogue: "No dialogue" forbids speech; a language only applies to permitted speech, in
-exact H3 syntax.
-In sequences carry the same grammar across scenes and continue paths and states from the prior endpoint.
-""".strip()
-
-    ACCESSORY_NOTE = (
-        "Design each outfit as characterization derived from the premise, the place, the hour and who "
-        "this person is: specific garments, fabric, fit, wear and one telling detail rather than a generic "
-        "default outfit; characters read apart at a glance unless the story wants them matched. Identity "
-        "(face, plus hair and build unless Hair & Makeup or Body Proportions choose otherwise) stays from the references. An accessory named in the user's request stays on "
-        "the character, but its colour, style and how it is worn are free."
-    )
-    ENVIRONMENT_NOTE = (
-        "Build the place from the story, not from a stock location: decide the premise, the hour and the "
-        "venue FIRST, a specific place that fits the request and gives the scene a reason to happen there, then its weather and working light sources, two or three "
-        "props or set pieces the action can use or that the story uses, and depth planes for coverage "
-        "(foreground object, playing area, background). Prefer something more specific than the generic default "
-        "(a plain rooftop, alley, empty bar or neon street), but use one if the story needs it. When the "
-        "request fixes the place, or Environment is Keep Reference, restate that place instead of inventing one; a "
-        "reference photo's background fixes the place only when Environment is not Create New."
-    )
-    DIALOGUE_CRAFT_NOTE = (
-        "Every line belongs to this fiction (it names or reacts to a concrete person, place, object or "
-        "event) instead of a generic stock phrase. On a speaker's first line add a short voice description "
-        "outside <d> (pitch, timbre, pace); the listener's mouth stays closed. Without a selected dialogue language, "
-        "spoken lines use the language the user wrote the request in. A line never contradicts what "
-        "the same shot shows. A conversation goes both ways unless the request makes it a monologue. A "
-        "gesture the user asked for is performed as asked; otherwise the closing action comes from this "
-        "story's props and place rather than a stock gesture."
-    )
-
-    CREATIVE_BRIEF_SCHEMA = {
-        "type": "object", "additionalProperties": False,
-        "properties": {
-            "premise": {"type": "string", "description":
-                "One sentence at the scale of the request: what each lead wants from this moment, the small "
-                "concrete thing the exchange is about, and what has shifted by the end. A hidden fact only "
-                "if the request implies one; add a secret, plot or danger only when the request or its genre calls for it."},
-            "place_and_hour": {"type": "string", "description":
-                "A specific venue and hour that fit the request. Prefer a specific venue over a generic rooftop, alley or empty bar; if the request or references "
-                "fix the place (or Environment is Keep Reference) restate that place; never the reference background "
-                "when Environment is Create New."},
-            "signature_prop": {"type": "string", "description":
-                "One object from that place the story uses at its key moment, or 'none' when the story needs none."},
-            "dialogue_hook": {"type": "string", "description":
-                "Two or more concrete nouns (names, objects, times, places) the spoken lines will mention; 'N/A' when nobody speaks."},
-            "palette_sources": {"type": "string", "description":
-                "Two or three named light sources with colour taken from the place or from the selected Visual look."},
-            "wardrobe_logic": {"type": "string", "description":
-                "One line per lead: what the outfit says about them and its dominant colour and value; "
-                "two clothed leads read apart unless the story wants them matched; an animal keeps its natural coat. An accessory named in the user's request stays on the character, but its colour, style and how it is worn are free."},
-            "subject_main_colours": {"type": "string", "description":
-                "One line per subject, '<Subject N>: dominant outfit colour' in plain words, as the story and controls "
-                "decide it (the request's colour if it names one; 'as reference' only when the reference outfit stays, "
-                "never with Wardrobe Create New; 'none' for a subject without clothes)."},
-            "shot_plan": {"type": "string", "description":
-                "Per scene: its shots (size, angle) as the coverage rule decides (one when Single take), and the closing shot the next scene repeats as its opening."},
-        },
-        "required": ["premise", "place_and_hour", "signature_prop", "dialogue_hook",
-                     "palette_sources", "wardrobe_logic", "subject_main_colours",
-                     "shot_plan"],
-    }
-    SHOT_FIELD_NOTE = (
-        "After [Shot 1], every shot is written exactly '[Shot 2] At 00:SS.mmm, cut to <new viewpoint> ...' "
-        "with strictly increasing times; a camera move is not a shot. Inside the footage name the leads only "
-        "as <Subject N>, never as 'the woman in <Picture 1>'."
-    )
-    CLOSING_FIELD_NOTE = (
-        "Written AFTER the footage: copy the shot size and viewpoint words of the LAST [Shot n] you wrote "
-        "(not the ending state of the scene), then its subject positions, eyelines and the action in "
-        "progress, as a plain framing description with no timing words. The next scene opens on exactly "
-        "this framing."
-    )
-    COVERAGE_PLAN_NOTE = (
-        "Decide before writing the footage: for a clip of 8 s or more, two or three viewpoints in order, "
-        "each different from the one before and each a real cut (for example 'two-shot > close-up on her > "
-        "over-the-shoulder on him'); for a shorter clip, one viewpoint, unless a Coverage control chooses otherwise. A camera push, pull or hold is "
-        "not a viewpoint. In every scene except the last, the final viewpoint is a clean, steady framing "
-        "the next scene can inherit (it may be a new place the story has moved to). If the direction controls say Coverage: "
-        "Single take, or the Visual look is a single fixed device (CCTV, webcam, dashcam, bodycam) and no Coverage control "
-        "picks Calm, Moderate or Dynamic, use ONE viewpoint "
-        "with no cuts. A locked-off camera only means the camera does not move inside each shot; cuts are still allowed."
-    )
-    SPEECH_PLAN_NOTE = (
-        "Decide before writing the footage who speaks: one short intent per lead who speaks in this scene "
-        "(lines reply to each other); N/A when nobody speaks or dialogue is off."
-    )
-    VISIBLE_RESULT_NOTE = (
-        "Name the object, position or gesture that changed against the opening. Do not describe feelings "
-        "or states (surrender, trust, acceptance, tension, chemistry, electric, charged, unresolved)."
-    )
-    MUSIC_FIELD_NOTE = (
-        "Instrumentation, tempo and dynamics only (1-3 sentences); no emotion or mood words such as "
-        "tension, hope or longing."
-    )
-    OPENING_FIELD_NOTE = (
-        "Actual shot size, angle and positions of the first shot. In scenes after the first, copy the "
-        "previous scene's closing_shot word for word, and write the first shot's action so that it is "
-        "visible in exactly that framing."
-    )
-
-    CONTINUITY_NOTE = (
-        "CHAIN CONTINUITY (binding): the generated end of scene N is the opening of scene N+1, so every "
-        "scene is written as the continuation of the previous one. Scene N+1's opening_framing and first "
-        "shot repeat the CLOSING shot of scene N (same shot size, angle, subject positions, eyelines, "
-        "light and action in progress), and any cut in the new scene comes only after that inherited "
-        "opening has played, never at frame zero. Cuts live inside a scene; a scene boundary is never "
-        "a cut. Hold the final shot of every non-final scene steady for at least the last 2 seconds "
-        "(no late cut, no new location, no scene-ending freeze) on a framing you want inherited and with "
-        "action or speech still in motion, so the next scene resumes it seamlessly. The story is free to "
-        "travel and to pass time: a scene may move to a new place or moment through continuous action or "
-        "through cuts that compress time inside the scene (ellipsis: leaving one place, a cut to the ride, a "
-        "cut to the arrival; light or seasons changing over a held frame), without showing every trip in "
-        "full, so the next scene opens wherever the previous one ended. Do not keep every "
-        "scene in one place unless the request does. "
-    )
-
     # ---- v24: era is its own control; decade looks are capture/colour only
     PERIOD_LOOKS = ()          # no Visual look redesigns the world any more: the Era control does
-    PERIOD_DESIGN_CUES = {}
     CAPTURE_ONLY = (" Capture and colour only: this look changes how the image is recorded and graded, never the "
                     "era, wardrobe, setting, mood, story or time of day.")
     FIX_LOOKS = {
@@ -1089,19 +696,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
     }
 
     # ---- v34: Driven
-    DRIVEN_PRIORITY_NOTE = (
-        "DRIVEN PRIORITY (binding while a Driven input is connected): the Driven blueprint is the source of the "
-        "scenario (activity, motion, staging, camera). Wardrobe, body and setting come from the SOURCE OF EACH "
-        "ASPECT rules when they are given, otherwise from the observed Driven roles and setting; the craft notes "
-        "about inventing a venue, an outfit or a palette only fill what is left open. Explicit requests and "
-        "selected controls (Era, NSFW, Visual look) still apply on their own axes. {wardrobe}")
-    DRIVEN_CAST_WITH_REFS = ("With character references, the people seen in Driven are never extra cast: each "
-                             "prominent role is performed by a referenced person; CAST CREATION covers only "
-                             "characters the user's request itself names.")
-    DRIVEN_CAST_NO_REFS = ("No character references are connected: the prominent Driven roles ARE the principal cast. "
-                           "Define each as a text-only adult subject with an invented face and hair that fit the "
-                           "role (never a copied real face), carrying the observed wardrobe, body and pose; rules "
-                           "about preserving reference identities do not apply, and this is not adding characters.")
 
     PLACEHOLDER_REQUEST = "Describe the exact edit and assign each connected source its role."
 
@@ -2260,8 +1854,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
         r"(?:down )?(?:to|around) (?:his |her |the )?(?:mid-?)?(?:thighs|knees|ankles|shins|calves))"
         r"|\bfly (?:is )?(?:open|unzipped)|naked from the waist down|\bbottomless\b|\bno underwear\b|without underwear",
         re.IGNORECASE)
-    _MALE_WORD = re.compile(r"\b(?:he|his|him|man|men|guy|boyfriend|husband)\b", re.IGNORECASE)
-    _FEMALE_WORD = re.compile(r"\b(?:she|her|hers|woman|women|girl|girlfriend|wife)\b", re.IGNORECASE)
     _MALE_PARTS = re.compile(r"\b(?:penis|cock|shaft|erection|erect|flaccid|scrotum|testicles|glans|foreskin|genitals?)\b",
                              re.IGNORECASE)
     _FEMALE_PARTS = re.compile(r"\b(?:vulva|labia|pussy|clitoris|vagina|pubic|genitals?)\b", re.IGNORECASE)
@@ -2510,9 +2102,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
             if tokens and sum(t in cls._ENGLISH for t in tokens) / len(tokens) >= 0.3:
                 bad += 1
         return f" · ⚠ {bad} dialogue line(s) look English, not {lang}" if bad else ""
-
-    _ADULT_OUTFITS = frozenset({"Lingerie", "Corset / Bustier", "Latex / Leather", "Fishnet / Rave", "Babydoll",
-                                "Silk Robe / Kimono"})
 
     OUTFIT_RESTYLE_NOTE = (
         "Outfit style {styles} with Wardrobe Keep Reference (binding): each character keeps the clothing of their "
@@ -2959,54 +2548,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
         "clothes win; the Era sets the world while the clothes follow this style; the request decides how much "
         "stays on. Every character is an adult and is styled as one.")
 
-    @classmethod
-    def long_take_note(cls, seconds):
-        """Clips over 15 s: enough distinct phases for the length, and anchors so nothing drifts."""
-        seconds = float(seconds)
-        if seconds <= 15:
-            return ""
-        phases = "3-4" if seconds <= 22 else "4-5" if seconds <= 32 else "5-7" if seconds <= 45 else "6-8"
-        if _CLIP.get("dynamic"):
-            return (f"LONG CLIP ({seconds:g} s, binding): {phases} beats that each change something, spread over the "
-                    "whole clip and landing in the last seconds, never one beat stretched; describe each Subject's full "
-                    "look once, at the first clear appearance, then refer to them by label (<Subject N>) and restate "
-                    "only what changes. ")
-        return (f"LONG CLIP ({seconds:g} s, binding): plan {phases} phases in strict chronological order, each with a "
-                "visible change (a new action, position, gesture, contact, camera move or emotional turn) and enough "
-                "time to read; spread them across the whole clip, never one beat stretched or repeated to fill time, "
-                "and end with a clear closing state in the last seconds. One take: write the phases as one continuous "
-                "flow (first..., then..., later..., by the end...) with the camera moving between them as needed. With "
-                "cuts: each [Shot n] carries one or two phases. Keep everything stable without "
-                "copying descriptions: each Subject's full look is written once, at the first clear appearance; "
-                "afterwards use the label (<Subject N>) and state only what changes on screen (a garment removed, "
-                "wet hair, a new position). The place and the light stay as first established unless the footage "
-                "changes them. The anatomy and covering rules still name what each shot shows. ")
-
-    @classmethod
-    def coverage_note(cls, seconds):
-        if float(seconds) >= 8.0:
-            return cls.CONTINUITY_NOTE + (
-                "The request decides how much to cut when it says so (one shot, few cuts, fast editing); a fixed-camera look or motion means a single take. "
-                ""
-                "Coverage follows information: when people talk, a clip of 8 s or more normally uses "
-                "2-3 shots (for example a two-shot, then a single or over-the-shoulder on the speaker or an "
-                "insert of a telling prop or gesture, then a reaction), written as [Shot 2] At 00:SS.mmm, "
-                "cut to ... inside the description. In every scene except the last, the final shot is a clean, "
-                "steady framing that the next scene inherits. "
-                "Each cut must add new information (viewpoint, space, "
-                "state or time); a pan or reframe is camera motion, not a cut. Use one shot only for an "
-                "uninterrupted take, a locked source or a requested single take (a locked-off camera still allows cuts; an I2V "
-                "opening only fixes the first frame, cuts may follow it). Never more than "
-                + str(cls.max_shots(seconds)) + " shots in a clip, each at least 2 s long, and never write a [Shot n] marker for "
-                "something that is not a cut. After every cut the people keep the posture and place the previous shot left "
-                "them in (seated stays seated) unless the new shot shows them change it. "
-                + cls.long_take_note(seconds)
-            )
-        return cls.CONTINUITY_NOTE + (
-            "The request decides how much to cut when it says so. Otherwise one focused shot; a pan or reframe is camera motion, not a new [Shot n]; add a shot marker "
-            "only for a distinct timed beat that adds new information. "
-        )
-
     _LOWER_AFTER_CUT = frozenset("the a an she he they her his their it its in inside outside back meanwhile later "
                                  "now then two both everyone".split())
     _CAMERA_MOVE = re.compile(
@@ -3434,9 +2975,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
         body = body.rstrip() + ("\n" + "\n".join(lines) if lines else "") + "\n\n"
         return text[:section.start(1)] + body + text[section.end(1):]
 
-    _SHALLOW = re.compile(r"\b(?:an? )?(?:very |extremely )?shallow depth[- ]of[- ]field\b|\b(?:a )?shallow focus\b|"
-                          r"\b(?:with |soft |creamy )?bokeh(?: background)?\b", re.IGNORECASE)
-
     @staticmethod
     def _same_clip(a, b):
         """Two sockets fed with the same frames (same shape, same first/middle/last frame)."""
@@ -3563,15 +3101,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
         r"into each other))?|\bmelting (?:together|into (?:each other|one another|one))|\bmerging into one|"
         r"\bbecoming one\b|\bas one body\b|\b(?:limbs|bodies) (?:tangled|intertwined|entwined)|\bintertwined bodies|"
         r"\bentangled bodies|\btangle of (?:limbs|bodies)", re.IGNORECASE)
-
-    _GUIDE_WORDS = re.compile(
-        r",?\s*\b(?:exactly |just )?(?:as|like) (?:(?:shown|seen|worn|depicted|pictured)(?: in| on| by)?|in) (?:the )?(?:guide|driven|driver|source)"
-        r"(?: (?:image|video|frame|clip|performer|person|reference|blueprint))?\b|"
-        r",?\s*\b(?:taken |copied )?from the (?:guide|driven|driver)(?: (?:image|video|frame|clip|performer|person|blueprint))?\b|"
-        r",?\s*\b(?:matching|mirroring|following) the (?:guide|driven|driver)(?: (?:image|video|frame|clip|performer|person))?\b",
-        re.IGNORECASE)
-    _GUIDE_NOUNS = re.compile(r"\bthe (?:guide|driven|driver)(?:'s| (?:image|video|frame|clip|blueprint)'s)\s+|"
-                              r"\bthe (?:guide|driven|driver) (?:performer|person|woman|man)\b", re.IGNORECASE)
 
     @classmethod
     def _no_fusion(cls, text):
@@ -3901,9 +3430,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
                 body = body.rstrip() + f"\n\n{section}:\nN/A"
         return cls.I2V_ALIGNMENT + "\n\n" + body.strip()
 
-    _LAYOUT_SECTIONS = ("subject_definitions", "summary", "retention_analysis", "integrated_multimodal_description",
-                        "detailed_description", "overall_soundscape", "non_diegetic_music")
-
     @staticmethod
     def _order_reference_subjects(prompt):
         """Same subject ordering as the original engine, but speaker IDs (SN) are left alone: they follow the order
@@ -3974,10 +3500,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
             text = H3CompactMultimodalEditDirectorFix._relocate_sound(text)
         return text
 
-    _SHOT_WORDS = re.compile(
-        r"close-up|two-shot|over-the-shoulder|wide|insert|single|medium|tight|low angle|high angle|profile|pov",
-        re.IGNORECASE)
-
     @staticmethod
     def _drop_identity_cap(text):
         """The identity clause must not restate an accessory the target appearance redefines."""
@@ -4001,10 +3523,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
          'if cls._hold_seconds_changed(held, scene_seconds) or bool(held.get("i2v_mode", False)) != bool(i2v_mode):'),
         ("raw_default", r"repair_retry_used = False",  # a repaired reply without debug left raw_response unset
          'raw_response = ""; repair_retry_used = False'),
-        ("core_elab", r'resolved_system, cls\.DEEP_EDIT_RULES, cls\.ELABORATE_RULES,',
-         'resolved_system, cls.CREATIVE_EDIT_CORE, cls.ELABORATE_RULES,'),
-        ("core_plus", r'cls\.DEEP_EDIT_RULES,\s*cls\.CONTINUOUS_EDIT_RULES,\s*cls\.CONTINUOUS_ELABORATE_RULES,',
-         'cls.CREATIVE_EDIT_CORE, cls.CONTINUOUS_ELABORATE_RULES,'),
         ("look_specs", r"specification = VISUAL_LOOKS\.get\(selection\)",
          "specification = (cls.FIX_LOOKS[selection] + cls.CAPTURE_ONLY) if selection in cls.FIX_LOOKS else VISUAL_LOOKS.get(selection)"),
         ("motion_specs", r"specification = MOTION_STYLES\.get\(selection\)",
@@ -4019,46 +3537,12 @@ In sequences carry the same grammar across scenes and continue paths and states 
          'mapping = parsed["driven_cast_mapping"] = cls._fix_driven_mapping(parsed.get("driven_cast_mapping"), role_names, pictures)'),
         ("transfer_cast_get", r"cls\._render_transfer_cast\(parsed\['transfer_cast'\],",
          "cls._render_transfer_cast(parsed.get('transfer_cast') or [],"),
-        ("source_item", r"A source item may remain if coherent with the ",
-         "A source item may remain (never with Wardrobe Create New) if coherent with the "),
         ("transfer_controls", r"cls\.TRANSFER_OWNERSHIP_RULES,",
          "cls.TRANSFER_OWNERSHIP_RULES + cls._control_rules_text(direction_text),"),
         ("controls", r'"\\n\\nSELECTED DIRECTION CONTRACT:\\n" \+ direction_text',
          '"\\n\\nSELECTED DIRECTION CONTRACT:\\n" + direction_text + cls._control_rules_text(direction_text)'),
-        ("contract", r'"Open creative premises may develop compatible story within the continuous take; "',
-         '"Open creative premises may develop compatible story and edited coverage; "'),
-        ("env", r"'requested/story-authorized location transitions\. No extra section or API call\.'",
-         "'requested/story-authorized location transitions. No extra section or API call. ' + cls.ENVIRONMENT_NOTE"),
         ("seconds_limit", r"not 1\.0 <= scene_seconds <= 30\.0:", "not 1.0 <= scene_seconds <= 60.0:"),
         ("seconds_msg", r"seconds_per_scene must be between 1 and 30 seconds\.", "seconds_per_scene must be between 1 and 60 seconds."),
-        ("long_words", r'\+ \("90–140" if scene_seconds <= 5 else "120–200" if scene_seconds <= 10 else "160–240"\)',
-         '+ ("90–140" if scene_seconds <= 5 else "120–200" if scene_seconds <= 10 else "160–240" if scene_seconds <= 20 '
-         'else f"{round(scene_seconds * 8)}–{round(scene_seconds * 12)}")'),
-        ("long_tokens", r"elaborate_tokens_per_scene = 500 if scene_seconds <= 5 else 700 if scene_seconds <= 10 else 900",
-         "elaborate_tokens_per_scene = 500 if scene_seconds <= 5 else 700 if scene_seconds <= 10 else 900 if scene_seconds <= 15 else int(65 * scene_seconds)"),
-        ("coverage", r"A pan/reframe is NOT a new \[Shot n\]; add another '\s*'shot marker only for a distinct timed beat; sequence blocks continue the preceding '",
-         "' + cls.coverage_note(scene_seconds) + 'Sequence blocks continue the preceding '"),
-        ("dialogue", r"'SHORT DIALOGUE, VISIBLE STORY: Prefer brief lines with a tactic, reply or subtext '",
-         "'SHORT DIALOGUE, VISIBLE STORY: ' + cls.DIALOGUE_CRAFT_NOTE + ' Prefer brief lines with a tactic, reply or subtext '"),
-        ("brief_prop", r"'subjects': \{'type': 'array', 'items': \{",
-         "'creative_brief': __import__('copy').deepcopy(cls.CREATIVE_BRIEF_SCHEMA), 'subjects': {'type': 'array', 'items': {"),
-        ("brief_req", r"'required': \['subjects', 'visual_style'\],",
-         "'required': ['creative_brief', 'subjects', 'visual_style'],"),
-        ("opening_desc", r"'opening_framing': \{'type': 'string'\},",
-         "'opening_framing': {'type': 'string', 'description': cls.OPENING_FIELD_NOTE}, "
-         "'coverage_plan': {'type': 'string', 'description': cls.COVERAGE_PLAN_NOTE}, "
-         "'speech_plan': {'type': 'string', 'description': cls.SPEECH_PLAN_NOTE},"),
-        ("closing_after", r"(Respect silence and source-audio locks\.'\},)",
-         "Respect silence and source-audio locks.'}, "
-         "'closing_shot': {'type': 'string', 'description': cls.CLOSING_FIELD_NOTE},"),
-        ("closing_req", r"'required': \['opening_framing', 'integrated_multimodal_description', 'visible_result',",
-         "'required': ['opening_framing', 'closing_shot', 'coverage_plan', 'speech_plan', 'integrated_multimodal_description', 'visible_result',"),
-        ("music_desc", r"'non_diegetic_music': \{'type': 'string'\},",
-         "'non_diegetic_music': {'type': 'string', 'description': cls.MUSIC_FIELD_NOTE},"),
-        ("visible_desc", r"'description': 'The earned ending state, not another copy of already delivered dialogue or action\.'",
-         "'description': 'The earned ending state, not another copy of already delivered dialogue or action. ' + cls.VISIBLE_RESULT_NOTE"),
-        ("shot_desc", r"'description': 'Chronological footage and any permitted/requested speech\. ",
-         "'description': cls.SHOT_FIELD_NOTE + ' Chronological footage and any permitted/requested speech. "),
         ("root_a", r"return json\.loads\(candidate\)(?=\n)",
          "return cls._root_object(json.loads(candidate))"),
         ("root_b", r"return json\.loads\(candidate, strict=False\)(?=\n)",
@@ -4069,8 +3553,6 @@ In sequences carry the same grammar across scenes and continue paths and states 
          "return cls._lenient_json(candidate, first_error)"),
         ("repair_tokens", r'"max_tokens": payload\["max_tokens"\],',
          '"max_tokens": min(int(payload["max_tokens"] * 1.6), 8000),'),
-        ("wardrobe", r"'Only identity traits come from Picture references; new garments are target design\.'",
-         "'Only identity traits come from Picture references; new garments are target design. ' + cls.ACCESSORY_NOTE"),
     )
     @classmethod
     def _get_patched_execute(cls):

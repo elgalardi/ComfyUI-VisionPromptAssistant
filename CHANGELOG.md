@@ -8,6 +8,11 @@
   creative scenes belong to H3 Open Director. Same node id and inputs, so saved
   workflows load; one saved in Normal or Compact must switch mode. Transfer and
   Edit send exactly the same requests and return the same prompts as v147.
+- The creative engine behind those modes (Enhance, Elaborate, Elaborate Plus,
+  Creative Plus planning, the structured creative schema and their rule
+  blocks) is removed from story_director.py too: the two director files are
+  about 2,300 lines shorter than in v147. Offline tests for the removed modes
+  were dropped.
 - H3 Open Director: a reply cut off by the token limit is never passed on as a
   prompt; it is asked again with more room. Missing scenes are asked for
   (continuing the written ones) instead of repeating the last scene.
