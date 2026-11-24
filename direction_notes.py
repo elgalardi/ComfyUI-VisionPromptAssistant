@@ -23,9 +23,14 @@ ERA_WORDS = {"Present day": "the present day", "Medieval": "medieval times", "Re
 FROM = {  # what Keep Reference / Keep Guide / Create New mean, in a few words
     "Keep Reference": "as in each character's reference picture",
     "Keep Guide": "as in the guide image or video",
-    "Create New": "newly designed",
-    "Creative Adaptation": "freely adapted",
     "Guide Garments + Reference Style": "the guide performer's garments, in the style of each character's reference",
+}
+NEW = {  # Create New / Creative Adaptation must say plainly that the pictures are not the model for this part
+    "Wardrobe": "Clothes: new outfits, not the ones in the reference pictures or guide (those show only who the "
+                "people are); describe what each character wears.",
+    "Hair & Makeup": "Hair and makeup: a new look, not the one in the reference pictures or guide; describe it.",
+    "Environment": "The place: a new setting, not the one in the reference pictures or guide; describe it.",
+    "Body proportions": "Body build: may differ from the reference pictures; faces and ages stay the same.",
 }
 THING = {"Wardrobe": "Clothes", "Hair & Makeup": "Hair and makeup", "Environment": "The place",
          "Body proportions": "Body build"}
@@ -51,6 +56,8 @@ def _sentence(label, value):
     if label == "Outfit style":
         return f"The characters dress in a {value} style."
     if label in THING:
+        if value in ("Create New", "Creative Adaptation"):
+            return NEW[label]
         return f"{THING[label]}: {FROM.get(value, value)}."
     if label == "Dialogue":
         return "Nobody speaks." if value.lower() == "no dialogue" else f"Dialogue in {value}."
