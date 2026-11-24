@@ -49,6 +49,10 @@ DENSITY = {"sparse": "Only a few short spoken lines in the whole piece.",
            "dense": "The characters talk almost all the time."}
 
 
+_GARMENTS = ("describe each garment by what it is, its cut, fabric and colour, without using the style's name "
+             "as a label.")
+
+
 def _era(value):
     if value in ERA_WORDS:
         return ERA_WORDS[value]
@@ -72,9 +76,8 @@ def _sentence(label, value, chosen):
         if wardrobe == "Keep Guide":
             return ""  # the guide's clothes are kept as they are
         if wardrobe in ("Keep Reference", "Guide Garments + Reference Style"):
-            return f"Each character's outfit is restyled as {value}, keeping its colours and fabrics."
-        return (f"Every character wears {value} clothing, not the clothes of the reference pictures; describe "
-                f"each outfit.")
+            return (f"Each character's outfit is restyled as {value}, keeping its colours and fabrics; {_GARMENTS}")
+        return (f"Every character wears {value} clothing, not the clothes of the reference pictures; {_GARMENTS}")
     if label in THING:
         if value in ("Create New", "Creative Adaptation"):
             return NEW[label]
