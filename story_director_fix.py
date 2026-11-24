@@ -110,6 +110,7 @@ class _DrivenCapture(Exception):
 
 MODE_NAMES = ("Transfer", "Transfer Keep Audio", "Transfer Keep Audio Basic", "Edit")
 MODES = {name.lower() for name in MODE_NAMES}
+VIDEO_TASKS = ("Swap", "Edit", "Add", "Remove")
 
 
 class H3CompactMultimodalEditDirectorFix(_Base):
@@ -3690,6 +3691,10 @@ invention.
                     "debug_request", default=False,
                     tooltip="Expose sanitized request text and parameters, without image data or credentials. No extra LLM call.",
                 ),
+                io.Combo.Input(
+                    "video_task", display_name="Video Task", options=list(VIDEO_TASKS), default="Swap",
+                    tooltip="In Edit (Viggle Remake): Swap = the pictures recast people of the video (swap LoRA); Edit = change clothes, objects, background, weather, light or style, people stay themselves (edit LoRA); Add = what the pictures show is added; Remove = what you name disappears (edit LoRA). In Transfer: Swap = the reference pictures replace the people of the guide video (classic Transfer). Transfer Edit / Add / Remove: connect a frame of the guide video as Picture 1; the video stays the base and its people stay themselves. Edit = change only what you ask or the controls set (clothes, hair, colours, objects, light, place); Picture 2-4 can supply a garment, hairstyle, object or style to copy. Add = Picture 2-4 join the video as new people (or objects). Remove = the person or thing you name disappears cleanly.",
+                ),
             ],
             outputs=[
                 io.String.Output("edit_prompt"),
@@ -3710,6 +3715,10 @@ invention.
             raise ValueError(
                 f"H3 Transfer & Edit Director: the '{_requested}' mode no longer exists. This node only does "
                 "Transfer and Edit; for creative scenes use H3 Open Director. Choose one of: " + ", ".join(MODE_NAMES) + ".")
+        _task_input = str(kwargs.pop("video_task", "Swap") or "Swap").strip()
+        if _task_input in VIDEO_TASKS[1:]:  # the Video Task now lives on this node; it travels as the old control line
+            _context = re.sub(r"(?im)^Video task:.*(?:\n|$)", "", str(kwargs.get("direction_context") or "")).strip()
+            kwargs["direction_context"] = (_context + "\n" if _context else "") + "Video task: " + _task_input
         _CLIP.reset()  # a fresh state for this execution only
         _CLIP["real_llm"] = kwargs.get("llm")
         _CLIP["video_edit"] = str(kwargs.get("edit_mode", "")).strip().lower() == "edit"

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- H3 Open Director: each Direction Control reaches the LLM with a short note of
+  what it decides and what the chosen value means (genre mechanism, situation
+  setting, motion and look description, era and outfit cues, Keep Reference /
+  Keep Guide / Create New, dialogue language and density). Random picks are
+  drawn from the director's seed and listed in validation.
+- Video Task moved from Direction Controls to H3 Transfer & Edit Director (last
+  input, default Swap). A workflow that had Edit, Add or Remove on the controls
+  must set it on the director now.
 - H3 Compact Multimodal Edit Director is now H3 Transfer & Edit Director (v149):
   only Transfer, Transfer Keep Audio, Transfer Keep Audio Basic and Edit remain,
   default Transfer. Normal and Compact and their creative code were removed;

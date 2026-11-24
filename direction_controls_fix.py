@@ -1,8 +1,9 @@
 """Direction Controls: genre, situation, motion, look, dialogue and design choices; heat, pace, cuts and violence come from the request.
 
-The node only writes plain `Label: value` lines. The director node
-(story_director_fix.py) reads them and carries their meaning into its rules.
-Everything the original node emits is unchanged; the new lines are additions.
+The node only writes plain `Label: value` lines. H3 Transfer & Edit Director
+(story_director_fix.py) reads them with its own rules; H3 Open Director adds a
+short note to each one (direction_notes.py). The Video Task setting now lives on
+H3 Transfer & Edit Director.
 """
 from __future__ import annotations
 
@@ -232,9 +233,6 @@ class H3CompactDirectionControlsFix(io.ComfyNode):
                 io.Combo.Input("era", display_name="Era",
                     options=["none", "Random", *[e for e in ERA_CHOICES if e != "Auto"]], default="none",
                     tooltip="The period the story's world lives in (historic eras or decades): mainstream fashion of that time as people really wore it, sets, vehicles, technology and objects. No futurism or costume caricature. Auto adds no era rule: the period follows the request, the references and the genre. Independent from the Visual look (a 1990s camera look does not dress anyone in the 90s)."),
-                io.Combo.Input("video_task", display_name="Video Task",
-                    options=VIDEO_TASKS, default="Swap",
-                    tooltip="Transfer and Edit modes. In Edit (Viggle Remake): Swap = the pictures recast people of the video (swap LoRA); Edit = change clothes, objects, background, weather, light or style, people stay themselves (edit LoRA); Add = what the pictures show is added; Remove = what you name disappears (edit LoRA). In Transfer: Swap = the reference pictures replace the people of the guide video (classic Transfer). Transfer Edit / Add / Remove: connect a frame of the guide video as Picture 1; the video stays the base and its people stay themselves. Edit = change only what you ask or the controls set (clothes, hair, colours, objects, light, place); Picture 2-4 can supply a garment, hairstyle, object or style to copy. Add = Picture 2-4 join the video as new people (or objects). Remove = the person or thing you name disappears cleanly."),
             ],
             outputs=[io.String.Output("direction_context")],
         )
@@ -242,7 +240,7 @@ class H3CompactDirectionControlsFix(io.ComfyNode):
     @classmethod
     def execute(cls, genre_1="none", situation="none", motion_style_1="none", look_1="none", dialogue="none", dialogue_density="Auto",
                 wardrobe="Auto", hair_makeup="Auto", environment="Auto", body_proportions="Auto", era="none",
-                video_task="Swap", outfit_1="none"):
+                video_task="Swap", outfit_1="none"):  # video_task moved to H3 Transfer & Edit Director
         def active(values):
             return list(dict.fromkeys(
                 str(value).strip() for value in values
@@ -277,8 +275,6 @@ class H3CompactDirectionControlsFix(io.ComfyNode):
             lines.append("Outfit style: " + " + ".join(outfits))
         if scenario in ADULT_SITUATIONS:
             lines.append("Adults only: every character is a consenting adult (18+)")
-        if str(video_task).strip() in VIDEO_TASKS[1:]:
-            lines.append("Video task: " + str(video_task).strip())
         drawn = [label for label, value in (("Genre", genre_1), ("Situation", situation),
                                             ("Motion style", motion_style_1), ("Visual look", look_1),
                                             ("Outfit style", outfit_1), ("Era", era))

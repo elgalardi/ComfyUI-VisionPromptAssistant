@@ -152,8 +152,8 @@ class H3OpenDirector(io.ComfyNode):
     def _content(request, pictures, videos, guide_image, guide_video, samples, size, i2v, direction):
         from . import story_director as sd
         content = [{"type": "text", "text": "REQUEST:\n" + (request or "(no written request: work from the inputs)")}]
-        if direction:
-            content.append({"type": "text", "text": "DIRECTION CONTROLS:\n" + direction})
+        if direction:  # already expanded with one note per control (direction_notes.expand)
+            content.append({"type": "text", "text": direction})
         for number, image in pictures:
             note = " (the first frame of scene 1)" if i2v and number == 1 else ""
             content.append({"type": "text", "text": f"<Picture {number}>{note}:"})
@@ -253,9 +253,19 @@ class H3OpenDirector(io.ComfyNode):
             if llm is None:
                 raise ValueError("connect an LLM model")
             from . import story_director as sd
+            direction, drawn = "", []
+            if str(direction_context or "").strip():
+                try:
+                    from .direction_notes import expand
+                    direction, drawn = expand(direction_context, seed)
+                except Exception as error:  # noqa: BLE001 - the plain lines still reach the LLM
+                    direction = "DIRECTION CONTROLS:\n" + str(direction_context).strip()
+                    notes.append(f"control notes unavailable ({type(error).__name__})")
+            if drawn:
+                notes.append("random: " + ", ".join(drawn))
             content = cls._content(request, pictures, videos, driven_image, driven_video, samples,
                                    int(image_max_dimension or 1024), bool(i2v_mode and pictures and pictures[0][0] == 1),
-                                   str(direction_context or "").strip())
+                                   direction)
             payload = {"messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
                        "max_tokens": tokens, "temperature": float(temperature), "seed": int(seed),
                        "reasoning": {"enabled": bool(reasoning)},
