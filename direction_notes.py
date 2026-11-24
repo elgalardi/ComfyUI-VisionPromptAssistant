@@ -12,28 +12,41 @@ import re
 
 from . import direction_controls_fix as dc
 
-HEADER = "DIRECTION CONTROLS:"
+HEADER = "DIRECTION CONTROLS (apply every one of these):"
 POOLS = {
     "Genre": dc.GENRE_CHOICES, "Situation": dc.SITUATIONS, "Motion style": dc.MOTION_CHOICES,
     "Visual look": dc.LOOK_CHOICES, "Outfit style": dc.OUTFIT_STYLES,
     "Era": [era for era in dc.ERA_CHOICES if era != "Auto"],
 }
+THING = {"Wardrobe": "Clothes", "Hair & Makeup": "Hair and makeup", "Environment": "The place",
+         "Body proportions": "Body build"}
 ERA_WORDS = {"Present day": "the present day", "Medieval": "medieval times", "Renaissance": "the Renaissance",
              "Victorian": "the Victorian era", "Stone Age": "the Stone Age", "Feudal Japan": "feudal Japan"}
-FROM = {  # what Keep Reference / Keep Guide / Create New mean, in a few words
-    "Keep Reference": "as in each character's reference picture",
-    "Keep Guide": "as in the guide image or video",
-    "Guide Garments + Reference Style": "the guide performer's garments, in the style of each character's reference",
+KEEP = {  # Keep Reference / Keep Guide / Guide Garments, per control
+    ("Wardrobe", "Keep Reference"): "Clothes: each character wears exactly the outfit of their reference picture; "
+                                    "describe it.",
+    ("Wardrobe", "Keep Guide"): "Clothes: each character wears exactly the outfit seen in the guide image or video; "
+                                "describe it.",
+    ("Wardrobe", "Guide Garments + Reference Style"): "Clothes: the same garments as the person in the guide, in the "
+                                                      "colours and fabrics of each character's reference picture.",
+    ("Hair & Makeup", "Keep Reference"): "Hair and makeup: exactly as in each character's reference picture.",
+    ("Hair & Makeup", "Keep Guide"): "Hair and makeup: exactly as on the person in the guide image or video.",
+    ("Environment", "Keep Reference"): "The place: exactly the place shown in the reference picture.",
+    ("Environment", "Keep Guide"): "The place: exactly the place shown in the guide image or video.",
+    ("Body proportions", "Keep Reference"): "Body build: exactly as in each character's reference picture.",
+    ("Body proportions", "Keep Guide"): "Body build: exactly as the person in the guide image or video; faces stay "
+                                        "the characters' own.",
 }
-NEW = {  # Create New / Creative Adaptation must say plainly that the pictures are not the model for this part
+NEW = {  # Create New / Creative Adaptation: the pictures are not the model for this part
     "Wardrobe": "Clothes: new outfits, not the ones in the reference pictures or guide (those show only who the "
                 "people are); describe what each character wears.",
     "Hair & Makeup": "Hair and makeup: a new look, not the one in the reference pictures or guide; describe it.",
     "Environment": "The place: a new setting, not the one in the reference pictures or guide; describe it.",
     "Body proportions": "Body build: may differ from the reference pictures; faces and ages stay the same.",
 }
-THING = {"Wardrobe": "Clothes", "Hair & Makeup": "Hair and makeup", "Environment": "The place",
-         "Body proportions": "Body build"}
+DENSITY = {"sparse": "Only a few short spoken lines in the whole piece.",
+           "balanced": "Each main character speaks once or twice.",
+           "dense": "The characters talk almost all the time."}
 
 
 def _era(value):
@@ -42,33 +55,42 @@ def _era(value):
     return f"the {value}" if value[:1].isdigit() else value
 
 
-def _sentence(label, value):
+def _sentence(label, value, chosen):
     if label == "Genre":
-        return f"Genre: {value}."
+        return f"Genre: {value}. The story, tone and ending are those of this genre."
     if label == "Situation":
-        return f"The situation: {value}."
+        return f"The story is this situation: {value}. Everything happens within it."
     if label == "Era":
-        return f"It is set in {_era(value)}."
+        return (f"Everything is set in {_era(value)}: clothes, hair, places, objects and technology belong to that "
+                f"time, whatever time the reference pictures show.")
     if label == "Motion style":
-        return f"Movement style: {value}."
+        return f"Movement: {value}. The bodies and the camera move this way throughout."
     if label == "Visual look":
-        return f"Visual look: {value}."
+        return f"Visual look: {value}. Camera, colour and grade follow it throughout."
     if label == "Outfit style":
-        return f"The characters dress in a {value} style."
+        wardrobe = chosen.get("Wardrobe", "")
+        if wardrobe == "Keep Guide":
+            return ""  # the guide's clothes are kept as they are
+        if wardrobe in ("Keep Reference", "Guide Garments + Reference Style"):
+            return f"Each character's outfit is restyled as {value}, keeping its colours and fabrics."
+        return (f"Every character wears {value} clothing, not the clothes of the reference pictures; describe "
+                f"each outfit.")
     if label in THING:
         if value in ("Create New", "Creative Adaptation"):
             return NEW[label]
-        return f"{THING[label]}: {FROM.get(value, value)}."
+        return KEEP.get((label, value), f"{THING[label]}: {value}.")
     if label == "Dialogue":
-        return "Nobody speaks." if value.lower() == "no dialogue" else f"Dialogue in {value}."
+        if value.lower() == "no dialogue":
+            return "Nobody speaks at any moment."
+        return f"All spoken lines are in {value}."
     if label == "Dialogue density":
-        return f"Dialogue amount: {value.lower()}."
+        return DENSITY.get(value.lower(), "")
     if label == "Coverage" and value.lower().startswith("single take"):
-        return "One continuous shot, no cuts."
+        return "One continuous shot from start to end, with no cuts."
     if label == "Adults only":
-        return "Every character is an adult."
+        return "Every character is an adult (18+)."
     if label == "Palette":
-        return ""  # implied by the Visual look
+        return ""  # part of the Visual look
     return f"{label}: {value}."
 
 
@@ -90,13 +112,17 @@ def expand(direction_context, seed=0):
             value = random.Random(f"{int(seed or 0)}:{label}").choice(pool)
             kept.append(f"{label}: {value}")
             drawn.append(f"{label}: {value}")
+    chosen = {}
+    for line in kept:
+        label, _, value = line.partition(":")
+        chosen[label.strip()] = value.strip()
     out = []
     for line in kept:
         label, _, value = line.partition(":")
         label, value = label.strip(), value.strip()
         if label == "Adults only":
             value = value or "yes"
-        text = _sentence(label, value) if value else line
+        text = _sentence(label, value, chosen) if value else line
         if text:
             out.append("- " + text)
     return (HEADER + "\n" + "\n".join(out), drawn) if out else ("", drawn)
