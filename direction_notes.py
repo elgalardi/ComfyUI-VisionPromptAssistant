@@ -84,9 +84,13 @@ def _sentence(label, value, chosen):
         return KEEP.get((label, value), f"{THING[label]}: {value}.")
     if label == "Dialogue":
         if value.lower() == "no dialogue":
-            return "Nobody speaks at any moment."
+            return ("NO DIALOGUE: nobody speaks, whispers, sings or says a single word at any moment, not even a "
+                    "name or a sound like \"hey\". Write no spoken lines, no <d> tags and no speaker tags; tell the "
+                    "story through actions, looks and sound only.")
         return f"All spoken lines are in {value}."
     if label == "Dialogue density":
+        if chosen.get("Dialogue", "").lower() == "no dialogue":
+            return ""  # no amount of dialogue when there is none
         return DENSITY.get(value.lower(), "")
     if label == "Coverage" and value.lower().startswith("single take"):
         return "One continuous shot from start to end, with no cuts."

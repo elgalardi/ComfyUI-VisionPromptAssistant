@@ -336,6 +336,9 @@ class H3OpenDirector(io.ComfyNode):
                     notes.append(f"the missing scenes failed ({type(error).__name__})")
                 if len(scenes) < count:
                     raise RuntimeError(f"the LLM wrote only {len(scenes)} of {count} scenes")
+            if (re.search(r"(?im)^\s*Dialogue:\s*No dialogue\s*$", str(direction_context or ""))
+                    and any(re.search(r"<d>|\(S\d\)", text) for text in scenes)):
+                notes.append("WARNING: the LLM wrote dialogue although No dialogue was chosen")
             cls._hold(hold_key, {"scenes": scenes})  # only complete, validated results
             notes.insert(0, f"H3 Open Director · {count} scene(s) of {seconds:g}s · {len(pictures)} picture(s)"
                          + (f" · {len(videos)} video(s)" if videos else "")

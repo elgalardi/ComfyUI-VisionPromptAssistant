@@ -5,7 +5,9 @@
 - H3 Open Director: each Direction Control reaches the LLM as one plain
   sentence ("It is set in the 1980s.", "Clothes: as in each character's
   reference picture."), with no rules attached. Random picks are drawn from the
-  director's seed and listed in validation.
+  director's seed and listed in validation. "No dialogue" is stated firmly
+  (no words, no <d> or speaker tags), drops the density line, and validation
+  warns if dialogue still appears.
 - Video Task moved from Direction Controls to H3 Transfer & Edit Director (last
   input, default Swap). A workflow that had Edit, Add or Remove on the controls
   must set it on the director now.
