@@ -89,6 +89,24 @@ _INCOMPLETE = re.compile(r"truncated|malformed|no complete json|not valid json|i
                          r"length", re.IGNORECASE)
 
 
+MAX_PICTURES = 9
+
+
+def _connected_pictures(grown, legacy=None):
+    """The connected reference pictures in slot order (reference_image_0, _1, ...), empty slots skipped, so the
+    N-th connected picture is <Picture N> exactly as in MiniMax H3 Reference to Video. Older calls that still pass
+    reference_image_1..4 as separate arguments are read the same way."""
+    slots = dict(grown or {})
+    for name, value in (legacy or {}).items():
+        if re.fullmatch(r"reference_image_\d+", name) and name not in slots:
+            slots[name] = value
+
+    def order(name):
+        match = re.search(r"(\d+)$", name)
+        return int(match.group(1)) if match else 0
+    return [slots[name] for name in sorted(slots, key=order) if _frames(slots[name])][:MAX_PICTURES]
+
+
 class H3OpenDirector(io.ComfyNode):
     """Your system prompt, your request and your sources: the LLM writes one scene or a continuous sequence."""
 
@@ -99,15 +117,17 @@ class H3OpenDirector(io.ComfyNode):
             display_name="H3 Open Director",
             category="text/minimax_h3",
             search_aliases=["open director", "free director", "h3 director system prompt", "h3 scene writer"],
-            description=("Same inputs and outputs as the H3 Compact Multimodal Edit Director, without modes or house "
-                         "rules: your system prompt decides everything. With 2+ scenes they continue one story."),
+            description=("Creative H3 director without modes or house rules: your system prompt decides everything. "
+                         "Up to 9 reference pictures (a new slot appears as you connect one). With 2+ scenes they "
+                         "continue one story."),
             inputs=[
                 io.String.Input("edit_request", multiline=True, dynamic_prompts=False, default="",
                                 tooltip="What the user wants."),
-                io.Image.Input("reference_image_1", optional=True),
-                io.Image.Input("reference_image_2", optional=True),
-                io.Image.Input("reference_image_3", optional=True),
-                io.Image.Input("reference_image_4", optional=True),
+                io.Autogrow.Input("reference_images", optional=True, template=io.Autogrow.TemplatePrefix(
+                    input=io.Image.Input("reference_image", tooltip="Reference picture. Connecting one adds the next "
+                                                                    "slot (up to 9); they become <Picture 1>, <Picture 2>... "
+                                                                    "in the order they are connected."),
+                    prefix="reference_image_", min=0, max=MAX_PICTURES)),
                 io.Image.Input("source_video_1", optional=True),
                 io.Image.Input("source_video_2", optional=True),
                 io.Image.Input("driven_image", display_name="Guide Image", optional=True),
@@ -211,8 +231,7 @@ class H3OpenDirector(io.ComfyNode):
         return io.NodeOutput(prompt, validation, usage, count, debug, raw)
 
     @classmethod
-    def execute(cls, edit_request="", reference_image_1=None, reference_image_2=None, reference_image_3=None,
-                reference_image_4=None, source_video_1=None, source_video_2=None, driven_image=None,
+    def execute(cls, edit_request="", reference_images=None, source_video_1=None, source_video_2=None, driven_image=None,
                 driven_video=None, video_samples="10", system_prompt=DEFAULT_SYSTEM_PROMPT, max_tokens=1200,
                 temperature=0.7, reasoning=False, seed=0, image_max_dimension=1024, timeout_seconds=300,
                 hold_prompt=False, i2v_mode=False, continuous_scene_count=1, seconds_per_scene=10.0,
@@ -238,8 +257,7 @@ class H3OpenDirector(io.ComfyNode):
                 return cls._out(held["scenes"], "Hold: last good result reused", "0 calls", count)
             notes.append("Hold had no saved result for this workflow, node, system prompt and scene setup: a new one "
                          "was written and saved" if hold_key else "Hold unavailable (no node id): a new result was written")
-        pictures = [(n, image) for n, image in enumerate(
-            (reference_image_1, reference_image_2, reference_image_3, reference_image_4), 1) if _frames(image)]
+        pictures = list(enumerate(_connected_pictures(reference_images, _ignored), 1))
         videos = [(n, video) for n, video in enumerate((source_video_1, source_video_2), 1) if _frames(video) > 1]
         try:
             samples = max(1, int(video_samples))
