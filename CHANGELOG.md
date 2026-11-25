@@ -5,7 +5,10 @@
 - H3 Open Director: the four reference picture sockets became one growing list
   like MiniMax H3 Reference to Video: connecting a picture adds the next slot,
   up to 9. The N-th connected picture is <Picture N> (empty slots skipped).
-  Workflows must reconnect their pictures once. Videos and guides are unchanged.
+  The pictures are the first inputs of the node, then Seconds per Scene (now
+  optional, 10 s when unconnected). Workflows saved with the old four sockets
+  are moved automatically: their picture connections go into the list, in
+  order, and the old sockets disappear. Videos and guides are unchanged.
 - H3 Open Director: each Direction Control reaches the LLM as one plain
   sentence ("It is set in the 1980s.", "Clothes: as in each character's
   reference picture."), with no rules attached. Random picks are drawn from the

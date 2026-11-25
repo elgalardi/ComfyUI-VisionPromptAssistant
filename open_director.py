@@ -128,6 +128,9 @@ class H3OpenDirector(io.ComfyNode):
                                                                     "slot (up to 9); they become <Picture 1>, <Picture 2>... "
                                                                     "in the order they are connected."),
                     prefix="reference_image_", min=0, max=MAX_PICTURES)),
+                io.Float.Input("seconds_per_scene", display_name="Seconds per Scene", default=10.0, min=1.0,
+                               max=60.0, step=0.5, force_input=True, optional=True,
+                               tooltip="Length of each scene in seconds (10 when nothing is connected)."),
                 io.Image.Input("source_video_1", optional=True),
                 io.Image.Input("source_video_2", optional=True),
                 io.Image.Input("driven_image", display_name="Guide Image", optional=True),
@@ -150,8 +153,6 @@ class H3OpenDirector(io.ComfyNode):
                 io.Boolean.Input("i2v_mode", display_name="I2V Mode — Picture 1 is First Frame", default=False),
                 io.Int.Input("continuous_scene_count", display_name="Scenes — Sequence", default=1, min=1, max=12,
                              tooltip="With 2 or more, the scenes are one continuous story."),
-                io.Float.Input("seconds_per_scene", display_name="Seconds per Scene", default=10.0, min=1.0,
-                               max=60.0, step=0.5, force_input=True),
                 io.String.Input("direction_context", optional=True, force_input=True,
                                 tooltip="Optional Direction Controls, passed to the LLM as written."),
                 io.Custom("LLMMODEL").Input("llm", optional=True),
