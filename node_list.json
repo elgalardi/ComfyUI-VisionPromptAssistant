@@ -10,6 +10,7 @@
   "H3OllamaModel": "H3 Ollama Model",
   "H3LLMModelAPI": "H3 LLM Model API",
   "H3QwenLocalModel": "H3 Qwen Local Model",
+  "H3LLMFromCLIP": "H3 LLM from CLIP (Local)",
   "LLMVisionPromptAssistant": "Vision Prompt Assistant — LLM",
   "H3OpenDirector": "H3 Open Director"
 }

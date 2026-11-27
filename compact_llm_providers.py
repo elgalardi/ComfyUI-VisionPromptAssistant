@@ -182,3 +182,67 @@ class H3QwenLocalModel(io.ComfyNode):
     def execute(cls, clip_name, clip_type, load_device):
         folder_paths.get_full_path_or_raise("text_encoders", clip_name)
         return io.NodeOutput(QwenLocalConnection(clip_name, clip_type, load_device))
+
+
+class ClipLLMConnection:
+    """Uses a CLIP already loaded by any Load CLIP node as the LLM (a complete Qwen3.5 or Qwen3-VL model).
+    The weights stay where that loader put them; ComfyUI's memory manager moves them as usual."""
+
+    def __init__(self, clip):
+        self.clip = clip
+        self.model = getattr(getattr(clip, "cond_stage_model", None), "__class__", type(clip)).__name__
+
+    def h3_chat_completion(self, payload):
+        schema = ((payload.get("response_format") or {}).get("json_schema") or {}).get("schema")
+        prompt, images = qwen_messages(payload["messages"], schema or {})
+        if not schema:  # a plain-text retry: drop the JSON instruction qwen_messages added for an empty schema
+            prompt = prompt.replace("\nReturn only valid JSON matching this schema, without markdown or commentary:\n{}", "")
+        reasoning = bool((payload.get("reasoning") or {}).get("enabled"))
+        prompt += "<think>\n" if reasoning else "<think>\n\n</think>\n\n"
+        clip = self.clip
+        try:
+            tokens = clip.tokenize(prompt, images=images, skip_template=True, min_length=1)
+        except TypeError:  # tokenizers without image support
+            if images:
+                raise RuntimeError("Local Qwen: this CLIP cannot read images; disconnect the pictures or use a "
+                                   "vision model (Qwen3.5 or Qwen3-VL).")
+            tokens = clip.tokenize(prompt, skip_template=True, min_length=1)
+        if not hasattr(clip, "generate"):
+            raise RuntimeError("Local Qwen: this CLIP cannot generate text; load a complete Qwen3.5 or Qwen3-VL model.")
+        temperature = float(payload.get("temperature", 0.2))
+        generated = clip.generate(
+            tokens, do_sample=temperature > 0, max_length=int(payload["max_tokens"]),
+            temperature=max(0.01, temperature), top_k=40, top_p=0.9,
+            min_p=0.05, repetition_penalty=1.05, presence_penalty=0.0,
+            seed=int(payload.get("seed", 0)),
+        )
+        text = clip.decode(generated).strip()
+        if schema:
+            try:
+                text = _local_qwen_json(text, schema)
+            except ValueError as error:
+                raise RuntimeError(f"Local Qwen: {error}") from error
+        elif "</think>" in text:
+            text = text.rsplit("</think>", 1)[1].strip()
+        return {"choices": [{"message": {"content": text}}], "usage": {}}
+
+
+class H3LLMFromCLIP(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3LLMFromCLIP",
+            display_name="H3 LLM from CLIP (Local)",
+            category="text/minimax_h3",
+            description=("Turns a CLIP from any Load CLIP node into an LLM for the H3 directors. Needs a complete "
+                         "model that can write text, such as Qwen3.5 or Qwen3-VL. H3's own text encoder cannot: it "
+                         "is cut to 50 layers."),
+            inputs=[io.Clip.Input("clip")],
+            outputs=[io.Custom("LLMMODEL").Output("llm_model")],
+        )
+
+    @classmethod
+    def execute(cls, clip):
+        if clip is None:
+            raise ValueError("Connect a CLIP from a Load CLIP node.")
+        return io.NodeOutput(ClipLLMConnection(clip))

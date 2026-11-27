@@ -4,7 +4,7 @@ from comfy_api.latest import ComfyExtension, io, ui
 from .story_director import H3LLMModelAPI, H3OllamaModel
 from .story_director_fix import H3CompactMultimodalEditDirectorFix as H3CompactMultimodalEditDirector
 from .direction_controls_fix import H3CompactDirectionControlsFix as H3CompactDirectionControls
-from .compact_llm_providers import H3OpenRouterModel, H3QwenLocalModel
+from .compact_llm_providers import H3LLMFromCLIP, H3OpenRouterModel, H3QwenLocalModel
 from .compact_prompt_select import H3CompactPromptSelect
 from .local_vision_prompt import LocalVisionPromptGenerator
 from .llm_vision_prompt import LLMVisionPromptAssistant
@@ -46,7 +46,7 @@ class LocalVisionPromptExtension(ComfyExtension):
             H3CompactPromptSelect,
             VisualSheetDirector,
             OptionalReferenceResize,
-            H3OpenRouterModel, H3OllamaModel, H3LLMModelAPI, H3QwenLocalModel,
+            H3OpenRouterModel, H3OllamaModel, H3LLMModelAPI, H3QwenLocalModel, H3LLMFromCLIP,
         ]
 
 

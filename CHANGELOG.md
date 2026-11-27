@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- New H3 LLM from CLIP (Local): turns the CLIP of any Load CLIP node into an
+  LLM for the H3 directors, so a model already loaded is used as is. Needs a
+  complete model that writes text (Qwen3.5, Qwen3-VL); H3's own text encoder
+  cannot, as it is cut to 50 layers.
 - H3 Open Director: the four reference picture sockets became one growing list
   like MiniMax H3 Reference to Video: connecting a picture adds the next slot,
   up to 9. The N-th connected picture is <Picture N> (empty slots skipped).
