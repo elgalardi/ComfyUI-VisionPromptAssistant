@@ -221,10 +221,28 @@ class ClipLLMConnection:
             try:
                 text = _local_qwen_json(text, schema)
             except ValueError as error:
+                used = _token_count(generated)
+                if used is not None and used < 0.9 * int(payload["max_tokens"]):
+                    # It ended on its own, far from the limit: more tokens would give the same answer.
+                    said = re.sub(r"\s+", " ", text)[:300] or "(nothing)"
+                    raise RuntimeError(f"Local Qwen: the model ended after {used} tokens without the JSON answer, so "
+                                       f"more room would not help. It wrote: \u00ab{said}\u00bb") from error
                 raise RuntimeError(f"Local Qwen: {error}") from error
         elif "</think>" in text:
             text = text.rsplit("</think>", 1)[1].strip()
         return {"choices": [{"message": {"content": text}}], "usage": {}}
+
+
+def _token_count(generated):
+    """How many tokens generate() returned (a flat list, a nested list or a tensor), or None if unknown."""
+    try:
+        if isinstance(generated, torch.Tensor):
+            return int(generated.shape[-1])
+        if generated and isinstance(generated[0], (list, tuple, torch.Tensor)):
+            return len(generated[0])
+        return len(generated)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 class H3LLMFromCLIP(io.ComfyNode):
