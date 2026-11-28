@@ -222,6 +222,11 @@ class ClipLLMConnection:
                 text = _local_qwen_json(text, schema)
             except ValueError as error:
                 used = _token_count(generated)
+                plain = text.rsplit("</think>", 1)[-1].strip()
+                if used is not None and used < 0.9 * int(payload["max_tokens"]) and _looks_like_prompt(plain):
+                    # A local model cannot be forced into JSON: a finished prompt written as plain text is used as is
+                    # (the director reads plain text as the scene; 'Scene N' headings or '---' split several).
+                    return {"choices": [{"message": {"content": plain}}], "usage": {}}
                 if used is not None and used < 0.9 * int(payload["max_tokens"]):
                     # It ended on its own, far from the limit: more tokens would give the same answer.
                     said = re.sub(r"\s+", " ", text)[:300] or "(nothing)"
@@ -231,6 +236,17 @@ class ClipLLMConnection:
         elif "</think>" in text:
             text = text.rsplit("</think>", 1)[1].strip()
         return {"choices": [{"message": {"content": text}}], "usage": {}}
+
+
+_PROMPT_FIELDS = re.compile(r"(?im)^\s*(?:subject_definitions|integrated_multimodal_description|detailed_description|"
+                            r"overall_soundscape|summary)\s*:|\[Shot 1\]")
+
+
+def _looks_like_prompt(text):
+    """A finished H3 prompt, not a refusal or a remark: it has H3 fields, or it is long enough to be a description."""
+    if not text or text.lstrip()[:1] in "{[":
+        return False
+    return bool(_PROMPT_FIELDS.search(text)) or len(text.split()) >= 120
 
 
 def _token_count(generated):
